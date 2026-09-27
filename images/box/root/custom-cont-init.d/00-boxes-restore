@@ -1,0 +1,53 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+move_fork_marker() {
+    if [ -f /.boxes/fork ]; then
+        mkdir -p /.boxes/restored
+        mv -f /.boxes/fork /.boxes/restored/fork
+    fi
+}
+
+deletions=/.boxes/deletions
+if [ ! -f "$deletions" ]; then
+    move_fork_marker
+    exit 0
+fi
+
+manifest=/.boxes/manifest
+opaque=/.boxes/opaque
+declare -A captured_paths=()
+if [ -f "$manifest" ]; then
+    while IFS= read -r -d '' captured_path; do
+        [ -n "$captured_path" ] && captured_paths["$captured_path"]=1
+    done < "$manifest"
+fi
+
+if [ -f "$opaque" ]; then
+    while IFS= read -r -d '' opaque_dir; do
+        case "$opaque_dir" in
+            /*)
+                [ -d "$opaque_dir" ] || continue
+                while IFS= read -r -d '' candidate; do
+                    if [ -z "${captured_paths["$candidate"]+present}" ]; then
+                        rm -rf -- "$candidate"
+                    fi
+                done < <(find "$opaque_dir" -depth -mindepth 1 -print0)
+                ;;
+        esac
+    done < "$opaque"
+fi
+
+while IFS= read -r deleted_path || [ -n "$deleted_path" ]; do
+    [ -n "$deleted_path" ] || continue
+    case "$deleted_path" in
+        /*) [ "$deleted_path" = / ] || [ "$deleted_path" = /.boxes ] || [ "$deleted_path" = /.boxes/deletions ] || rm -rf -- "$deleted_path" ;;
+    esac
+done < "$deletions"
+
+rm -f /.boxes/restored
+mkdir -p /.boxes/restored
+move_fork_marker
+for metadata in "$deletions" "$manifest" "$opaque"; do
+    [ -f "$metadata" ] && mv "$metadata" /.boxes/restored/
+done

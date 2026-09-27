@@ -1,0 +1,15 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+export PATH="/opt/boxes-tools/bin:$PATH"
+
+for dir in /config/.config /config/.local /config/.cache; do
+	if [ -d "$dir" ]; then
+		chown -R abc:abc "$dir"
+	fi
+done
+
+install -d -o abc -g abc -m 0700 /config/.boxd
+touch /config/.boxd/setup.log
+chown abc:abc /config/.boxd/setup.log
+s6-setuidgid abc boxd setup >> /config/.boxd/setup.log 2>&1 &

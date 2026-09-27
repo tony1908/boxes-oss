@@ -1,0 +1,1 @@
+{"type":"message_update","sessionId":"pi-session-1","assistantMessageEvent":{"type":"text_delta","delta":"hello"}}

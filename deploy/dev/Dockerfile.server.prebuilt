@@ -1,0 +1,4 @@
+FROM alpine:3.20
+ARG BOXES_BIN_DIR=.e2e/bin
+COPY ${BOXES_BIN_DIR}/boxes-server /usr/local/bin/boxes-server
+ENTRYPOINT ["/usr/local/bin/boxes-server"]

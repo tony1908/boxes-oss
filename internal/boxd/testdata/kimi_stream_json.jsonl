@@ -1,0 +1,1 @@
+{"role":"assistant","content":"hello","tool_calls":[{"id":"call-2","type":"function","function":{"name":"Shell","arguments":"{\"command\":\"pwd\"}"}}]}

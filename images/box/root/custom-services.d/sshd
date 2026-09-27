@@ -1,0 +1,5 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+install -d -o abc -g abc -m 0700 /config/.ssh
+exec /usr/sbin/sshd -D -e

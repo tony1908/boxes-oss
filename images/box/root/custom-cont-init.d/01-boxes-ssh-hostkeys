@@ -1,0 +1,9 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+if [ -f /.boxes/restored/fork ]; then
+    rm -f /etc/ssh/ssh_host_*
+    ssh-keygen -A
+elif ! compgen -G '/etc/ssh/ssh_host_*_key' >/dev/null; then
+    ssh-keygen -A
+fi

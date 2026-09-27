@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+docker_bin=/usr/bin/docker
+socket=unix:///var/run/docker.sock
+
+docker_available() {
+    sudo -n "$docker_bin" -H "$socket" info >/dev/null 2>&1
+}
+
+if ! docker_available; then
+    if ! awk '$1 != $2 || $3 != 4294967295 { namespaced = 1 } END { exit(namespaced ? 0 : 1) }' /proc/self/uid_map; then
+        printf '%s\n' 'Docker-in-Docker requires a user namespace runtime such as Sysbox.' >&2
+        exit 1
+    fi
+
+    exec 9>/config/.boxd/dockerd.lock
+    flock -w 30 9
+    if ! docker_available; then
+        nohup sudo -n /usr/bin/dockerd --host="$socket" >>/config/.boxd/dockerd.log 2>&1 </dev/null &
+        for _ in {1..60}; do
+            if docker_available; then
+                break
+            fi
+            sleep 1
+        done
+    fi
+    flock -u 9
+    if ! docker_available; then
+        printf '%s\n' 'Docker daemon did not become ready within 60 seconds.' >&2
+        exit 1
+    fi
+fi
+
+exec sudo -n "$docker_bin" -H "$socket" "$@"

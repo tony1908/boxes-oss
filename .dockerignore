@@ -1,0 +1,7 @@
+.git
+web/node_modules
+web/.next
+sdk/typescript/node_modules
+sdk/typescript/dist
+**/__pycache__
+!.e2e/bin

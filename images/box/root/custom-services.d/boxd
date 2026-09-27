@@ -1,0 +1,6 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+export HOME=/config
+export PATH="/opt/boxes-tools/bin:$PATH"
+exec s6-setuidgid abc boxd serve

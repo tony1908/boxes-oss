@@ -1,0 +1,1043 @@
+openapi: 3.1.0
+info:
+  title: Boxes API
+  version: 1.0.0
+  description: Lifecycle, execution, and installation contract for self-hosted Boxes.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /install/cli.ps1:
+    servers:
+      - url: /
+    get:
+      summary: Download the Windows CLI installer
+      description: Returns a PowerShell script with the configured public server URL embedded. It installs the matching Windows CLI and the Boxes agent skills for the current user.
+      security: []
+      responses:
+        "200":
+          description: PowerShell installer script
+          content:
+            text/plain:
+              schema:
+                type: string
+  /install/cli/{binary}:
+    servers:
+      - url: /
+    get:
+      summary: Download a Boxes CLI binary
+      security: []
+      parameters:
+        - name: binary
+          in: path
+          required: true
+          description: Supported binaries include boxes-darwin-arm64, boxes-darwin-amd64, boxes-linux-amd64, boxes-linux-arm64, boxes-windows-amd64.exe, and boxes-windows-arm64.exe.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CLI executable
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Unsupported or uninstalled CLI binary
+  /provider-models:
+    get:
+      summary: List known agent provider models
+      responses:
+        "200":
+          description: Static model and reasoning catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, models, reasoning]
+                      properties:
+                        id:
+                          type: string
+                          enum: [claude, codex, opencode, pi, prime, kimi]
+                        models:
+                          type: array
+                          items: {type: string}
+                        reasoning:
+                          type: array
+                          items: {type: string}
+  /sandboxes:
+    get:
+      summary: List sandboxes
+      parameters:
+        - name: filter
+          in: query
+          required: false
+          description: "State groups: r=provisioning/ready/idle/resuming, s=stopping/stopped, e=error/unreachable. Combine letters; omitted returns all."
+          schema:
+            type: string
+            pattern: "^[rse]*$"
+      responses:
+        "200":
+          description: Matching sandboxes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sandboxes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Sandbox"
+    post:
+      summary: Create a sandbox
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSandboxRequest"
+      responses:
+        "201":
+          description: Created sandbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sandbox"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+  /sandboxes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/SandboxID"
+    delete:
+      summary: Start deleting a sandbox
+      responses:
+        "202":
+          description: Deletion accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation: {$ref: "#/components/schemas/Operation"}
+    get:
+      summary: Get a sandbox
+      responses:
+        "200":
+          description: Sandbox details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sandbox:
+                    $ref: "#/components/schemas/Sandbox"
+    patch:
+      summary: Change auto-stop or idle-stop settings
+      description: TTL and idle-stop settings are independent. idleStopSeconds accepts null or zero to disable; values must be 300 to 2592000 seconds. Hosted service requests are not counted as activity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttlSeconds:
+                  $ref: "#/components/schemas/TTLSeconds"
+                idleStopSeconds:
+                  $ref: "#/components/schemas/IdleStopSeconds"
+      responses:
+        "200":
+          description: Updated sandbox
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sandbox:
+                    $ref: "#/components/schemas/Sandbox"
+  /sandboxes/{id}/resume:
+    post:
+      summary: Resume a stopped sandbox
+      description: Omitted ttlSeconds preserves the sandbox setting; null disables auto-stop. A supplied integer resets expiration from resume time.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttlSeconds:
+                  $ref: "#/components/schemas/TTLSeconds"
+                type:
+                  $ref: "#/components/schemas/BoxSize"
+                node:
+                  type: string
+      responses:
+        "200":
+          description: Resumed sandbox
+  /snapshots:
+    get:
+      summary: List completed snapshots across owned sandboxes
+      parameters:
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: Newest snapshots first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshots, nextCursor]
+                properties:
+                  snapshots:
+                    type: array
+                    items: {$ref: "#/components/schemas/Snapshot"}
+                  nextCursor: {type: string}
+  /snapshots/{id}/download:
+    get:
+      summary: Download a full snapshot archive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Gzipped tar archive of the snapshot contents and metadata
+          content:
+            application/gzip:
+              schema: {type: string, format: binary}
+  /snapshots/{id}/file:
+    get:
+      summary: Download a file or directory from a snapshot
+      description: A regular file is returned as bytes; a directory path is returned as a tar archive of that subtree.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: path
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: File bytes or tar archive
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+            application/x-tar:
+              schema: {type: string, format: binary}
+  /sandboxes/{id}/snapshots/latest:
+    get:
+      summary: Get the newest completed snapshot for a sandbox
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      responses:
+        "200":
+          description: Latest snapshot, or null when none has completed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshot]
+                properties:
+                  snapshot:
+                    oneOf:
+                      - $ref: "#/components/schemas/Snapshot"
+                      - type: "null"
+  /sandboxes/{id}/snapshots:
+    get:
+      summary: List completed snapshots for a sandbox
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      responses:
+        "200":
+          description: Snapshots in newest first order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshots]
+                properties:
+                  snapshots:
+                    type: array
+                    items: {$ref: "#/components/schemas/Snapshot"}
+  /sandboxes/{id}/fork:
+    post:
+      summary: Fork a sandbox from its latest snapshot
+      description: Omitted ttlSeconds defaults to 3600 seconds; null disables auto-stop.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttlSeconds:
+                  $ref: "#/components/schemas/TTLSeconds"
+                idleStopSeconds:
+                  $ref: "#/components/schemas/IdleStopSeconds"
+      responses:
+        "201":
+          description: Forked sandbox
+  /sandboxes/{id}/snapshots/{snapshotId}:
+    delete:
+      summary: Permanently delete a snapshot
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: snapshotId
+          in: path
+          required: true
+          schema: {type: string}
+        - name: force
+          in: query
+          required: false
+          description: Allow deletion of the newest snapshot required to resume a stopped sandbox.
+          schema: {type: boolean, default: false}
+      responses:
+        "204": {description: Snapshot permanently deleted}
+        "409": {description: Snapshot is pinned or required to resume}
+  /sandboxes/{id}/usage:
+    get:
+      summary: Get running, command, agent, desktop, and snapshot usage
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      responses:
+        "200":
+          description: Usage accumulated across start/stop intervals and recorded activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxUsage"
+  /sandboxes/{id}/activity:
+    get:
+      summary: List sandbox activity, newest first
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - in: query
+          name: category
+          schema: {type: string, enum: [lifecycle, command, agent, access, snapshot]}
+        - in: query
+          name: before
+          description: Opaque cursor returned as nextCursor by the previous page.
+          schema: {type: string}
+        - in: query
+          name: limit
+          schema: {type: integer, default: 50, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: Activity records newest first, with an opaque cursor when more rows are available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ActivityItem"
+                  nextCursor:
+                    type: string
+  /settings/pricing:
+    get:
+      summary: Get owner pricing settings
+      responses:
+        "200":
+          description: Currency and hourly rates by size
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PricingSettings"}
+        "403": {description: Owner role required}
+    put:
+      summary: Set owner pricing settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PricingSettings"
+      responses:
+        "200":
+          description: Saved pricing settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PricingSettings"}
+        "403": {description: Owner role required}
+  /settings/retention:
+    get:
+      summary: Get zero data retention setting (owner only)
+      responses:
+        "200": {description: Retention setting, content: {application/json: {schema: {type: object, required: [enabled], properties: {enabled: {type: boolean}}}}}}
+        "403": {description: Owner role required}
+    put:
+      summary: Update zero data retention setting (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+                confirm: {type: string, description: Must equal "delete archived sandbox data" when enabled is true.}
+      responses:
+        "200": {description: Updated retention setting}
+        "400": {description: Confirmation phrase required}
+        "403": {description: Owner role required}
+  /sandboxes/{id}/prompt:
+    post:
+      summary: Queue a prompt
+      description: A stopped sandbox is resumed before the prompt is queued. With stopWhenDone, the server snapshots and stops the sandbox after the run reaches a terminal event.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, provider]
+              properties:
+                prompt:
+                  type: string
+                provider:
+                  type: string
+                  enum: [claude, codex, opencode, pi, prime, kimi]
+                model:
+                  type: string
+                conversationId:
+                  type: string
+                new:
+                  type: boolean
+                stopWhenDone:
+                  type: boolean
+                  default: false
+      responses:
+        "202":
+          description: Prompt queued
+  /sandboxes/{id}/tcp/{port}:
+    get:
+      summary: Open a TCP WebSocket tunnel
+      description: WebSocket tunnel to the specified port inside the sandbox.
+      x-websocket: true
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: port
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+      responses:
+        "101":
+          description: WebSocket connection established
+  /settings/registry:
+    get:
+      summary: Get built-in registry credentials
+      description: Owner-only settings used by the image publisher and node installers.
+      responses:
+        "200":
+          description: Registry address and credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, username, password]
+                properties:
+                  url:
+                    type: string
+                  username:
+                    type: string
+                  password:
+                    type: string
+                    format: password
+        "403":
+          description: Owner role required
+  /settings/images:
+    put:
+      summary: Update default container images
+      description: Owner-only. Specify one or both images; omitted values keep their current defaults.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                boxImage:
+                  type: string
+                toolsImage:
+                  type: string
+      responses:
+        "200":
+          description: Current default images
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [boxImage, toolsImage]
+                properties:
+                  boxImage:
+                    type: string
+                  toolsImage:
+                    type: string
+        "400":
+          description: Invalid image reference
+        "403":
+          description: Owner role required
+  /sandboxes/{id}/artifacts:
+    get:
+      summary: Download a file or directory from a running sandbox
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: path
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: File bytes or a gzip tar archive for a directory
+          content:
+            application/octet-stream: {schema: {type: string, format: binary}}
+            application/gzip: {schema: {type: string, format: binary}}
+  /api-keys/{id}/usage:
+    get:
+      summary: Get API key usage for the last 30 days
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Request and sandbox usage totals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  usage: {$ref: "#/components/schemas/APIKeyUsage"}
+  /webhooks/{id}/rotate-secret:
+    post:
+      summary: Rotate a webhook signing secret
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: New signing secret, returned once
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret]
+                properties:
+                  secret: {type: string}
+  /operations/{id}:
+    get:
+      summary: Get an asynchronous operation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Operation status and optional error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation: {$ref: "#/components/schemas/Operation"}
+  /agent/connect:
+    get:
+      summary: Authenticated agent WebSocket connection
+      responses:
+        "200": {description: Successful response}
+  /auth/signup:
+    post:
+      summary: Create an account
+      responses:
+        "200": {description: Successful response}
+  /auth/login:
+    post:
+      summary: Log in
+      responses:
+        "200": {description: Successful response}
+  /auth/logout:
+    post:
+      summary: Log out
+      responses:
+        "200": {description: Successful response}
+  /me:
+    get:
+      summary: Get the current user
+      responses:
+        "200": {description: Successful response}
+  /api-keys:
+    get:
+      summary: List API keys
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Create an API key
+      responses:
+        "200": {description: Successful response}
+  /api-keys/{id}:
+    delete:
+      summary: Revoke an API key
+      responses:
+        "204": {description: Request completed}
+  /nodes:
+    get:
+      summary: List nodes
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Add a node
+      responses:
+        "200": {description: Successful response}
+  /nodes/{id}:
+    delete:
+      summary: Delete a node
+      responses:
+        "204": {description: Request completed}
+  /nodes/{id}/drain:
+    post:
+      summary: Drain a node
+      responses:
+        "200": {description: Successful response}
+  /nodes/{id}/undrain:
+    post:
+      summary: Undrain a node
+      responses:
+        "200": {description: Successful response}
+  /nodes/ssh:
+    post:
+      summary: Add a node over SSH
+      responses:
+        "200": {description: Successful response}
+  /pools:
+    get:
+      summary: List pools
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Create a pool
+      responses:
+        "200": {description: Successful response}
+  /pools/{id}:
+    get:
+      summary: Get a pool
+      responses:
+        "200": {description: Successful response}
+    patch:
+      summary: Update a pool
+      responses:
+        "200": {description: Successful response}
+    delete:
+      summary: Delete a pool
+      responses:
+        "204": {description: Request completed}
+  /pools/{id}/bake:
+    post:
+      summary: Bake a pool image
+      responses:
+        "200": {description: Successful response}
+  /pools/{id}/bake-report:
+    post:
+      summary: Report pool image bake status
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/stop:
+    post:
+      summary: Stop a sandbox
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/commands:
+    post:
+      summary: Execute a command in a sandbox
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/commands/{pid}:
+    get:
+      summary: Get a detached command result
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/files:
+    get:
+      summary: Read a sandbox file
+      responses:
+        "200": {description: Successful response}
+    put:
+      summary: Write a sandbox file
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/archive:
+    put:
+      summary: Upload a gzip archive to a sandbox
+      responses:
+        "200": {description: Successful response}
+  /snapshots/{id}/tree:
+    get:
+      summary: List a snapshot directory
+      responses:
+        "200": {description: Successful response}
+  /named-snapshots:
+    get:
+      summary: List named snapshots
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Create a named snapshot
+      responses:
+        "200": {description: Successful response}
+  /named-snapshots/{name}:
+    get:
+      summary: Get a named snapshot
+      responses:
+        "200": {description: Successful response}
+    delete:
+      summary: Delete a named snapshot
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/desktop:
+    get:
+      summary: Get sandbox desktop URL
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Create a desktop session
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/hosts:
+    get:
+      summary: List exposed hosts
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Expose a sandbox port
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/hosts/{port}:
+    delete:
+      summary: Remove an exposed port
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/ssh-key:
+    post:
+      summary: Add an SSH key to a sandbox
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/tcp/22:
+    get:
+      summary: Open SSH TCP tunnel
+      responses:
+        "101": {description: WebSocket tunnel established}
+  /sandboxes/{id}/steer:
+    post:
+      summary: Steer an active prompt
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/interrupt:
+    post:
+      summary: Interrupt an active prompt
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/events:
+    get:
+      summary: List sandbox events using a cursor and optional long poll
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/conversations:
+    get:
+      summary: List sandbox conversations
+      responses:
+        "200": {description: Successful response}
+  /sandboxes/{id}/runs/{runId}:
+    get:
+      summary: Get an agent run
+      responses:
+        "200": {description: Successful response}
+  /environments:
+    get:
+      summary: List environments
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Create an environment
+      responses:
+        "200": {description: Successful response}
+  /environments/{id}:
+    get:
+      summary: Get an environment
+      responses:
+        "200": {description: Successful response}
+    patch:
+      summary: Update an environment
+      responses:
+        "200": {description: Successful response}
+    delete:
+      summary: Delete an environment
+      responses:
+        "204": {description: Request completed}
+  /environments/{id}/upgrade:
+    post:
+      summary: Upgrade sandbox environment
+      responses:
+        "200": {description: Successful response}
+  /webhooks:
+    get:
+      summary: List webhooks
+      responses:
+        "200": {description: Successful response}
+    post:
+      summary: Create a webhook
+      responses:
+        "200": {description: Successful response}
+  /webhooks/{id}:
+    patch:
+      summary: Update a webhook
+      responses:
+        "200": {description: Successful response}
+    delete:
+      summary: Delete a webhook
+      responses:
+        "204": {description: Request completed}
+  /limits:
+    get:
+      summary: Get account limits
+      responses:
+        "200": {description: Successful response}
+  /settings/storage:
+    get:
+      summary: Get storage settings
+      responses:
+        "200": {description: Successful response}
+  /admin/storage:
+    post:
+      summary: Configure storage with the admin token
+      responses:
+        "200": {description: Successful response}
+  /admin/runtime/stop:
+    post:
+      summary: Stop runtime sandboxes with the admin token
+      responses:
+        "200": {description: Successful response}
+  /admin/runtime/resume:
+    post:
+      summary: Resume runtime sandboxes with the admin token
+      responses:
+        "200": {description: Successful response}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    SandboxID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    InvalidRequest:
+      description: Invalid request body or lifecycle value
+  schemas:
+    Snapshot:
+      type: object
+      required: [id, boxId, resticId, sizeBytes, createdAt]
+      properties:
+        id: {type: string}
+        boxId: {type: string}
+        resticId: {type: string}
+        sizeBytes: {type: integer, minimum: 0}
+        createdAt: {type: string, format: date-time}
+    Operation:
+      type: object
+      required: [id, status]
+      properties:
+        id: {type: string}
+        status: {type: string, enum: [pending, done, failed]}
+        error: {type: string}
+    APIKeyUsage:
+      type: object
+      required: [requests, sandboxesCreated]
+      properties:
+        requests: {type: integer, minimum: 0}
+        sandboxesCreated: {type: integer, minimum: 0}
+    ActivityItem:
+      type: object
+      required: [id, time, actorType, actorLabel, category, action, detail]
+      properties:
+        id: {type: string}
+        time: {type: string, format: date-time}
+        actorType: {type: string, enum: [user, api_key, system]}
+        actorLabel: {type: string}
+        category: {type: string, enum: [lifecycle, command, agent, access, snapshot]}
+        action: {type: string}
+        detail: {type: object, additionalProperties: true}
+        durationMs: {type: integer, minimum: 0}
+        outcome: {type: string, enum: [ok, error]}
+    SandboxUsage:
+      type: object
+      required: [runningSeconds, runningSecondsThisMonth, perDay, commandsCount, agentRunsCount, desktopSessionsCount, snapshotsCount]
+      properties:
+        runningSeconds: {type: integer, minimum: 0}
+        runningSecondsThisMonth: {type: integer, minimum: 0}
+        perDay:
+          type: array
+          items:
+            type: object
+            required: [date, runningSeconds]
+            properties:
+              date: {type: string, format: date}
+              runningSeconds: {type: integer, minimum: 0}
+        commandsCount: {type: integer, minimum: 0}
+        agentRunsCount: {type: integer, minimum: 0}
+        desktopSessionsCount: {type: integer, minimum: 0}
+        snapshotsCount: {type: integer, minimum: 0}
+        snapshotsBytes: {type: integer, minimum: 0}
+        since:
+          type: [string, "null"]
+          format: date-time
+          description: Start of the current running interval, or null while stopped.
+        estimatedCost:
+          type: object
+          required: [currency, amount, hourlyRate]
+          properties:
+            currency: {type: string}
+            amount: {type: number, minimum: 0}
+            hourlyRate: {type: number, minimum: 0}
+    PricingSettings:
+      type: object
+      required: [currency, hourlyBySize]
+      properties:
+        currency: {type: string, default: USD}
+        hourlyBySize:
+          type: object
+          properties:
+            xsmall: {type: number, minimum: 0}
+            small: {type: number, minimum: 0}
+            default: {type: number, minimum: 0}
+            large: {type: number, minimum: 0}
+            xlarge: {type: number, minimum: 0}
+    TTLSeconds:
+      oneOf:
+        - type: integer
+          minimum: 60
+          description: Values above 2592000 are capped at 2592000 seconds.
+        - type: "null"
+          description: Disable auto-stop.
+    IdleStopSeconds:
+      oneOf:
+        - type: integer
+          minimum: 300
+          maximum: 2592000
+        - type: integer
+          const: 0
+        - type: "null"
+      description: Idle duration in seconds; null or zero disables idle stop.
+    BoxSize:
+      type: string
+      enum: [xsmall, small, default, large, xlarge]
+      description: "CPU count and hard memory cap: xsmall 1/2 GiB, small 2/4 GiB, default 4/8 GiB, large 8/16 GiB, xlarge 16/32 GiB. Each size has a smaller soft memory reservation for scheduler admission."
+    CreateSandboxRequest:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/BoxSize"
+          default: default
+        ttlSeconds:
+          allOf:
+            - $ref: "#/components/schemas/TTLSeconds"
+          description: Omitted defaults to 3600 seconds; null disables auto-stop.
+        idleStopSeconds:
+          $ref: "#/components/schemas/IdleStopSeconds"
+        env:
+          type: object
+          maxProperties: 100
+          description: Environment variables; key/value payload is limited to 64 KiB.
+          additionalProperties:
+            type: string
+        setupScript:
+          type: string
+          maxLength: 65536
+          description: Setup script run once by boxd after readiness in the background.
+        from:
+          type: string
+          description: Named snapshot to restore.
+        environment:
+          type: string
+        noEnv:
+          type: boolean
+    Sandbox:
+      type: object
+      required: [id, state, autoStop, ttlSeconds, idleStopSeconds, expiresAt, ttlRemainingSeconds, lastSnapshotAt, desktopAvailable, runningSeconds, setupStatus]
+      properties:
+        id:
+          type: string
+        nodeId:
+          type: string
+        type:
+          $ref: "#/components/schemas/BoxSize"
+        state:
+          type: string
+        autoStop:
+          type: boolean
+        ttlSeconds:
+          $ref: "#/components/schemas/TTLSeconds"
+        idleStopSeconds:
+          $ref: "#/components/schemas/IdleStopSeconds"
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        ttlRemainingSeconds:
+          type: [integer, "null"]
+          minimum: 0
+          description: Seconds until auto-stop, or null when auto-stop is disabled.
+        lastSnapshotAt:
+          type: [string, "null"]
+          format: date-time
+        desktopAvailable:
+          type: boolean
+        runningSeconds:
+          type: integer
+          minimum: 0
+        setupStatus:
+          type: string
+          enum: [none, running, succeeded, failed]
+        createdAt:
+          type: string
+          format: date-time

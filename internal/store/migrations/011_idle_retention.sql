@@ -1,0 +1,2 @@
+ALTER TABLE boxes ADD COLUMN idle_stop_seconds INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE account_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

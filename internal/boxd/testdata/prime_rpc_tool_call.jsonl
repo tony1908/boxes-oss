@@ -1,0 +1,1 @@
+{"type":"message_update","sessionId":"prime-session-1","assistantMessageEvent":{"type":"toolcall_start","toolCall":{"id":"call-1","name":"bash","arguments":{"command":"pwd"}}}}

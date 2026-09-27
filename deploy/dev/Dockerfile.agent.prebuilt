@@ -1,0 +1,5 @@
+FROM alpine:3.20
+RUN apk add --no-cache docker-cli restic
+ARG BOXES_BIN_DIR=.e2e/bin
+COPY ${BOXES_BIN_DIR}/boxes-agent /usr/local/bin/boxes-agent
+ENTRYPOINT ["/usr/local/bin/boxes-agent"]

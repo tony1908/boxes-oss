@@ -1,0 +1,43 @@
+version: 2
+
+project_name: boxes
+
+builds:
+  - id: boxes-server
+    main: ./cmd/boxes-server
+    binary: boxes-server
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+  - id: boxes-agent
+    main: ./cmd/boxes-agent
+    binary: boxes-agent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+  - id: boxes
+    main: ./cmd/boxes
+    binary: boxes
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+archives:
+  - name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
