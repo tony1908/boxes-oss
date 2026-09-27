@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { api, jsonBody } from '../lib/api';
+import { authPageState } from '../lib/auth-status.mjs';
 import { postLoginDestination } from '../lib/auth-redirect.mjs';
 import { BrandMark } from './BrandMark';
 import { Icon } from './icons';
@@ -12,12 +13,24 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [busy, setBusy] = useState(false);
   const [next, setNext] = useState('');
   const [host, setHost] = useState('');
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
   const signup = mode === 'signup';
+  const pageState = authPageState(mode, setupRequired);
 
   useEffect(() => {
     setNext(new URLSearchParams(window.location.search).get('next') ?? '');
     setHost(window.location.host);
-  }, []);
+    let active = true;
+    api<{ setupRequired: boolean }>('/auth/status').then(({ setupRequired: required }) => {
+      if (!active) return;
+      setSetupRequired(required);
+      if (authPageState(mode, required).redirectSignupToLogin) {
+        const requested = new URLSearchParams(window.location.search).get('next');
+        window.location.replace(`/login/${requested ? `?next=${encodeURIComponent(requested)}` : ''}`);
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [mode]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,7 +62,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button button-primary button-wide" disabled={busy} type="submit">{busy ? 'Working...' : signup ? <><Icon name="plus" size={14} />Create account</> : 'Sign in'}</button>
         </form>
-        <p className="auth-switch">{signup ? 'Already have an account?' : 'Need to create the owner account?'} <Link href={`${signup ? '/login/' : '/signup/'}${next ? `?next=${encodeURIComponent(next)}` : ''}`}>{signup ? 'Sign in' : 'Create account'}</Link></p>
+        {(signup || pageState.showCreateOwnerLink) && <p className="auth-switch">{signup ? 'Already have an account?' : 'Need to create the owner account?'} <Link href={`${signup ? '/login/' : '/signup/'}${next ? `?next=${encodeURIComponent(next)}` : ''}`}>{signup ? 'Sign in' : 'Create account'}</Link></p>}
       </section>
     </main>
   );

@@ -60,33 +60,6 @@ paths:
                 format: binary
         "404":
           description: Unsupported or uninstalled CLI binary
-  /provider-models:
-    get:
-      summary: List known agent provider models
-      responses:
-        "200":
-          description: Static model and reasoning catalog
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [providers]
-                properties:
-                  providers:
-                    type: array
-                    items:
-                      type: object
-                      required: [id, models, reasoning]
-                      properties:
-                        id:
-                          type: string
-                          enum: [claude, codex, opencode, pi, prime, kimi]
-                        models:
-                          type: array
-                          items: {type: string}
-                        reasoning:
-                          type: array
-                          items: {type: string}
   /sandboxes:
     get:
       summary: List sandboxes
@@ -580,6 +553,20 @@ paths:
       summary: Create an account
       responses:
         "200": {description: Successful response}
+  /auth/status:
+    get:
+      summary: Check whether initial owner setup is required
+      security: []
+      responses:
+        "200":
+          description: Owner setup state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [setupRequired]
+                properties:
+                  setupRequired: {type: boolean}
   /auth/login:
     post:
       summary: Log in
@@ -617,13 +604,103 @@ paths:
   /sandboxes/{id}/commands:
     post:
       summary: Execute a command in a sandbox
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandRequest"
       responses:
-        "200": {description: Successful response}
+        "200":
+          description: Command completed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exitCode, stdout, stderr]
+                properties:
+                  exitCode: {type: integer}
+                  stdout: {type: string}
+                  stderr: {type: string}
+        "202":
+          description: Detached command started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [processId]
+                properties:
+                  processId: {type: string}
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
   /sandboxes/{id}/commands/{pid}:
     get:
       summary: Get a detached command result
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: pid
+          in: path
+          required: true
+          schema: {type: string}
       responses:
-        "200": {description: Successful response}
+        "200":
+          description: Current or completed command result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [running, stdout, stderr]
+                properties:
+                  running: {type: boolean}
+                  exitCode: {type: integer}
+                  stdout: {type: string}
+                  stderr: {type: string}
+        "404": {description: Command process was not found}
+  /sandboxes/{id}/boxd/{path}:
+    parameters:
+      - $ref: "#/components/parameters/SandboxID"
+      - name: path
+        in: path
+        required: true
+        description: Remaining boxd endpoint path.
+        schema: {type: string}
+    get:
+      summary: Proxy a GET request to boxd
+      responses:
+        "200": {description: Response from boxd}
+    post:
+      summary: Proxy a POST request to boxd
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "200": {description: Response from boxd}
+    put:
+      summary: Proxy a PUT request to boxd
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "200": {description: Response from boxd}
+    patch:
+      summary: Proxy a PATCH request to boxd
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "200": {description: Response from boxd}
+    delete:
+      summary: Proxy a DELETE request to boxd
+      responses:
+        "200": {description: Response from boxd}
   /sandboxes/{id}/files:
     get:
       summary: Read a sandbox file
@@ -818,6 +895,31 @@ components:
         status: {type: string, enum: [healthy, unhealthy]}
         runningBoxes: {type: integer, minimum: 0}
         lastSeen: {type: string, format: date-time}
+    CommandRequest:
+      type: object
+      required: [cmd]
+      properties:
+        cmd:
+          oneOf:
+            - type: string
+              minLength: 1
+              description: Shell command string executed through bash -lc.
+            - type: array
+              minItems: 1
+              items: {type: string}
+              description: Argument vector executed directly without a shell.
+        cwd: {type: string}
+        user: {type: string}
+        env:
+          type: object
+          additionalProperties: {type: string}
+        timeoutSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          default: 0
+          description: Zero uses the agent default timeout.
+        detached: {type: boolean, default: false}
     Snapshot:
       type: object
       required: [id, boxId, resticId, sizeBytes, createdAt]

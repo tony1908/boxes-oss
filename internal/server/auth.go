@@ -80,6 +80,15 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "sessionToken": token, "user": user})
 }
 
+func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
+	users, err := s.store.ListUsers(r.Context())
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"setupRequired": len(users) == 0})
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var input credentials
 	if err := decodeJSON(r, &input); err != nil {

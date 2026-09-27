@@ -36,6 +36,49 @@ func TestSignupAndLoginIssueBearerSessions(t *testing.T) {
 	requestJSON(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/me", token, nil, http.StatusOK, nil)
 }
 
+func TestAuthStatusReportsOnlyWhetherSetupIsRequired(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+
+	var status map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/auth/status", "", nil, http.StatusOK, &status)
+	if len(status) != 1 || status["setupRequired"] != true {
+		t.Fatalf("initial auth status = %#v, want only setupRequired=true", status)
+	}
+
+	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
+		"email": "owner@example.test", "password": "correct horse battery staple",
+	}, http.StatusCreated, nil)
+	requestJSON(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/auth/status", "", nil, http.StatusOK, &status)
+	if len(status) != 1 || status["setupRequired"] != false {
+		t.Fatalf("auth status after owner creation = %#v, want only setupRequired=false", status)
+	}
+}
+
+func TestHandlerReturnsJSONNotFoundForRegistryPaths(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+
+	for _, path := range []string{"/v2", "/v2/", "/v2/library/image/manifests/latest"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/api/v1"+path, nil)
+			response := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(response, request)
+
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+			}
+			if got := response.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+				t.Fatalf("Content-Type = %q, want application/json", got)
+			}
+			if strings.Contains(response.Body.String(), "<html") || strings.Contains(response.Body.String(), "Boxes") {
+				t.Fatalf("registry path returned web UI content: %q", response.Body.String())
+			}
+		})
+	}
+}
 func TestRuntimeAdminRequiresLocalAdminToken(t *testing.T) {
 	srv, cleanup := newTestServer(t)
 	defer cleanup()

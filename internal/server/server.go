@@ -311,6 +311,7 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /provider-models", s.auth(http.HandlerFunc(s.providerModels)))
 	mux.Handle("GET /agent/connect", s.AgentHandler())
+	mux.HandleFunc("GET /auth/status", s.authStatus)
 	mux.HandleFunc("POST /auth/signup", s.signup)
 	mux.HandleFunc("POST /auth/login", s.login)
 	mux.Handle("POST /auth/logout", s.auth(http.HandlerFunc(s.logout)))
