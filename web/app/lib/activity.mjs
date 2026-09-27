@@ -41,7 +41,7 @@ export function activityPresentation(item) {
   if (action === 'auto-stopped by timer') return { text: 'Stopped by auto-stop timer' };
   if (/^stopped after \d+ min idle$/.test(action)) return { text: `Stopped after ${action.match(/\d+/)?.[0]} min idle` };
   if (action === 'stopped' || action === 'stop requested') return { text: 'Stopped' };
-  if (action === 'resumed') return { text: `Resumed on ${detail.node ?? 'node'}` };
+  if (action === 'resumed') return { text: 'Resumed' };
   if (action === 'forked') return { text: `Forked to ${detail.newBoxId ?? 'sandbox'}` };
   if (action === 'ttl changed') {
     const label = (value) => value == null ? 'Always on' : value < 3600 ? `${value} sec` : `${value / 3600} h`;

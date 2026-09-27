@@ -27,7 +27,6 @@ codex exec -m gpt-6-luna -c model_reasoning_effort=high --color never \
 **If you are the Luna/Codex executor reading this, you ARE the executor:** implement the task you were given directly. Don't brainstorm, don't write plans, don't ask questions, and never spawn another agent, codex or opencode.
 
 ## Project
-boxes-oss is an open-source, self-hosted [boat.dev](https://boat.dev) with a Dokploy-style install and UI.
-- Design: `docs/plans/2026-09-24-boxes-oss-design.md`
-- Plan and shared contracts: `docs/plans/2026-09-24-boxes-oss-implementation.md`
-- Gate: `go build ./... && go vet ./... && go test ./...`
+boxes-oss is an open-source self-hosted sandbox platform for AI agents, running all boxes on one VM.
+This edition has no extra nodes, node management, autoscaling, or cloud providers.
+Gate: `go build ./... && go vet ./... && go test ./...`

@@ -1,5 +1,6 @@
 export type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
-export interface Sandbox { id: string; nodeId?: string; type?: string; state: string; autoStop?: boolean; ttlSeconds?: number | null; idleStopSeconds?: number | null; expiresAt?: string | null; ttlRemainingSeconds?: number | null; lastSnapshotAt?: string | null; desktopAvailable?: boolean; runningSeconds?: number; setupStatus?: string; [key: string]: unknown }
+export interface Sandbox { id: string; type?: string; state: string; autoStop?: boolean; ttlSeconds?: number | null; idleStopSeconds?: number | null; expiresAt?: string | null; ttlRemainingSeconds?: number | null; lastSnapshotAt?: string | null; desktopAvailable?: boolean; runningSeconds?: number; setupStatus?: string; [key: string]: unknown }
+export interface Machine { cpus: number; memoryBytes: number; memAvailableBytes: number; diskFreeBytes: number; swapFreeBytes: number; memoryPressureSomeAvg10: number; status: 'healthy' | 'unhealthy'; runningBoxes: number; lastSeen: string }
 export interface Snapshot { id: string; boxId: string; resticId: string; sizeBytes: number; createdAt: string; [key: string]: unknown }
 export interface Operation { id: string; status: 'pending' | 'done' | 'failed'; error?: string }
 export interface CommandResult { processId?: string; running?: boolean; exitCode?: number | null; [key: string]: unknown }
@@ -61,6 +62,7 @@ export class Boxes {
     return operation;
   }
 
+  machine = async () => (await this.request<{ machine: Machine }>('GET', '/machine')).machine;
   sandboxes = {
     create: (input: Record<string, unknown> = {}, idempotencyKey?: string) => this.request<Sandbox>('POST', '/sandboxes', input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     list: async (filter?: string) => (await this.request<{ sandboxes: Sandbox[] }>('GET', `/sandboxes${this.query({ filter })}`)).sandboxes,
