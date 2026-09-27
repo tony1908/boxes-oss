@@ -603,3 +603,6 @@ systemctl enable --now boxes-server.service
 systemctl enable --now boxes-agent.service
 
 printf 'Boxes dashboard: %s\n' "$PUBLIC_URL"
+SETUP_TOKEN="$(< /var/lib/boxes/admin.token)"
+printf 'Owner setup link (one time): %s/signup/?setup=%s\n' "${PUBLIC_URL%/}" "$SETUP_TOKEN"
+printf 'To read the setup token again: sudo cat /var/lib/boxes/admin.token\n'

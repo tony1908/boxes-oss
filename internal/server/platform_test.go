@@ -1112,6 +1112,7 @@ func TestRunStatusWaitsUntilTerminalEventIsStored(t *testing.T) {
 }
 
 func TestWebhookDeliveryRunsOffRequestPathAndSignsBody(t *testing.T) {
+	t.Setenv("BOXES_WEBHOOK_ALLOW_PRIVATE", "true")
 	delivered := make(chan *http.Request, 1)
 	release := make(chan struct{})
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1201,6 +1202,7 @@ func TestGetOperationReturnsStatusAndRejectsUnknownID(t *testing.T) {
 }
 
 func TestWebhookDeliveryRetriesThreeTimesAfterInitialFailure(t *testing.T) {
+	t.Setenv("BOXES_WEBHOOK_ALLOW_PRIVATE", "true")
 	var attempts int
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		attempts++

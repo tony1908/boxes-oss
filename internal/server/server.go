@@ -94,6 +94,12 @@ type Server struct {
 	idleCPUMu       sync.Mutex
 	idleCPUSamples  map[string][]idleCPUSample
 	reconcileGetBox func(context.Context, string) (store.BoxRecord, error)
+	authLimitMu          sync.Mutex
+	authIPAttempts       map[string][]time.Time
+	authEmailFails       map[string][]time.Time
+	nodeHostBasesMu      sync.Mutex
+	nodeHostBases        []string
+	nodeHostBasesExpires time.Time
 }
 
 type contextKey uint8
@@ -178,7 +184,7 @@ func New(cfg Config) (*Server, error) {
 		eventCursors: make(map[string]int64), eventPumpLogAt: make(map[string]time.Time),
 		webhookQueue: make(chan webhookEventDelivery, 128), webhookCancel: webhookCancel,
 		lifecycleCtx: lifecycleCtx, lifecycleCancel: lifecycleCancel,
-		operations: make(map[string]operationStatus), apiUsagePending: make(map[string]int64),
+		operations: make(map[string]operationStatus), apiUsagePending: make(map[string]int64), authIPAttempts: make(map[string][]time.Time), authEmailFails: make(map[string][]time.Time),
 		snapshotBusy: make(map[string]chan struct{}), snapshotChanged: make(map[string]int), snapshotNextAt: make(map[string]time.Time), pruneRetryAt: make(map[string]time.Time), pruneLastAt: make(map[string]time.Time), healthSnapshots: make(map[string]healthSnapshot), idleCPUSamples: make(map[string][]idleCPUSample)}
 	if err := s.initializeStorage(cfg.StorageBootstrap); err != nil {
 		return nil, err
@@ -238,8 +244,43 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /install/cli/{binary}", s.serveCLIBinary)
 	mux.Handle("/", webui.Handler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setSecurityHeaders(w, r, s.cfg.PublicURL, s.cachedNodeHostBases())
 		mux.ServeHTTP(w, r)
 	})
+}
+
+const nodeHostBasesCacheTTL = 30 * time.Second
+
+func (s *Server) cachedNodeHostBases() []string {
+	s.nodeHostBasesMu.Lock()
+	defer s.nodeHostBasesMu.Unlock()
+
+	now := s.now()
+	if now.Before(s.nodeHostBasesExpires) {
+		return append([]string(nil), s.nodeHostBases...)
+	}
+
+	nodes, err := s.store.ListNodes(context.Background())
+	if err == nil {
+		seen := make(map[string]struct{}, len(nodes))
+		bases := make([]string, 0, len(nodes))
+		for _, node := range nodes {
+			base := sanitizeHostBase(node.Node.HostBase)
+			if base == "" {
+				continue
+			}
+			if _, ok := seen[base]; ok {
+				continue
+			}
+			seen[base] = struct{}{}
+			bases = append(bases, base)
+		}
+		s.nodeHostBases = bases
+	}
+	// Keep the most recently known bases on a transient store error, and avoid
+	// querying SQLite for every static asset while it remains unavailable.
+	s.nodeHostBasesExpires = now.Add(nodeHostBasesCacheTTL)
+	return append([]string(nil), s.nodeHostBases...)
 }
 
 func (s *Server) serveCLIInstallScript(w http.ResponseWriter, _ *http.Request) {

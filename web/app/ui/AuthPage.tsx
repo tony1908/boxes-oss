@@ -14,11 +14,13 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [next, setNext] = useState('');
   const [host, setHost] = useState('');
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+  const [setupToken, setSetupToken] = useState('');
   const signup = mode === 'signup';
   const pageState = authPageState(mode, setupRequired);
 
   useEffect(() => {
     setNext(new URLSearchParams(window.location.search).get('next') ?? '');
+    setSetupToken(new URLSearchParams(window.location.search).get('setup') ?? '');
     setHost(window.location.host);
     let active = true;
     api<{ setupRequired: boolean }>('/auth/status').then(({ setupRequired: required }) => {
@@ -40,7 +42,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
     try {
       await api(signup ? '/auth/signup' : '/auth/login', {
         method: 'POST',
-        body: jsonBody({ email: form.get('email'), password: form.get('password') }),
+        body: jsonBody({ email: form.get('email'), password: form.get('password'), ...(signup && setupToken ? { setupToken } : {}) }),
       });
       window.location.assign(postLoginDestination(window.location.search, window.location.origin));
     } catch (cause) {
@@ -56,6 +58,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
         <Link className="brand auth-brand" href="/"><BrandMark size={20} animated={busy} /><span>boxes</span></Link>
         <h1>{signup ? 'Create the owner account' : 'Sign in'}</h1>
         <p className="auth-host">Server: <code>{host}</code></p>
+        {signup && setupRequired && !setupToken && <p className="form-error" role="alert">Use the owner setup link printed by the installer.</p>}
         <form className="form-stack" onSubmit={submit}>
           <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
           <label>Password<input name="password" type="password" autoComplete={signup ? 'new-password' : 'current-password'} minLength={signup ? 12 : undefined} required />{signup && <small className="help-text">At least 12 characters</small>}</label>

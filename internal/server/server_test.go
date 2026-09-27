@@ -22,7 +22,7 @@ func TestSignupAndLoginIssueBearerSessions(t *testing.T) {
 	defer httpServer.Close()
 
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, nil)
 
 	var login map[string]any
@@ -49,7 +49,7 @@ func TestAuthStatusReportsOnlyWhetherSetupIsRequired(t *testing.T) {
 	}
 
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, nil)
 	requestJSON(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/auth/status", "", nil, http.StatusOK, &status)
 	if len(status) != 1 || status["setupRequired"] != false {
@@ -121,7 +121,7 @@ func TestAuthResponsesSetSessionCookie(t *testing.T) {
 	defer httpServer.Close()
 
 	response := doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", nil, map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	})
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("signup status = %d, want %d", response.StatusCode, http.StatusCreated)
@@ -155,7 +155,7 @@ func TestCookieSessionAuthenticationCSRFAndLogout(t *testing.T) {
 	defer httpServer.Close()
 
 	signup := doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", nil, map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	})
 	cookie := sessionCookie(t, signup)
 	signup.Body.Close()
@@ -218,7 +218,7 @@ func TestAPIKeyInSessionCookieIsRejected(t *testing.T) {
 
 	var signup map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, &signup)
 	var created map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/api-keys", signup["token"].(string), map[string]any{"name": "cookie must reject"}, http.StatusCreated, &created)
@@ -241,7 +241,7 @@ func TestAPIKeyAuthenticatesEveryCLISandboxRoute(t *testing.T) {
 
 	var signup map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, &signup)
 	var created map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/api-keys", signup["token"].(string), map[string]any{"name": "CLI"}, http.StatusCreated, &created)
@@ -286,7 +286,7 @@ func TestAPIKeyAuthenticatesTCPProxyWebSocket(t *testing.T) {
 
 	var signup map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, &signup)
 	var created map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/api-keys", signup["token"].(string), map[string]any{"name": "CLI TCP"}, http.StatusCreated, &created)
@@ -316,7 +316,7 @@ func TestCookieCSRFAllowsSameOriginReferer(t *testing.T) {
 	httpServer := httptest.NewServer(srv.Handler())
 	defer httpServer.Close()
 	response := doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", nil, map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	})
 	cookie := sessionCookie(t, response)
 	response.Body.Close()
@@ -342,7 +342,7 @@ func TestSignupRejectsPasswordsShorterThanTwelveCharacters(t *testing.T) {
 
 			var response map[string]any
 			requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-				"email": "owner@example.test", "password": password,
+				"email": "owner@example.test", "setupToken": srv.adminToken, "password": password,
 			}, http.StatusBadRequest, &response)
 			errorValue, _ := response["error"].(map[string]any)
 			if errorValue["code"] != "weak_password" {
@@ -359,7 +359,7 @@ func TestSignupAcceptsTwelveCharacterPassword(t *testing.T) {
 	defer httpServer.Close()
 
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "123456789012",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "123456789012",
 	}, http.StatusCreated, nil)
 }
 
@@ -405,14 +405,14 @@ func TestSignupAfterBootstrapRequiresOwnerBearer(t *testing.T) {
 	defer httpServer.Close()
 	var owner map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "owner@example.test", "password": "correct horse battery staple",
+		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, &owner)
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", "", map[string]any{
-		"email": "intruder@example.test", "password": "correct horse battery staple",
+		"email": "intruder@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusForbidden, nil)
 	token, _ := owner["token"].(string)
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/signup", token, map[string]any{
-		"email": "member@example.test", "password": "correct horse battery staple",
+		"email": "member@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	}, http.StatusCreated, nil)
 }
 

@@ -70,8 +70,9 @@ e2e_init() {
 		"$SERVER_IMAGE" --addr :8080 --data-dir /var/lib/boxes \
 			--public-url http://boxes-e2e-server:8080 --image boxes/box:dev --snapshot-interval 1h >/dev/null
 	e2e_wait_http "$SERVER_URL/" 60 'boxes-server'
-	local signup_response
-	signup_response="$(curl -fsS -X POST "$API/auth/signup" -H 'Content-Type: application/json' -d '{"email":"e2e@example.test","password":"e2e-password-long"}')"
+	local signup_response node_response
+	local setup_token="${BOXES_SETUP_TOKEN:-$(docker exec "$SERVER_CONTAINER" cat /var/lib/boxes/admin.token)}"
+	signup_response="$(jq -cn --arg setupToken "$setup_token" '{email:"e2e@example.test",password:"e2e-password-long",setupToken:$setupToken}' | curl -fsS -X POST "$API/auth/signup" -H 'Content-Type: application/json' --data-binary @-)"
 	SESSION_TOKEN="$(jq -er '.token // .sessionToken' <<<"$signup_response")"
 	AUTH_HEADER="Authorization: Bearer $SESSION_TOKEN"
 	NODE_ID=local

@@ -551,8 +551,22 @@ paths:
   /auth/signup:
     post:
       summary: Create an account
+      description: The first account requires the one-time setup token from the installer. Later accounts require owner authorization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, minLength: 12}
+                setupToken: {type: string, description: Required for the first owner account only.}
       responses:
-        "200": {description: Successful response}
+        "201": {description: Account created}
+        "403": {description: Setup token required or owner authorization required}
+        "429": {description: Too many authentication attempts}
   /auth/status:
     get:
       summary: Check whether initial owner setup is required
@@ -572,6 +586,7 @@ paths:
       summary: Log in
       responses:
         "200": {description: Successful response}
+        "429": {description: Too many authentication attempts}
   /auth/logout:
     post:
       summary: Log out

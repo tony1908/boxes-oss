@@ -7,9 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -45,8 +48,12 @@ func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
 		Events []string `json:"events"`
 		Secret string   `json:"secret"`
 	}
-	if err := decodeJSON(r, &input); err != nil || !validWebhookURL(input.URL) || len(input.Events) == 0 {
+	if err := decodeJSON(r, &input); err != nil || len(input.Events) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a valid url and at least one event are required")
+		return
+	}
+	if !webhookURLAllowed(input.URL) {
+		writeError(w, http.StatusBadRequest, "invalid_url", "webhook URL cannot target localhost or a private or reserved IP address")
 		return
 	}
 	secret := input.Secret
@@ -87,8 +94,8 @@ func (s *Server) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.URL != nil {
-		if !validWebhookURL(*input.URL) {
-			writeError(w, http.StatusBadRequest, "invalid_url", "webhook URL must use http or https")
+		if !webhookURLAllowed(*input.URL) {
+			writeError(w, http.StatusBadRequest, "invalid_url", "webhook URL must use http or https and cannot target localhost or a private or reserved IP address")
 			return
 		}
 		webhook.URL = *input.URL
@@ -184,7 +191,9 @@ func (s *Server) deliverWebhook(item webhookRequest) {
 	mac := hmac.New(sha256.New, []byte(item.Secret))
 	_, _ = mac.Write(item.Body)
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	client := &http.Client{Timeout: 5 * time.Second}
+	allowPrivate := strings.EqualFold(os.Getenv("BOXES_WEBHOOK_ALLOW_PRIVATE"), "true")
+	transport := &http.Transport{DialContext: webhookDialContext(allowPrivate)}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	for attempt := 0; attempt < 4; attempt++ {
 		request, err := http.NewRequest(http.MethodPost, item.URL, bytes.NewReader(item.Body))
 		if err == nil {
@@ -207,7 +216,70 @@ func (s *Server) deliverWebhook(item webhookRequest) {
 
 func validWebhookURL(raw string) bool {
 	parsed, err := url.ParseRequestURI(raw)
-	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && !blockedWebhookHost(parsed.Hostname())
+}
+
+func webhookURLAllowed(raw string) bool {
+	parsed, err := url.ParseRequestURI(raw)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && (strings.EqualFold(os.Getenv("BOXES_WEBHOOK_ALLOW_PRIVATE"), "true") || !blockedWebhookHost(parsed.Hostname()))
+}
+
+func blockedWebhookHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") || host == "metadata" || host == "metadata.google.internal" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && blockedWebhookIP(ip)
+}
+
+func blockedWebhookIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	_, cgnat, _ := net.ParseCIDR("100.64.0.0/10")
+	return cgnat.Contains(ip)
+}
+
+func webhookDialContext(allowPrivate bool) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips := []net.IP{}
+		if ip := net.ParseIP(host); ip != nil {
+			ips = append(ips, ip)
+		} else {
+			resolved, resolveErr := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			for _, item := range resolved {
+				ips = append(ips, item.IP)
+			}
+		}
+		var lastErr error
+		for _, ip := range ips {
+			if !allowPrivate && blockedWebhookIP(ip) {
+				lastErr = errors.New("webhook destination resolves to a private or reserved address")
+				continue
+			}
+			conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+		}
+		if lastErr == nil {
+			lastErr = errors.New("webhook destination did not resolve")
+		}
+		return nil, lastErr
+	}
 }
 
 func cleanWebhookEvents(events []string) []string {

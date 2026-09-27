@@ -21,8 +21,9 @@ const sessionLifetime = 30 * 24 * time.Hour
 const minimumPasswordLength = 12
 
 type credentials struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	SetupToken string `json:"setupToken,omitempty"`
 }
 
 func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
@@ -31,12 +32,18 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "email and password are required")
 		return
 	}
+	if s.authRateLimited(r, input.Email, true) {
+		writeRateLimited(w, s.authRetryAfter(r, input.Email, true))
+		return
+	}
 	if utf8.RuneCountInString(input.Password) < minimumPasswordLength {
+		s.recordAuthFailure(r, input.Email)
 		writeError(w, http.StatusBadRequest, "weak_password", "password must be at least 12 characters")
 		return
 	}
 	address, err := mail.ParseAddress(input.Email)
 	if err != nil || address.Address != input.Email {
+		s.recordAuthFailure(r, input.Email)
 		writeError(w, http.StatusBadRequest, "invalid_email", "a valid email address is required")
 		return
 	}
@@ -47,15 +54,22 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	role := "user"
 	if len(users) == 0 {
+		if !constantTimeStringMatch(input.SetupToken, s.adminToken) {
+			s.recordAuthFailure(r, input.Email)
+			writeError(w, http.StatusForbidden, "setup_token_required", "use the owner setup link printed by the installer")
+			return
+		}
 		role = "owner"
 	} else {
 		header := r.Header.Get("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
+			s.recordAuthFailure(r, input.Email)
 			writeError(w, http.StatusForbidden, "owner_required", "only an owner can create users")
 			return
 		}
 		owner, ok := s.userForToken(r, strings.TrimSpace(strings.TrimPrefix(header, "Bearer ")))
 		if !ok || owner.Role != "owner" {
+			s.recordAuthFailure(r, input.Email)
 			writeError(w, http.StatusForbidden, "owner_required", "only an owner can create users")
 			return
 		}
@@ -68,9 +82,11 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	user := types.User{ID: types.NewID("usr_"), Email: input.Email, Role: role, PasswordHash: string(passwordHash), CreatedAt: now}
 	if err := s.store.CreateUser(r.Context(), user); err != nil {
+		s.recordAuthFailure(r, input.Email)
 		writeError(w, http.StatusConflict, "email_exists", "an account with this email already exists")
 		return
 	}
+	s.resetAuthFailures(input.Email)
 	token, err := s.createSession(r, user)
 	if err != nil {
 		s.apiError(w, err)
@@ -95,11 +111,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "email and password are required")
 		return
 	}
+	if s.authRateLimited(r, input.Email, true) {
+		writeRateLimited(w, s.authRetryAfter(r, input.Email, true))
+		return
+	}
 	user, err := s.store.UserByEmail(r.Context(), input.Email)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)) != nil {
+		s.recordAuthFailure(r, input.Email)
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "email or password is incorrect")
 		return
 	}
+	s.resetAuthFailures(input.Email)
 	token, err := s.createSession(r, user)
 	if err != nil {
 		s.apiError(w, err)
