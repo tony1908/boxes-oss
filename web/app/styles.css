@@ -464,13 +464,13 @@ tbody tr:last-child td {
   display:grid;
   gap:16px
 }
-.form-stack label,.pool-fields label,.inline-form label {
+.form-stack label,.inline-form label {
   display:grid;
   gap:6px;
   font-size:14px;
   font-weight:500
 }
-.form-stack input,.form-stack select,.form-stack textarea,.pool-fields input,.pool-fields select,.inline-form input,.prompt-form textarea,.prompt-form select {
+.form-stack input,.form-stack select,.form-stack textarea,.inline-form input,.prompt-form textarea,.prompt-form select {
   width:100%;
   min-height:40px;
   padding:8px 12px;
@@ -556,16 +556,7 @@ tbody tr:last-child td {
   border:0;
   background:none
 }
-.pool-create-form {
-  padding:20px;
-  border-top:1px solid var(--line)
-}
-.pool-fields {
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:12px
-}
-.pool-form-footer,.prompt-bottom,.inline-form {
+.prompt-bottom,.inline-form {
   display:flex;
   justify-content:space-between;
   gap:12px;
@@ -868,12 +859,6 @@ td[colspan]:has(>.empty-state) { padding-top:0; padding-bottom:0;
 }
 .resource-panel table { background: var(--surface);
 }
-.pool-panel { margin-top:40px; border:0; background:transparent;
-}
-.pool-panel .panel-heading { padding:0 0 12px; align-items:flex-start;
-}
-.pool-panel .panel-heading>div { padding-top:4px; }
-.pool-panel table { background:var(--surface); }
 @media (max-width: 899px) {
   .sidebar { position: fixed; top: 52px; bottom: auto; left: 0; right: 0; display: none; width: auto; padding: 8px 16px; border: 1px solid var(--line);
 }
@@ -991,8 +976,6 @@ tbody tr:nth-child(10) { animation-delay:180ms; }
 .page-content > .notice, .page-content > .created-secret, .page-content > .toast { flex:none; }
 .resource-panel { margin:0; overflow:visible; border:0; border-radius:0; background:transparent; }
 .resource-panel table { margin-top:0; background:var(--surface); }
-.pool-panel { margin-top:40px; }
-.pool-create-form { margin:0 0 16px; padding:0; border:0; }
 th { height:auto; padding:12px 16px; }
 td { padding:12px 16px; }
 td[colspan] { padding:12px 16px; }
@@ -1005,7 +988,6 @@ td[colspan] { padding:12px 16px; }
   .inline-form input { width:100%; }
   .section-header { flex-wrap:wrap; }
   .section-header-actions { width:auto; }
-  .pool-fields { grid-template-columns:1fr; }
 }
 .desktop-hidden {
   display: none

@@ -25,7 +25,7 @@ if (!baseURL || !email || !password || !outputDir) throw new Error('Set BASE_URL
 const colorScheme = process.env.COLOR_SCHEME ?? 'dark';
 if (!['light', 'dark'].includes(colorScheme)) throw new Error('COLOR_SCHEME must be light or dark.');
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const paths = ['/login/', '/', '/sandboxes/', '/nodes/', '/templates/', '/environments/', '/api-keys/', '/webhooks/', '/settings/', ...(process.env.EXTRA_PATHS ?? '').split(',').map((path) => path.trim()).filter(Boolean)];
+const paths = ['/login/', '/', '/sandboxes/', '/templates/', '/environments/', '/api-keys/', '/webhooks/', '/settings/', ...(process.env.EXTRA_PATHS ?? '').split(',').map((path) => path.trim()).filter(Boolean)];
 const parsed = new URL(baseURL);
 const tempDir = await mkdtemp(join(tmpdir(), 'boxes-ui-chrome-'));
 await mkdir(outputDir, { recursive: true });

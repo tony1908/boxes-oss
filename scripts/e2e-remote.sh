@@ -85,7 +85,7 @@ cd "$ROOT_DIR"
 CURRENT_STEP="build temporary boxes CLI"
 go build -o "$TEMP_DIR/bin/boxes" ./cmd/boxes
 
-CURRENT_STEP="login and check node health"
+CURRENT_STEP="login and check machine health"
 login_status="$(BOXES_PASSWORD="$BOXES_PASSWORD" jq -cn --arg email "$BOXES_EMAIL" \
 	'{email:$email,password:env.BOXES_PASSWORD}' | \
 	curl --connect-timeout 5 --max-time 30 -sS -o "$TEMP_DIR/login.json" -w '%{http_code}' \
@@ -94,18 +94,18 @@ login_status="$(BOXES_PASSWORD="$BOXES_PASSWORD" jq -cn --arg email "$BOXES_EMAI
 SESSION_TOKEN="$(jq -er '.token // .sessionToken' "$TEMP_DIR/login.json")" || fail "login response did not contain a session token"
 AUTH_HEADER="Authorization: Bearer $SESSION_TOKEN"
 
-node_deadline=$((SECONDS + 120))
-node_healthy=0
-while (( SECONDS < node_deadline )); do
-	if curl --connect-timeout 4 --max-time 10 -sS -H "$AUTH_HEADER" "$API/nodes" \
-		-o "$TEMP_DIR/nodes.json" 2>/dev/null && jq -e 'any(.nodes[]?; .status == "healthy")' "$TEMP_DIR/nodes.json" >/dev/null 2>&1; then
-		node_healthy=1
+machine_deadline=$((SECONDS + 120))
+machine_healthy=0
+while (( SECONDS < machine_deadline )); do
+	if curl --connect-timeout 4 --max-time 10 -sS -H "$AUTH_HEADER" "$API/machine" \
+		-o "$TEMP_DIR/machine.json" 2>/dev/null && jq -e '.machine.status == "healthy" and .machine.cpus > 0 and .machine.memoryBytes > 0' "$TEMP_DIR/machine.json" >/dev/null 2>&1; then
+		machine_healthy=1
 		break
 	fi
 	sleep 2
 done
-[[ "$node_healthy" == 1 ]] || fail 'no healthy node appeared within 2 minutes'
-printf 'login and healthy node verified\n'
+[[ "$machine_healthy" == 1 ]] || fail 'machine did not become healthy within 2 minutes'
+printf 'login and healthy machine verified\n'
 
 api_json() {
 	local method="$1" path="$2" expected="$3" body="$4" max_time="${5:-60}" code
@@ -389,7 +389,7 @@ fi
 
 CURRENT_STEP="multi-box stop, resume, data isolation, and TTL lifecycle"
 # Release capacity used by the preceding snapshot and fork checks before starting
-# the two lifecycle boxes. The node may also host one always-on box.
+# the two lifecycle boxes. The machine may also host one always-on box.
 for box_id in "$BOX_ID" "$FORK_ID"; do
 	api_no_body POST "/sandboxes/$box_id/stop" 200
 	wait_box_state "$box_id" stopped 240

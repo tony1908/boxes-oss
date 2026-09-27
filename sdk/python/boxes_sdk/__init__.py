@@ -66,6 +66,10 @@ class Boxes:
             return response.json()
         return response.content
 
+    def machine(self) -> Any:
+        """Return the local VM capacity and health record."""
+        return self._request("GET", "/machine")["machine"]
+
     def prompt(self, sandbox_id: str, prompt: str, provider: str, **options: Any) -> Any:
         body = {"prompt": prompt, "provider": provider, **options}
         return self._request("POST", f"/sandboxes/{quote(sandbox_id, safe='')}/prompt", json=body)

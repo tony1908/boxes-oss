@@ -4,8 +4,8 @@ import { loginRedirect, postLoginDestination } from '../app/lib/auth-redirect.mj
 
 test('a protected API 401 redirects to login with the intended path and query', () => {
   assert.equal(
-    loginRedirect(401, '/sandboxes', { pathname: '/nodes/', search: '?status=healthy' }),
-    '/login/?next=%2Fnodes%2F%3Fstatus%3Dhealthy',
+    loginRedirect(401, '/sandboxes', { pathname: '/settings/', search: '?status=healthy' }),
+    '/login/?next=%2Fsettings%2F%3Fstatus%3Dhealthy',
   );
 });
 

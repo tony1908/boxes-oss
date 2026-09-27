@@ -42,3 +42,13 @@ test('listAll follows snapshot pagination cursors', async t => {
   assert.deepEqual(await c.snapshots.listAll({limit:1}),[{id:'s1'},{id:'s2'}]);
   assert.equal(urls.length,2);
 });
+
+
+test('reads the authenticated single-machine record', async t => {
+  let auth;
+  const machine={cpus:4,memoryBytes:8589934592,memAvailableBytes:4294967296,diskFreeBytes:17179869184,swapFreeBytes:0,memoryPressureSomeAvg10:0,status:'healthy',runningBoxes:2,lastSeen:'2026-09-27T12:00:00Z'};
+  const server=createServer((req,res)=>{auth=req.headers.authorization;res.setHeader('content-type','application/json');res.end(JSON.stringify({machine}));});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close());
+  const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});
+  assert.deepEqual(await c.machine(),machine); assert.equal(auth,'Bearer secret');
+});

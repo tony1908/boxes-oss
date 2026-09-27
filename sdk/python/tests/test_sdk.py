@@ -37,3 +37,13 @@ def test_snake_case_wire_names_and_response_unwrapping():
         c.sandboxes.delete("bx_2")
     assert requests[0].read() == b'{"ttlSeconds":3600}'
     assert requests[1].read() == b'{"name":"dev","setupScript":"echo ok"}'
+
+
+def test_machine_returns_local_vm_record():
+    machine = {"cpus": 4, "memoryBytes": 8589934592, "memAvailableBytes": 4294967296, "diskFreeBytes": 17179869184, "swapFreeBytes": 0, "memoryPressureSomeAvg10": 0.0, "status": "healthy", "runningBoxes": 2, "lastSeen": "2026-09-27T12:00:00Z"}
+    def handler(request):
+        assert request.headers["authorization"] == "Bearer secret"
+        assert request.url.path == "/api/v1/machine"
+        return httpx.Response(200, json={"machine": machine})
+    with Boxes("https://example.test", "secret", transport=httpx.MockTransport(handler)) as c:
+        assert c.machine() == machine

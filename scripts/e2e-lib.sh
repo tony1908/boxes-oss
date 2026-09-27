@@ -65,18 +65,17 @@ e2e_init() {
 	docker volume create "$TRAEFIK_VOLUME" >/dev/null; TRAEFIK_VOLUME_CREATED=1
 	docker run -d --name "$SERVER_CONTAINER" --network boxes-net --network-alias boxes-e2e-server \
 		-e GOMEMLIMIT=2MiB -e GOGC=1 -e GOMAXPROCS=1 -e GODEBUG=madvdontneed=1 \
-		-e BOXES_STORAGE_RESTIC_PASSWORD=e2e \
+		-e BOXES_STORAGE_RESTIC_PASSWORD=e2e -e BOXES_NODE_TOKEN=e2e -e BOXES_NODE_ID=local \
 		-p 18080:8080 -v "$SERVER_VOLUME:/var/lib/boxes" \
 		"$SERVER_IMAGE" --addr :8080 --data-dir /var/lib/boxes \
-			--public-url http://boxes-e2e-server:8080 --image boxes/box:dev --memory-overcommit 4 --snapshot-interval 1h >/dev/null
+			--public-url http://boxes-e2e-server:8080 --image boxes/box:dev --snapshot-interval 1h >/dev/null
 	e2e_wait_http "$SERVER_URL/" 60 'boxes-server'
-	local signup_response node_response
+	local signup_response
 	signup_response="$(curl -fsS -X POST "$API/auth/signup" -H 'Content-Type: application/json' -d '{"email":"e2e@example.test","password":"e2e-password-long"}')"
 	SESSION_TOKEN="$(jq -er '.token // .sessionToken' <<<"$signup_response")"
 	AUTH_HEADER="Authorization: Bearer $SESSION_TOKEN"
-	node_response="$(curl -fsS -X POST "$API/nodes" -H "$AUTH_HEADER" -H 'Content-Type: application/json' -d '{"name":"local-e2e","hostBase":"boxes.localhost"}')"
-	NODE_ID="$(jq -er '.node.id' <<<"$node_response")"
-	NODE_TOKEN="$(jq -er '.joinToken' <<<"$node_response")"
+	NODE_ID=local
+	NODE_TOKEN=e2e
 	docker run -d --name "$AGENT_CONTAINER" --pid host --network boxes-net --network-alias boxes-e2e-agent \
 		-e GOMEMLIMIT=2MiB -e GOGC=1 -e GOMAXPROCS=1 -e GODEBUG=madvdontneed=1 \
 		-e BOXES_SERVER_URL=ws://boxes-e2e-server:8080/api/v1/agent/connect \
@@ -90,7 +89,7 @@ e2e_init() {
 		-v /var/lib/containerd:/var/lib/containerd:ro -v /var/lib/docker:/var/lib/docker:ro \
 		-v "$RESTIC_VOLUME:/var/lib/boxes/restic" -v "$TRAEFIK_VOLUME:/etc/boxes/traefik/dynamic" \
 		"$AGENT_IMAGE" >/dev/null
-	e2e_wait_node
+	e2e_wait_machine
 }
 
 e2e_wait_http() {
@@ -104,24 +103,23 @@ e2e_wait_http() {
 	return 1
 }
 
-e2e_wait_node() {
+e2e_wait_machine() {
 	local deadline=$((SECONDS + 150))
 	while (( SECONDS < deadline )); do
-		if curl --connect-timeout 2 --max-time 4 -fsS "$API/nodes" -H "$AUTH_HEADER" 2>/dev/null | jq -e --arg id "$NODE_ID" \
-			'any(.nodes[]; .id == $id and .status == "healthy" and .cpus >= 2 and .memoryBytes >= 4294967296)' >/dev/null; then
-			printf 'node online with small-box capacity\n'
+		if curl --connect-timeout 2 --max-time 4 -fsS "$API/machine" -H "$AUTH_HEADER" 2>/dev/null | jq -e '.machine.status == "healthy" and .machine.cpus >= 2 and .machine.memoryBytes >= 4294967296' >/dev/null; then
+			printf 'machine online with small-box capacity\n'
 			return 0
 		fi
 		sleep 1
 	done
-	printf 'node did not become healthy with small-box capacity\n' >&2
+	printf 'machine did not become healthy with small-box capacity\n' >&2
 	return 1
 }
 
 e2e_create_box() {
 	local result response status
 	result="$(curl -sS -w $'\n%{http_code}' -X POST "$API/sandboxes" -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
-		-d "{\"type\":\"small\",\"ttlSeconds\":0,\"node\":\"$NODE_ID\"}")"
+		-d '{"type":"small","ttlSeconds":0}')"
 	status="${result##*$'\n'}"
 	response="${result%$'\n'*}"
 	if [[ "$status" != 201 ]]; then printf 'sandbox creation failed (HTTP %s): %s\n' "$status" "$response" >&2; return 1; fi
@@ -158,8 +156,8 @@ e2e_cleanup() {
 	trap - EXIT
 	if (( status != 0 )); then
 		if [[ -n "${SESSION_TOKEN:-}" ]]; then
-			printf '\n--- node status ---\n' >&2
-			curl -fsS "$API/nodes" -H "Authorization: Bearer $SESSION_TOKEN" 2>/dev/null | jq '.nodes[] | {id, status, cpus, memoryBytes, freeMemoryBytes, diskFreeBytes}' >&2 || true
+			printf '\n--- machine status ---\n' >&2
+			curl -fsS "$API/machine" -H "Authorization: Bearer $SESSION_TOKEN" 2>/dev/null | jq '.machine' >&2 || true
 		fi
 		for container in "${AGENT_CONTAINER:-}" "${SERVER_CONTAINER:-}" "${TRAEFIK_CONTAINER:-}"; do
 			if [[ -n "$container" ]] && docker container inspect "$container" >/dev/null 2>&1; then
