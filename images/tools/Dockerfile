@@ -6,7 +6,7 @@ ARG GO_VERSION=1.26.8
 ARG RUST_VERSION=1.98.1
 ARG PI_VERSION=0.73.1
 ARG PRIME_AGENT_VERSION=0.9.6
-ARG KIMI_VERSION=1.52.0
+ARG KIMI_CODE_VERSION=2.1.1
 ARG PI_MCP_EXTENSION_VERSION=1.5.0
 
 FROM node:22.22.2-bookworm-slim AS node
@@ -24,7 +24,7 @@ ARG GO_VERSION
 ARG RUST_VERSION
 ARG PI_VERSION
 ARG PRIME_AGENT_VERSION
-ARG KIMI_VERSION
+ARG KIMI_CODE_VERSION
 ARG PI_MCP_EXTENSION_VERSION
 
 ENV PATH=/opt/boxes-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -37,7 +37,7 @@ RUN set -eux; \
     ln -s ../lib/node_modules/npm/bin/npx-cli.js /opt/boxes-tools/bin/npx; \
     npm install --prefix /opt/boxes-tools --global "npm@${NPM_VERSION}"; \
     apt-get update; \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl python3 python3-venv; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl; \
     case "${TARGETARCH}" in \
         amd64) gh_arch=amd64; go_arch=amd64; rust_triple=x86_64-unknown-linux-gnu ;; \
         arm64) gh_arch=arm64; go_arch=arm64; rust_triple=aarch64-unknown-linux-gnu ;; \
@@ -75,10 +75,12 @@ RUN set -eux; \
     rustc --version
 
 RUN set -eux; \
-    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/opt/boxes-tools/bin UV_NO_MODIFY_PATH=1 sh; \
-    UV_TOOL_DIR=/opt/boxes-tools/uv/tools UV_TOOL_BIN_DIR=/opt/boxes-tools/bin UV_PYTHON_INSTALL_DIR=/opt/boxes-tools/uv/python \
-        /opt/boxes-tools/bin/uv tool install --python 3.12 --python-preference only-managed "kimi-cli==${KIMI_VERSION}"; \
-    chmod -R a+rX /opt/boxes-tools/uv; \
+    case "${TARGETARCH}" in amd64) kimi_arch=x64 ;; arm64) kimi_arch=arm64 ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac; \
+    kimi_sha="$(curl -fsSL "https://code.kimi.com/kimi-code/binaries/${KIMI_CODE_VERSION}/manifest.json" | grep -o "\"linux-${kimi_arch}\": {[^}]*}" | sed -n 's/.*"checksum": "\([a-f0-9]\{64\}\)".*/\1/p')"; \
+    test -n "${kimi_sha}"; \
+    curl -fsSL "https://code.kimi.com/kimi-code/binaries/${KIMI_CODE_VERSION}/kimi-code-linux-${kimi_arch}" -o /opt/boxes-tools/bin/kimi; \
+    echo "${kimi_sha}  /opt/boxes-tools/bin/kimi" | sha256sum -c -; \
+    chmod 0755 /opt/boxes-tools/bin/kimi; \
     kimi --version; \
     apt-get purge -y --auto-remove curl; \
     rm -rf /var/lib/apt/lists/* /tmp/*

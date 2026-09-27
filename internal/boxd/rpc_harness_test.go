@@ -17,8 +17,8 @@ func TestNewHarnessArgs(t *testing.T) {
 	if got := piArgs("prime-agent", "/config", ConvSpec{}); !reflect.DeepEqual(got, wantPrime) {
 		t.Fatalf("prime args = %#v, want %#v", got, wantPrime)
 	}
-	wantKimi := []string{"kimi", "--print", "--input-format=stream-json", "--output-format=stream-json", "--mcp-config-file", "/config/.boxd/mcp.json", "--model", "kimi-k2.5", "--session", "sid"}
-	if got := kimiArgs(ConvSpec{Model: "kimi-k2.5", SessionID: "sid"}, "/config"); !reflect.DeepEqual(got, wantKimi) {
+	wantKimi := []string{"kimi", "--model", "kimi-code/kimi-for-coding", "acp"}
+	if got := kimiArgs(ConvSpec{Model: "kimi-code/kimi-for-coding", SessionID: "sid"}); !reflect.DeepEqual(got, wantKimi) {
 		t.Fatalf("kimi args = %#v, want %#v", got, wantKimi)
 	}
 }
@@ -41,8 +41,16 @@ func TestRecordedNewHarnessEvents(t *testing.T) {
 	if err != nil || id != "prime-session-1" || !reflect.DeepEqual(prime, wantPrime) {
 		t.Fatalf("prime mapping = %#v, %q, %v", prime, id, err)
 	}
-	kimi, err := mapKimiEvent(read("kimi_stream_json.jsonl"))
-	wantKimi := []HarnessEvent{{Type: "message.delta", Data: map[string]any{"text": "hello"}}, {Type: "tool.call", Data: map[string]any{"id": "call-2", "name": "Shell", "input": "{\"command\":\"pwd\"}"}}}
+	var kimi []HarnessEvent
+	for _, line := range strings.Split(string(read("kimi_acp_updates.jsonl")), "\n") {
+		var mapped []HarnessEvent
+		mapped, err = mapKimiACPEvent([]byte(line))
+		if err != nil {
+			break
+		}
+		kimi = append(kimi, mapped...)
+	}
+	wantKimi := []HarnessEvent{{Type: "message.delta", Data: map[string]any{"text": "hello"}}, {Type: "tool.call", Data: map[string]any{"id": "call-2", "name": "Shell", "input": map[string]any{"command": "pwd"}}}, {Type: "tool.result", Data: map[string]any{"id": "call-2", "output": []any{map[string]any{"type": "content", "content": map[string]any{"type": "text", "text": "/config"}}}, "isError": false}}}
 	if err != nil || !reflect.DeepEqual(kimi, wantKimi) {
 		t.Fatalf("kimi mapping = %#v, %v", kimi, err)
 	}

@@ -24,7 +24,7 @@ func (s *Server) providerModels(w http.ResponseWriter, _ *http.Request) {
 		map[string]any{"id": "opencode", "models": []string{"anthropic/claude-sonnet-4-5", "openai/gpt-5"}, "reasoning": []string{"low", "medium", "high"}},
 		map[string]any{"id": "pi", "models": []string{"anthropic/claude-sonnet-4-5", "openai/gpt-5"}, "reasoning": []string{"off", "minimal", "low", "medium", "high"}},
 		map[string]any{"id": "prime", "models": []string{"anthropic/claude-sonnet-4-5", "openai/gpt-5"}, "reasoning": []string{"off", "minimal", "low", "medium", "high"}},
-		map[string]any{"id": "kimi", "models": []string{"kimi-k2.5", "kimi-k2-thinking"}, "reasoning": []string{"low", "medium", "high"}},
+		map[string]any{"id": "kimi", "models": []string{"kimi-code/kimi-for-coding", "kimi-code/k3", "kimi-code/kimi-for-coding-highspeed"}, "reasoning": []string{"low", "medium", "high"}},
 	}})
 }
 

@@ -41,7 +41,7 @@ boxes dashboard [id|current]
 boxes forward <id|current> <port> [--local-port N]
 ```
 
-Agent credentials are supplied through an Environment attached to the box. Claude uses `ANTHROPIC_API_KEY`; Codex uses `OPENAI_API_KEY`; OpenCode uses the key for its selected model provider; Pi accepts provider keys such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY`; Kimi Code uses `MOONSHOT_API_KEY` / `KIMI_API_KEY` or its saved login; Prime Agent accepts provider keys such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY`.
+Agent credentials are supplied through an Environment attached to the box. Claude uses `ANTHROPIC_API_KEY`; Codex uses `OPENAI_API_KEY`; OpenCode uses the key for its selected model provider; Pi accepts provider keys such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY`; Kimi Code uses `KIMI_MODEL_API_KEY` with `KIMI_MODEL_NAME` for headless API-key access, or its saved login; Prime Agent accepts provider keys such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY`.
 
 Use `boxes push <id> [dir] [--to path]` to copy a repo into a box. The default destination is `/config/<directory name>`. Don't copy `node_modules` or base64-encode files through `exec`.
 

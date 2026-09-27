@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 )
@@ -171,7 +172,7 @@ func mapPiEvent(line []byte, provider string) ([]HarnessEvent, string, error) {
 	return out, id, nil
 }
 
-// KimiHarness uses Kimi Code's persistent stream-JSON print mode.
+// KimiHarness drives Kimi Code through its persistent ACP JSON-RPC interface.
 type KimiHarness struct {
 	workDir  string
 	executor ClaudeExecutor
@@ -180,6 +181,7 @@ type KimiHarness struct {
 func NewKimiHarness(workDir string) *KimiHarness {
 	return &KimiHarness{workDir: workDir, executor: osClaudeExecutor{}}
 }
+
 func (h *KimiHarness) Start(ctx context.Context, spec ConvSpec) (Session, error) {
 	dir := h.workDir
 	if dir == "" {
@@ -189,7 +191,7 @@ func (h *KimiHarness) Start(ctx context.Context, spec ConvSpec) (Session, error)
 	if err != nil {
 		return nil, err
 	}
-	args := kimiArgs(spec, dir)
+	args := kimiArgs(spec)
 	ex := h.executor
 	if ex == nil {
 		ex = osClaudeExecutor{}
@@ -198,116 +200,305 @@ func (h *KimiHarness) Start(ctx context.Context, spec ConvSpec) (Session, error)
 	if err != nil {
 		return nil, fmt.Errorf("start kimi: %w", err)
 	}
-	sessionID := spec.SessionID
-	if sessionID == "" {
-		sessionID = spec.ConversationID
+	s := &kimiSession{process: p, stdin: p.Stdin(), events: make(chan HarnessEvent, 128), pending: make(map[int]chan kimiRPCMessage), promptIDs: make(map[int]bool), id: spec.SessionID}
+	go s.readMessages()
+	if _, err := s.request("initialize", map[string]any{"protocolVersion": 1, "clientInfo": map[string]string{"name": "boxes", "version": "1"}, "clientCapabilities": map[string]any{}}); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("initialize kimi ACP: %w", err)
 	}
-	s := &kimiSession{process: p, stdin: p.Stdin(), events: make(chan HarnessEvent, 128), id: sessionID}
-	go s.readEvents()
+	if err := s.write(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("complete kimi ACP initialization: %w", err)
+	}
+	var mcp []map[string]any
+	if data, readErr := os.ReadFile(dir + "/.boxd/mcp.json"); readErr == nil {
+		var cfg struct {
+			Servers map[string]map[string]any `json:"mcpServers"`
+		}
+		if json.Unmarshal(data, &cfg) == nil {
+			for name, server := range cfg.Servers {
+				server["name"] = name
+				mcp = append(mcp, server)
+			}
+		}
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		_ = s.Close()
+		return nil, readErr
+	}
+	if s.id != "" {
+		_, err = s.request("session/load", map[string]any{"cwd": dir, "sessionId": s.id, "mcpServers": mcp})
+	} else {
+		var result json.RawMessage
+		result, err = s.request("session/new", map[string]any{"cwd": dir, "mcpServers": mcp})
+		if err == nil {
+			var session struct {
+				SessionID string `json:"sessionId"`
+			}
+			err = json.Unmarshal(result, &session)
+			s.id = session.SessionID
+		}
+	}
+	if err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("create kimi ACP session: %w", err)
+	}
 	return s, nil
 }
 
-func kimiArgs(spec ConvSpec, dir string) []string {
-	args := []string{"kimi", "--print", "--input-format=stream-json", "--output-format=stream-json", "--mcp-config-file", dir + "/.boxd/mcp.json"}
+func kimiArgs(spec ConvSpec) []string {
+	args := []string{"kimi"}
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
-	sessionID := spec.SessionID
-	if sessionID == "" {
-		sessionID = spec.ConversationID
-	}
-	if sessionID != "" {
-		args = append(args, "--session", sessionID)
-	}
-	return args
+	return append(args, "acp")
+}
+
+type kimiRPCMessage struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params"`
+	Result  json.RawMessage `json:"result"`
+	Error   *struct {
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 type kimiSession struct {
-	process ClaudeProcess
-	stdin   io.WriteCloser
-	events  chan HarnessEvent
-	id      string
-	mu      sync.Mutex
-	closed  bool
+	process   ClaudeProcess
+	stdin     io.WriteCloser
+	events    chan HarnessEvent
+	id        string
+	mu        sync.Mutex
+	writeMu   sync.Mutex
+	nextID    int
+	pending   map[int]chan kimiRPCMessage
+	promptIDs map[int]bool
+	closed    bool
 }
 
-func (s *kimiSession) send(text string) error {
+func (s *kimiSession) write(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if _, err = s.stdin.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n\r\n", len(b)))); err != nil {
+		return err
+	}
+	_, err = s.stdin.Write(b)
+	return err
+}
+func (s *kimiSession) request(method string, params any) (json.RawMessage, error) {
+	s.mu.Lock()
+	s.nextID++
+	id := s.nextID
+	ch := make(chan kimiRPCMessage, 1)
+	s.pending[id] = ch
+	s.mu.Unlock()
+	if err := s.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
+		s.mu.Lock()
+		delete(s.pending, id)
+		s.mu.Unlock()
+		return nil, err
+	}
+	msg, ok := <-ch
+	if !ok {
+		return nil, errors.New("kimi ACP process ended before replying")
+	}
+	if msg.Error != nil {
+		return nil, errors.New(msg.Error.Message)
+	}
+	return msg.Result, nil
+}
+func (s *kimiSession) Send(text string) error  { return s.prompt(text) }
+func (s *kimiSession) Steer(text string) error { return s.prompt(text) }
+func (s *kimiSession) prompt(text string) error {
+	s.mu.Lock()
+	closed := s.closed
+	sessionID := s.id
+	s.mu.Unlock()
+	if closed {
+		return errors.New("kimi session is closed")
+	}
 	if strings.TrimSpace(text) == "" {
 		return errors.New("prompt is empty")
 	}
+	id := s.nextRequestID()
+	s.mu.Lock()
+	s.pending[id] = make(chan kimiRPCMessage, 1)
+	s.promptIDs[id] = true
+	s.mu.Unlock()
+	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": "session/prompt", "params": map[string]any{"sessionId": sessionID, "prompt": []map[string]any{{"type": "text", "text": text}}}})
+}
+func (s *kimiSession) nextRequestID() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return errors.New("kimi session is closed")
-	}
-	b, _ := json.Marshal(map[string]string{"role": "user", "content": text})
-	b = append(b, '\n')
-	_, err := s.stdin.Write(b)
-	return err
+	s.nextID++
+	return s.nextID
 }
-func (s *kimiSession) Send(v string) error         { return s.send(v) }
-func (s *kimiSession) Steer(v string) error        { return s.send(v) }
-func (s *kimiSession) Interrupt() error            { return s.process.Interrupt() }
+func (s *kimiSession) Interrupt() error {
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	return s.write(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": id}})
+}
 func (s *kimiSession) Events() <-chan HarnessEvent { return s.events }
-func (s *kimiSession) SessionID() string           { return s.id }
+func (s *kimiSession) SessionID() string           { s.mu.Lock(); defer s.mu.Unlock(); return s.id }
 func (s *kimiSession) Close() error {
 	s.mu.Lock()
-	if !s.closed {
-		s.closed = true
-		_ = s.stdin.Close()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
 	}
+	s.closed = true
 	s.mu.Unlock()
+	_ = s.stdin.Close()
+	_ = s.process.Interrupt()
 	return nil
 }
-func (s *kimiSession) readEvents() {
+func (s *kimiSession) readMessages() {
 	defer close(s.events)
-	sc := bufio.NewScanner(s.process.Stdout())
-	sc.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		events, err := mapKimiEvent(sc.Bytes())
-		if err != nil {
+	defer func() {
+		s.mu.Lock()
+		for id, ch := range s.pending {
+			delete(s.pending, id)
+			close(ch)
+		}
+		s.mu.Unlock()
+	}()
+	r := bufio.NewReader(s.process.Stdout())
+	for {
+		length := -1
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					s.events <- HarnessEvent{Type: "turn.failed", Data: map[string]any{"error": err.Error()}}
+				}
+				goto done
+			}
+			line = strings.TrimSpace(line)
+			if line == "" {
+				break
+			}
+			if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+				fmt.Sscanf(strings.TrimSpace(strings.SplitN(line, ":", 2)[1]), "%d", &length)
+			}
+		}
+		if length < 0 {
+			continue
+		}
+		body := make([]byte, length)
+		if _, err := io.ReadFull(r, body); err != nil {
+			s.events <- HarnessEvent{Type: "turn.failed", Data: map[string]any{"error": err.Error()}}
+			goto done
+		}
+		var msg kimiRPCMessage
+		if err := json.Unmarshal(body, &msg); err != nil {
 			s.events <- HarnessEvent{Type: "turn.failed", Data: map[string]any{"error": err.Error()}}
 			continue
 		}
-		for _, e := range events {
-			s.events <- e
+		if msg.Method != "" {
+			if msg.Method == "session/update" {
+				events, _ := mapKimiACPEvent(msg.Params)
+				for _, e := range events {
+					e.SessionID = s.SessionID()
+					s.events <- e
+				}
+			} else if msg.Method == "session/request_permission" {
+				var req struct {
+					Options []struct {
+						OptionID string `json:"optionId"`
+						Kind     string `json:"kind"`
+					} `json:"options"`
+				}
+				_ = json.Unmarshal(msg.Params, &req)
+				option := "allow_once"
+				for _, o := range req.Options {
+					if o.Kind == "allow_always" {
+						option = o.OptionID
+						break
+					}
+					if o.Kind == "allow_once" {
+						option = o.OptionID
+					}
+				}
+				_ = s.write(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(msg.ID), "result": map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": option}}})
+			}
+			continue
+		}
+		if len(msg.ID) > 0 {
+			var id int
+			if json.Unmarshal(msg.ID, &id) == nil {
+				s.mu.Lock()
+				ch := s.pending[id]
+				delete(s.pending, id)
+				isPrompt := s.promptIDs[id]
+				delete(s.promptIDs, id)
+				s.mu.Unlock()
+				if ch != nil {
+					if isPrompt {
+						if msg.Error != nil {
+							s.events <- HarnessEvent{Type: "turn.failed", SessionID: s.SessionID(), Data: map[string]any{"error": msg.Error.Message}}
+						} else {
+							s.events <- HarnessEvent{Type: "turn.completed", SessionID: s.SessionID()}
+						}
+					} else {
+						ch <- msg
+					}
+				}
+			}
 		}
 	}
-	if err := sc.Err(); err != nil {
-		s.events <- HarnessEvent{Type: "turn.failed", Data: map[string]any{"error": err.Error()}}
-	}
+done:
 	if err := s.process.Wait(); err != nil {
-		s.events <- HarnessEvent{Type: "turn.failed", Data: map[string]any{"error": err.Error()}}
+		s.events <- HarnessEvent{Type: "turn.failed", SessionID: s.SessionID(), Data: map[string]any{"error": err.Error(), "stderr": s.process.StderrTail()}}
 	}
 }
-func mapKimiEvent(line []byte) ([]HarnessEvent, error) {
-	var m map[string]any
-	if e := json.Unmarshal(line, &m); e != nil {
-		return nil, e
+
+func mapKimiACPEvent(raw json.RawMessage) ([]HarnessEvent, error) {
+	var p struct {
+		Update struct {
+			SessionUpdate string          `json:"sessionUpdate"`
+			Content       json.RawMessage `json:"content"`
+			ToolCallID    string          `json:"toolCallId"`
+			Title         string          `json:"title"`
+			RawInput      any             `json:"rawInput"`
+			Status        string          `json:"status"`
+		} `json:"update"`
 	}
-	role, _ := m["role"].(string)
-	content, _ := m["content"].(string)
+	var envelope struct {
+		Params json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, err
+	}
+	if len(envelope.Params) != 0 {
+		raw = envelope.Params
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, err
+	}
+	u := p.Update
 	var out []HarnessEvent
-	if role == "assistant" && content != "" {
-		out = append(out, HarnessEvent{Type: "message.delta", Data: map[string]any{"text": content}})
-	}
-	if role == "assistant" {
-		if calls, ok := m["tool_calls"].([]any); ok {
-			for _, c := range calls {
-				call, _ := c.(map[string]any)
-				fn, _ := call["function"].(map[string]any)
-				out = append(out, HarnessEvent{Type: "tool.call", Data: map[string]any{"id": call["id"], "name": fn["name"], "input": fn["arguments"]}})
-			}
-			if len(calls) > 0 {
-				return out, nil
-			}
+	switch u.SessionUpdate {
+	case "agent_message_chunk":
+		var content struct {
+			Text string `json:"text"`
 		}
-	}
-	if role == "tool" {
-		out = append(out, HarnessEvent{Type: "tool.result", Data: map[string]any{"id": m["tool_call_id"], "output": m["content"], "isError": false}})
-	}
-	if role == "assistant" {
-		out = append(out, HarnessEvent{Type: "turn.completed"})
+		if json.Unmarshal(u.Content, &content) == nil && content.Text != "" {
+			out = append(out, HarnessEvent{Type: "message.delta", Data: map[string]any{"text": content.Text}})
+		}
+	case "tool_call":
+		out = append(out, HarnessEvent{Type: "tool.call", Data: map[string]any{"id": u.ToolCallID, "name": u.Title, "input": u.RawInput}})
+	case "tool_call_update":
+		if u.Status == "completed" || u.Status == "failed" {
+			var content any
+			_ = json.Unmarshal(u.Content, &content)
+			out = append(out, HarnessEvent{Type: "tool.result", Data: map[string]any{"id": u.ToolCallID, "output": content, "isError": u.Status == "failed"}})
+		}
 	}
 	return out, nil
 }
