@@ -429,6 +429,7 @@ upgrade_install() {
   tools_image="boxes/tools:latest"
   env_add_default /etc/boxes/server.env BOXES_IMAGE "$image"
   env_add_default /etc/boxes/server.env BOXES_TOOLS_IMAGE "$tools_image"
+  env_add_default /etc/boxes/agent.env BOXES_TOOLS_IMAGE "$tools_image"
   env_add_default /etc/boxes/server.env BOXES_MEMORY_OVERCOMMIT 1.0
   chmod 0600 /etc/boxes/server.env
 
@@ -583,6 +584,7 @@ BOXES_SERVER_URL=wss://${DOMAIN}/api/v1/agent/connect
 BOXES_NODE_TOKEN=${JOIN_TOKEN}
 BOXES_RUNTIME=sysbox-runc
 BOXES_TRAEFIK_DIR=/etc/boxes/traefik/dynamic
+BOXES_TOOLS_IMAGE=${TOOLS_IMAGE}
 RESTIC_REPOSITORY=${RESTIC_REPOSITORY}
 RESTIC_PASSWORD=${RESTIC_PASSWORD_VALUE}
 AWS_ACCESS_KEY_ID=${BOXES_S3_ACCESS_KEY:-}
