@@ -30,71 +30,6 @@ func TestHelpListsSupportedBoxSizes(t *testing.T) {
 	}
 }
 
-func TestPoolCLIListAddAndRemoveReadsCredentialFromStdin(t *testing.T) {
-	var created map[string]any
-	var removed bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer owner-token" {
-			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
-		}
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/pools":
-			_, _ = io.WriteString(w, `{"pools":[]}`)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/pools":
-			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
-				t.Errorf("decode pool: %v", err)
-			}
-			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{"pool":{"id":"pl_cli"}}`)
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/pools/pl_cli":
-			removed = true
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Errorf("request = %s %s", r.Method, r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	var out bytes.Buffer
-	app := CLI{In: strings.NewReader("provider-secret\n"), Out: &out, ConfigPath: filepath.Join(t.TempDir(), "config.json"), BaseURL: server.URL, Token: "owner-token", HTTPClient: server.Client()}
-	if err := app.Run(context.Background(), []string{"pool", "list"}); err != nil {
-		t.Fatalf("pool list: %v", err)
-	}
-	args := []string{"pool", "add", "--name", "workers", "--provider", "digitalocean", "--region", "nyc3", "--size", "s-2vcpu-4gb", "--image", "ubuntu", "--min-nodes", "0", "--max-nodes", "2", "--idle-minutes", "10", "--token-stdin"}
-	if err := app.Run(context.Background(), args); err != nil {
-		t.Fatalf("pool add: %v", err)
-	}
-	if created["credentials"] != "provider-secret" || created["region"] != "nyc3" || created["maxNodes"] != float64(2) {
-		t.Fatalf("pool create request = %#v", created)
-	}
-	if err := app.Run(context.Background(), []string{"pool", "rm", "pl_cli"}); err != nil {
-		t.Fatalf("pool rm: %v", err)
-	}
-	if !removed {
-		t.Fatal("pool rm did not delete the selected pool")
-	}
-}
-
-func TestNodeUndrainPostsToUndrainEndpoint(t *testing.T) {
-	called := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/nodes/nd_cli/undrain" {
-			t.Errorf("request = %s %s, want POST /api/v1/nodes/nd_cli/undrain", r.Method, r.URL.Path)
-		}
-		called = true
-		_, _ = io.WriteString(w, `{"node":{"id":"nd_cli","drained":false}}`)
-	}))
-	defer server.Close()
-
-	app := CLI{In: strings.NewReader(""), Out: io.Discard, ConfigPath: filepath.Join(t.TempDir(), "config.json"), BaseURL: server.URL, Token: "owner-token", HTTPClient: server.Client()}
-	if err := app.Run(context.Background(), []string{"node", "undrain", "nd_cli"}); err != nil {
-		t.Fatalf("node undrain: %v", err)
-	}
-	if !called {
-		t.Fatal("node undrain did not call the API")
-	}
-}
-
 func TestLoginStoresCredentialsWithPrivatePermissions(t *testing.T) {
 	var got struct {
 		Email    string `json:"email"`
@@ -291,11 +226,11 @@ func TestNewSendsDocumentedSandboxRequestAndPrintsJSON(t *testing.T) {
 
 	var out, stderr bytes.Buffer
 	app := CLI{Out: &out, Err: &stderr, ConfigPath: filepath.Join(t.TempDir(), "config.json"), HTTPClient: server.Client(), BaseURL: server.URL, Token: "api-token"}
-	err := app.Run(context.Background(), []string{"--json", "new", "--type", "large", "--ttl", "900", "--env", "env_demo", "--node", "nd_demo"})
+	err := app.Run(context.Background(), []string{"--json", "new", "--type", "large", "--ttl", "900", "--env", "env_demo"})
 	if err != nil {
 		t.Fatalf("Run new: %v (stderr: %s)", err, stderr.String())
 	}
-	if got["type"] != "large" || got["ttlSeconds"] != float64(900) || got["environment"] != "env_demo" || got["node"] != "nd_demo" {
+	if got["type"] != "large" || got["ttlSeconds"] != float64(900) || got["environment"] != "env_demo" {
 		t.Fatalf("new request = %#v", got)
 	}
 	var result map[string]any
@@ -730,69 +665,5 @@ func TestDefaultConfigPathUsesDocumentedConfigDirectory(t *testing.T) {
 	app.defaults()
 	if want := filepath.Join(home, ".config", "boxes", "config.json"); app.ConfigPath != want {
 		t.Fatalf("ConfigPath = %q, want %q", app.ConfigPath, want)
-	}
-}
-
-func TestImagePushTagsPushesAndUpdatesDefaultImages(t *testing.T) {
-	var gotSettings map[string]string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer owner-token" {
-			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/settings/registry":
-			_, _ = io.WriteString(w, `{"url":"registry.example.test","username":"publisher","password":"registry-secret"}`)
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/settings/images":
-			if err := json.NewDecoder(r.Body).Decode(&gotSettings); err != nil {
-				t.Errorf("decode image settings: %v", err)
-			}
-			_, _ = io.WriteString(w, `{"boxImage":"registry.example.test/boxes/box:release-7","toolsImage":"registry.example.test/boxes/tools:release-7"}`)
-		default:
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	var commands [][]string
-	var loginPassword string
-	app := CLI{
-		Out: io.Discard, Err: io.Discard, ConfigPath: filepath.Join(t.TempDir(), "missing.json"),
-		HTTPClient: server.Client(), BaseURL: server.URL, Token: "owner-token",
-		RunCommand: func(_ context.Context, name string, args ...string) error {
-			commands = append(commands, append([]string{name}, args...))
-			return nil
-		},
-		RunCommandWithInput: func(_ context.Context, input io.Reader, name string, args ...string) error {
-			commands = append(commands, append([]string{name}, args...))
-			if name == "docker" && len(args) > 0 && args[0] == "login" {
-				password, err := io.ReadAll(input)
-				if err != nil {
-					return err
-				}
-				loginPassword = string(password)
-			}
-			return nil
-		},
-	}
-	if err := app.Run(context.Background(), []string{"image", "push", "--box", "local/box:dev", "--tools", "local/tools:dev", "--tag", "release-7"}); err != nil {
-		t.Fatalf("Run image push: %v", err)
-	}
-	if loginPassword != "registry-secret\n" {
-		t.Fatalf("docker login password = %q, want password on stdin", loginPassword)
-	}
-	want := [][]string{
-		{"docker", "login", "registry.example.test", "--username", "publisher", "--password-stdin"},
-		{"docker", "tag", "local/box:dev", "registry.example.test/boxes/box:release-7"},
-		{"docker", "push", "registry.example.test/boxes/box:release-7"},
-		{"docker", "tag", "local/tools:dev", "registry.example.test/boxes/tools:release-7"},
-		{"docker", "push", "registry.example.test/boxes/tools:release-7"},
-	}
-	if !reflect.DeepEqual(commands, want) {
-		t.Fatalf("docker commands = %#v, want %#v", commands, want)
-	}
-	if gotSettings["boxImage"] != "registry.example.test/boxes/box:release-7" || gotSettings["toolsImage"] != "registry.example.test/boxes/tools:release-7" {
-		t.Fatalf("updated image settings = %#v", gotSettings)
 	}
 }

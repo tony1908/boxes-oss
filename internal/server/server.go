@@ -20,7 +20,6 @@ import (
 
 	"github.com/boxes-oss/boxes/install"
 	"github.com/boxes-oss/boxes/internal/diagnostics"
-	"github.com/boxes-oss/boxes/internal/provider"
 	"github.com/boxes-oss/boxes/internal/store"
 	"github.com/boxes-oss/boxes/internal/tunnel"
 	"github.com/boxes-oss/boxes/internal/types"
@@ -48,60 +47,53 @@ type Config struct {
 	BootstrapNodeName      string
 	BootstrapHostBase      string
 	StorageBootstrap       StorageBootstrap
-	ProviderFactory        func(name, credentials string) provider.Provider
 }
 
 // Server owns the API handlers and the agent tunnel hub.
 type Server struct {
-	store            *store.Store
-	hub              *tunnel.Hub
-	secrets          *secretBox
-	adminToken       string
-	storageMu        sync.RWMutex
-	storage          storageConfig
-	registryMu       sync.RWMutex
-	registry         registryConfig
-	imageMu          sync.RWMutex
-	images           defaultImageConfig
-	cfg              Config
-	api              http.Handler
-	agent            http.Handler
-	platformMu       sync.Mutex
-	desktopRoutes    map[string]desktopRouteState
-	desktopSessions  map[string]desktopSession
-	eventPumps       map[string]eventPump
-	eventCursors     map[string]int64
-	eventPumpLogAt   map[string]time.Time
-	webhookQueue     chan webhookEventDelivery
-	webhookCancel    context.CancelFunc
-	lifecycleCtx     context.Context
-	lifecycleCancel  context.CancelFunc
-	eventWG          sync.WaitGroup
-	snapshotMu       sync.Mutex
-	snapshotBusy     map[string]chan struct{}
-	snapshotRefs     sync.Mutex
-	pruneMu          sync.Mutex
-	pruneRetryAt     map[string]time.Time
-	pruneLastAt      map[string]time.Time // In-memory throttle resets when the server restarts.
-	autoscaleMu      sync.Mutex
-	bakeReportMu     sync.Mutex
-	bakeReportTokens map[string]string
-	pendingMu        sync.Mutex
-	closed           bool
-	now              func() time.Time
-	snapshotChanged  map[string]int
-	snapshotNextAt   map[string]time.Time
-	orphanLogMu      sync.Mutex
-	orphanLogAt      map[string]time.Time
-	operationMu      sync.RWMutex
-	operations       map[string]operationStatus
-	apiUsageMu       sync.Mutex
-	apiUsagePending  map[string]int64
-	healthMu         sync.RWMutex
-	healthSnapshots  map[string]healthSnapshot
-	idleCPUMu        sync.Mutex
-	idleCPUSamples   map[string][]idleCPUSample
-	reconcileGetBox  func(context.Context, string) (store.BoxRecord, error)
+	store           *store.Store
+	hub             *tunnel.Hub
+	secrets         *secretBox
+	adminToken      string
+	storageMu       sync.RWMutex
+	storage         storageConfig
+	imageMu         sync.RWMutex
+	images          defaultImageConfig
+	cfg             Config
+	api             http.Handler
+	agent           http.Handler
+	platformMu      sync.Mutex
+	desktopRoutes   map[string]desktopRouteState
+	desktopSessions map[string]desktopSession
+	eventPumps      map[string]eventPump
+	eventCursors    map[string]int64
+	eventPumpLogAt  map[string]time.Time
+	webhookQueue    chan webhookEventDelivery
+	webhookCancel   context.CancelFunc
+	lifecycleCtx    context.Context
+	lifecycleCancel context.CancelFunc
+	eventWG         sync.WaitGroup
+	snapshotMu      sync.Mutex
+	snapshotBusy    map[string]chan struct{}
+	snapshotRefs    sync.Mutex
+	pruneMu         sync.Mutex
+	pruneRetryAt    map[string]time.Time
+	pruneLastAt     map[string]time.Time // In-memory throttle resets when the server restarts.
+	closed          bool
+	now             func() time.Time
+	snapshotChanged map[string]int
+	snapshotNextAt  map[string]time.Time
+	orphanLogMu     sync.Mutex
+	orphanLogAt     map[string]time.Time
+	operationMu     sync.RWMutex
+	operations      map[string]operationStatus
+	apiUsageMu      sync.Mutex
+	apiUsagePending map[string]int64
+	healthMu        sync.RWMutex
+	healthSnapshots map[string]healthSnapshot
+	idleCPUMu       sync.Mutex
+	idleCPUSamples  map[string][]idleCPUSample
+	reconcileGetBox func(context.Context, string) (store.BoxRecord, error)
 }
 
 type contextKey uint8
@@ -127,6 +119,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.Image == "" {
 		cfg.Image = "boxes/box:latest"
+	}
+	if cfg.ToolsImage == "" {
+		cfg.ToolsImage = "boxes/tools:latest"
 	}
 	if cfg.ToolsImage == "" {
 		cfg.ToolsImage = "boxes/tools:latest"
@@ -188,9 +183,6 @@ func New(cfg Config) (*Server, error) {
 	if err := s.initializeStorage(cfg.StorageBootstrap); err != nil {
 		return nil, err
 	}
-	if err := s.initializeRegistry(); err != nil {
-		return nil, err
-	}
 	if err := s.initializeDefaultImages(cfg.Image, cfg.ToolsImage); err != nil {
 		return nil, err
 	}
@@ -238,11 +230,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", s.APIHandler()))
 	mux.Handle("GET /agent/connect", s.AgentHandler())
 	mux.Handle("GET /api/v1/agent/connect", s.AgentHandler())
-	mux.HandleFunc("GET /install/node-install.sh", func(w http.ResponseWriter, r *http.Request) {
-		serveInstallAsset(w, install.NodeScript)
-	})
-	mux.HandleFunc("GET /install/agent/{binary}", s.serveAgentBinary)
-	mux.HandleFunc("GET /install/agent/", s.serveAgentBinary)
 	mux.HandleFunc("GET /install/traefik.yml", func(w http.ResponseWriter, r *http.Request) {
 		serveInstallAsset(w, install.TraefikConfig)
 	})
@@ -251,10 +238,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /install/cli/{binary}", s.serveCLIBinary)
 	mux.Handle("/", webui.Handler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v2" || strings.HasPrefix(r.URL.Path, "/v2/") {
-			writeError(w, http.StatusNotFound, "not_found", "registry endpoint not found")
-			return
-		}
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -286,31 +269,6 @@ func (s *Server) serveCLIBinary(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cli_binary_unavailable", "CLI binary could not be read")
-		return
-	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
-}
-
-func (s *Server) serveAgentBinary(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("binary")
-	switch name {
-	case "boxes-agent-linux-amd64", "boxes-agent-linux-arm64":
-	default:
-		http.NotFound(w, r)
-		return
-	}
-	data, err := os.ReadFile(filepath.Join(s.cfg.DataDir, "bin", name))
-	if errors.Is(err, os.ErrNotExist) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprintf(w, "Agent binary %s is not installed on this server; ask the administrator to place it in %s/bin/.\n", name, s.cfg.DataDir)
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "agent_binary_unavailable", "agent binary could not be read")
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -361,19 +319,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api-keys/{id}/usage", s.auth(http.HandlerFunc(s.apiKeyUsage)))
 	mux.Handle("POST /api-keys", s.auth(http.HandlerFunc(s.createAPIKey)))
 	mux.Handle("DELETE /api-keys/{id}", s.auth(http.HandlerFunc(s.deleteAPIKey)))
-	mux.Handle("GET /nodes", s.auth(http.HandlerFunc(s.listNodes)))
-	mux.Handle("POST /nodes", s.auth(http.HandlerFunc(s.createNode)))
-	mux.Handle("POST /nodes/{id}/drain", s.auth(http.HandlerFunc(s.drainNode)))
-	mux.Handle("POST /nodes/{id}/undrain", s.auth(http.HandlerFunc(s.undrainNode)))
-	mux.Handle("DELETE /nodes/{id}", s.auth(http.HandlerFunc(s.deleteNode)))
-	mux.Handle("GET /pools", s.auth(http.HandlerFunc(s.listPools)))
-	mux.Handle("POST /pools", s.auth(http.HandlerFunc(s.createPool)))
-	mux.Handle("GET /pools/{id}", s.auth(http.HandlerFunc(s.getPool)))
-	mux.Handle("PATCH /pools/{id}", s.auth(http.HandlerFunc(s.updatePool)))
-	mux.Handle("POST /pools/{id}/bake", s.auth(http.HandlerFunc(s.bakePool)))
-	mux.HandleFunc("POST /pools/{id}/bake-report", s.reportPoolBake)
-	mux.Handle("DELETE /pools/{id}", s.auth(http.HandlerFunc(s.deletePool)))
-	mux.Handle("POST /nodes/ssh", s.auth(http.HandlerFunc(s.addNodeSSH)))
+	mux.Handle("GET /machine", s.auth(http.HandlerFunc(s.machine)))
 	mux.Handle("GET /sandboxes", s.auth(http.HandlerFunc(s.listSandboxes)))
 	mux.Handle("POST /sandboxes", s.auth(http.HandlerFunc(s.createSandbox)))
 	mux.Handle("GET /sandboxes/{id}", s.auth(http.HandlerFunc(s.getSandbox)))
@@ -434,7 +380,6 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("DELETE /webhooks/{id}", s.auth(http.HandlerFunc(s.deleteWebhook)))
 	mux.Handle("GET /limits", s.auth(http.HandlerFunc(s.limits)))
 	mux.Handle("GET /settings/storage", s.auth(http.HandlerFunc(s.storageSettings)))
-	mux.Handle("GET /settings/registry", s.auth(http.HandlerFunc(s.registrySettings)))
 	mux.Handle("PUT /settings/images", s.auth(http.HandlerFunc(s.updateImageSettings)))
 	mux.HandleFunc("POST /admin/storage", s.setStorageFromAdmin)
 	mux.HandleFunc("POST /admin/runtime/stop", s.stopRuntimeBoxesFromAdmin)
@@ -500,12 +445,7 @@ func (s *Server) reconcileConnectedNode(nodeID string) {
 			s.healthSnapshots[nodeID] = healthSnapshot{Health: health, At: s.now()}
 			s.healthMu.Unlock()
 			node.Node.DiskFreeBytes = health.DiskFreeBytes
-			for phase, seconds := range health.InstallTiming {
-				log.Printf("node_boot_phase node=%s phase=%s seconds=%.3f", nodeID, phase, seconds)
-				if phase == "total" {
-					node.Node.BootSeconds = seconds
-				}
-			}
+
 			node.Node.LastSeen = time.Now().UTC()
 			err = s.store.UpdateNode(ctx, node)
 		}
@@ -517,7 +457,6 @@ func (s *Server) reconcileConnectedNode(nodeID string) {
 				}
 			}
 			s.reconcileNode(ctx, nodeID, client, health)
-			s.provisionPendingBoxes(s.lifecycleCtx, nodeID, client)
 			s.repushNodeRoutes(ctx, nodeID, client)
 			cancel()
 			return

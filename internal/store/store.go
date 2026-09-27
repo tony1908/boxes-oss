@@ -49,12 +49,6 @@ type NodeRecord struct {
 	TokenHash string
 }
 
-// PoolRecord stores encrypted provider credentials separately from its public configuration.
-type PoolRecord struct {
-	Pool           types.Pool
-	CredentialsEnc []byte
-}
-
 // Session stores a hashed session token and its expiration.
 type Session struct {
 	ID        string
@@ -372,16 +366,12 @@ func scanUser(row interface{ Scan(...any) error }) (types.User, error) {
 
 // CreateNode inserts a node including its token hash.
 func (s *Store) CreateNode(ctx context.Context, node NodeRecord) error {
-	if node.Node.CreatedAt.IsZero() {
-		node.Node.CreatedAt = time.Now().UTC()
-	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes(id, name, host, host_base, token_hash, status,
-		cpus, memory_bytes, free_memory_bytes, disk_free_bytes, drained, last_seen, pool_id, provider_instance_id, created_at, idle_since, boot_seconds, mem_available_bytes, swap_free_bytes, memory_pressure_some_avg10)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, node.Node.ID, node.Node.Name,
+		cpus, memory_bytes, free_memory_bytes, disk_free_bytes, last_seen, mem_available_bytes, swap_free_bytes, memory_pressure_some_avg10)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, node.Node.ID, node.Node.Name,
 		node.Node.Host, node.Node.HostBase, node.TokenHash, node.Node.Status, node.Node.CPUs,
 		node.Node.MemoryBytes, node.Node.FreeMemoryBytes, node.Node.DiskFreeBytes,
-		boolInt(node.Node.Drained), nullableTime(node.Node.LastSeen), node.Node.PoolID, node.Node.ProviderInstanceID,
-		encodeTime(node.Node.CreatedAt), nullableTimePtr(node.Node.IdleSince), node.Node.BootSeconds, node.Node.MemAvailableBytes, node.Node.SwapFreeBytes, node.Node.MemoryPressureSomeAvg10)
+		nullableTime(node.Node.LastSeen), node.Node.MemAvailableBytes, node.Node.SwapFreeBytes, node.Node.MemoryPressureSomeAvg10)
 	if err != nil {
 		return fmt.Errorf("create node: %w", err)
 	}
@@ -391,13 +381,13 @@ func (s *Store) CreateNode(ctx context.Context, node NodeRecord) error {
 // GetNode returns a node by ID.
 func (s *Store) GetNode(ctx context.Context, id string) (NodeRecord, error) {
 	return scanNode(s.db.QueryRowContext(ctx, `SELECT id, name, host, host_base, token_hash, status,
-		cpus, memory_bytes, free_memory_bytes, disk_free_bytes, drained, last_seen, pool_id, provider_instance_id, created_at, idle_since, boot_seconds, mem_available_bytes, swap_free_bytes, memory_pressure_some_avg10 FROM nodes WHERE id = ?`, id))
+		cpus, memory_bytes, free_memory_bytes, disk_free_bytes, last_seen, mem_available_bytes, swap_free_bytes, memory_pressure_some_avg10 FROM nodes WHERE id = ?`, id))
 }
 
 // ListNodes returns nodes ordered by ID.
 func (s *Store) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, host, host_base, token_hash, status,
-		cpus, memory_bytes, free_memory_bytes, disk_free_bytes, drained, last_seen, pool_id, provider_instance_id, created_at, idle_since, boot_seconds, mem_available_bytes, swap_free_bytes, memory_pressure_some_avg10 FROM nodes ORDER BY id`)
+		cpus, memory_bytes, free_memory_bytes, disk_free_bytes, last_seen, mem_available_bytes, swap_free_bytes, memory_pressure_some_avg10 FROM nodes ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
@@ -419,140 +409,27 @@ func (s *Store) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 // UpdateNode updates all mutable node fields and its token hash.
 func (s *Store) UpdateNode(ctx context.Context, node NodeRecord) error {
 	result, err := s.db.ExecContext(ctx, `UPDATE nodes SET name=?, host=?, host_base=?, token_hash=?, status=?,
-		cpus=?, memory_bytes=?, free_memory_bytes=?, disk_free_bytes=?, drained=?, last_seen=?, pool_id=?, provider_instance_id=?, created_at=?, idle_since=?, boot_seconds=?, mem_available_bytes=?, swap_free_bytes=?, memory_pressure_some_avg10=? WHERE id=?`,
+		cpus=?, memory_bytes=?, free_memory_bytes=?, disk_free_bytes=?, last_seen=?, mem_available_bytes=?, swap_free_bytes=?, memory_pressure_some_avg10=? WHERE id=?`,
 		node.Node.Name, node.Node.Host, node.Node.HostBase, node.TokenHash, node.Node.Status,
 		node.Node.CPUs, node.Node.MemoryBytes, node.Node.FreeMemoryBytes, node.Node.DiskFreeBytes,
-		boolInt(node.Node.Drained), nullableTime(node.Node.LastSeen), node.Node.PoolID, node.Node.ProviderInstanceID,
-		encodeTime(node.Node.CreatedAt), nullableTimePtr(node.Node.IdleSince), node.Node.BootSeconds, node.Node.MemAvailableBytes, node.Node.SwapFreeBytes, node.Node.MemoryPressureSomeAvg10, node.Node.ID)
+		nullableTime(node.Node.LastSeen), node.Node.MemAvailableBytes, node.Node.SwapFreeBytes, node.Node.MemoryPressureSomeAvg10, node.Node.ID)
 	return checkUpdated(result, err, "update node")
-}
-
-// DeleteNode deletes a node. A node with boxes cannot be deleted.
-func (s *Store) DeleteNode(ctx context.Context, id string) error {
-	return deleteByID(ctx, s.db, "nodes", "id", id)
 }
 
 func scanNode(row interface{ Scan(...any) error }) (NodeRecord, error) {
 	var record NodeRecord
-	var drained int
 	var lastSeen sql.NullString
-	var createdAt sql.NullString
-	var idleSince sql.NullString
-	var bootSeconds float64
 	err := row.Scan(&record.Node.ID, &record.Node.Name, &record.Node.Host, &record.Node.HostBase,
 		&record.TokenHash, &record.Node.Status, &record.Node.CPUs, &record.Node.MemoryBytes,
-		&record.Node.FreeMemoryBytes, &record.Node.DiskFreeBytes, &drained, &lastSeen,
-		&record.Node.PoolID, &record.Node.ProviderInstanceID, &createdAt, &idleSince, &bootSeconds, &record.Node.MemAvailableBytes, &record.Node.SwapFreeBytes, &record.Node.MemoryPressureSomeAvg10)
+		&record.Node.FreeMemoryBytes, &record.Node.DiskFreeBytes, &lastSeen, &record.Node.MemAvailableBytes, &record.Node.SwapFreeBytes, &record.Node.MemoryPressureSomeAvg10)
 	if err != nil {
 		return NodeRecord{}, err
 	}
-	record.Node.Drained = drained != 0
-	record.Node.BootSeconds = bootSeconds
 	if lastSeen.Valid {
 		record.Node.LastSeen, err = decodeTime(lastSeen.String)
 		if err != nil {
 			return NodeRecord{}, err
 		}
-	}
-	if createdAt.Valid && createdAt.String != "" {
-		record.Node.CreatedAt, err = decodeTime(createdAt.String)
-		if err != nil {
-			return NodeRecord{}, err
-		}
-	}
-	if idleSince.Valid {
-		t, parseErr := decodeTime(idleSince.String)
-		if parseErr != nil {
-			return NodeRecord{}, parseErr
-		}
-		record.Node.IdleSince = &t
-	}
-	return record, nil
-}
-
-// CreatePool persists the public pool configuration and an already encrypted credential blob.
-func (s *Store) CreatePool(ctx context.Context, record PoolRecord) error {
-	if record.Pool.CreatedAt.IsZero() {
-		record.Pool.CreatedAt = time.Now().UTC()
-	}
-	sshKeys, err := encodeJSON(record.Pool.SSHKeys)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO pools(id, name, provider, credentials_enc, region, size, image, ssh_keys,
-		min_nodes, max_nodes, idle_minutes, boot_timeout_minutes, headroom_slots, warm_schedule, auto_rebake, baked_image_id, baked_box_digest, baked_tools_digest, bake_status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.Pool.ID, record.Pool.Name, record.Pool.Provider, nonNilBytes(record.CredentialsEnc), record.Pool.Region,
-		record.Pool.Size, record.Pool.Image, sshKeys, record.Pool.MinNodes, record.Pool.MaxNodes,
-		record.Pool.IdleMinutes, record.Pool.BootTimeoutMinutes, record.Pool.HeadroomSlots, record.Pool.WarmSchedule, boolInt(record.Pool.AutoRebake), record.Pool.BakedImageID, record.Pool.BakedBoxDigest, record.Pool.BakedToolsDigest, record.Pool.BakeStatus, encodeTime(record.Pool.CreatedAt))
-	if err != nil {
-		return fmt.Errorf("create pool: %w", err)
-	}
-	return nil
-}
-
-// GetPool returns a pool including its encrypted provider credentials for internal use.
-func (s *Store) GetPool(ctx context.Context, id string) (PoolRecord, error) {
-	return scanPool(s.db.QueryRowContext(ctx, poolSelect+` WHERE id = ?`, id))
-}
-
-// ListPools returns all autoscaling pools in creation order.
-func (s *Store) ListPools(ctx context.Context) ([]PoolRecord, error) {
-	rows, err := s.db.QueryContext(ctx, poolSelect+` ORDER BY created_at, id`)
-	if err != nil {
-		return nil, fmt.Errorf("list pools: %w", err)
-	}
-	defer rows.Close()
-	result := make([]PoolRecord, 0)
-	for rows.Next() {
-		record, err := scanPool(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scan pool: %w", err)
-		}
-		result = append(result, record)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list pools: %w", err)
-	}
-	return result, nil
-}
-
-// UpdatePool replaces a pool's configuration and encrypted credentials.
-func (s *Store) UpdatePool(ctx context.Context, record PoolRecord) error {
-	sshKeys, err := encodeJSON(record.Pool.SSHKeys)
-	if err != nil {
-		return err
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE pools SET name=?, provider=?, credentials_enc=?, region=?, size=?, image=?, ssh_keys=?,
-		min_nodes=?, max_nodes=?, idle_minutes=?, boot_timeout_minutes=?, headroom_slots=?, warm_schedule=?, auto_rebake=?, baked_image_id=?, baked_box_digest=?, baked_tools_digest=?, bake_status=? WHERE id=?`, record.Pool.Name,
-		record.Pool.Provider, nonNilBytes(record.CredentialsEnc), record.Pool.Region, record.Pool.Size, record.Pool.Image,
-		sshKeys, record.Pool.MinNodes, record.Pool.MaxNodes, record.Pool.IdleMinutes, record.Pool.BootTimeoutMinutes, record.Pool.HeadroomSlots, record.Pool.WarmSchedule, boolInt(record.Pool.AutoRebake), record.Pool.BakedImageID, record.Pool.BakedBoxDigest, record.Pool.BakedToolsDigest, record.Pool.BakeStatus, record.Pool.ID)
-	return checkUpdated(result, err, "update pool")
-}
-
-// DeletePool removes a pool configuration.
-func (s *Store) DeletePool(ctx context.Context, id string) error {
-	return deleteByID(ctx, s.db, "pools", "id", id)
-}
-
-const poolSelect = `SELECT id, name, provider, credentials_enc, region, size, image, ssh_keys, min_nodes, max_nodes,
-	idle_minutes, boot_timeout_minutes, headroom_slots, warm_schedule, auto_rebake, baked_image_id, baked_box_digest, baked_tools_digest, bake_status, created_at FROM pools`
-
-func scanPool(row interface{ Scan(...any) error }) (PoolRecord, error) {
-	var record PoolRecord
-	var sshKeys, createdAt string
-	var autoRebake int
-	err := row.Scan(&record.Pool.ID, &record.Pool.Name, &record.Pool.Provider, &record.CredentialsEnc,
-		&record.Pool.Region, &record.Pool.Size, &record.Pool.Image, &sshKeys, &record.Pool.MinNodes,
-		&record.Pool.MaxNodes, &record.Pool.IdleMinutes, &record.Pool.BootTimeoutMinutes, &record.Pool.HeadroomSlots, &record.Pool.WarmSchedule, &autoRebake, &record.Pool.BakedImageID, &record.Pool.BakedBoxDigest, &record.Pool.BakedToolsDigest, &record.Pool.BakeStatus, &createdAt)
-	if err != nil {
-		return PoolRecord{}, err
-	}
-	if err := json.Unmarshal([]byte(sshKeys), &record.Pool.SSHKeys); err != nil {
-		return PoolRecord{}, fmt.Errorf("decode pool SSH keys: %w", err)
-	}
-	record.Pool.AutoRebake = autoRebake != 0
-	if record.Pool.CreatedAt, err = decodeTime(createdAt); err != nil {
-		return PoolRecord{}, err
 	}
 	return record, nil
 }
@@ -570,12 +447,12 @@ func (s *Store) CreateBox(ctx context.Context, record BoxRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO boxes(id, node_id, type, state, image, env_id, env_version,
 		ttl_seconds, idle_stop_seconds, expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, waiting_for, error_code, error)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
+		running_seconds, running_since, setup_status, error_code, error)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
 		string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds, box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt),
 		nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc), idempotencyKey,
 		box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.WaitingFor, box.ErrorCode, box.Error)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error)
 	if err != nil {
 		return fmt.Errorf("create box: %w", err)
 	}
@@ -629,11 +506,11 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, waiting_for=?, error_code=?, error=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.WaitingFor, box.ErrorCode, box.Error, box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, box.ID)
 	return checkUpdated(result, err, "update box")
 }
 
@@ -642,57 +519,9 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 	return deleteByID(ctx, s.db, "boxes", "id", id)
 }
 
-// CreatePendingBox stores an encrypted agent payload for a box waiting on a new node.
-func (s *Store) CreatePendingBox(ctx context.Context, boxID string, payloadEnc []byte) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO pending_boxes(box_id, payload_enc) VALUES(?, ?)`, boxID, nonNilBytes(payloadEnc))
-	if err != nil {
-		return fmt.Errorf("create pending box: %w", err)
-	}
-	return nil
-}
-
-// GetPendingBox returns the encrypted deferred provisioning payload.
-func (s *Store) GetPendingBox(ctx context.Context, boxID string) ([]byte, error) {
-	var payload []byte
-	err := s.db.QueryRowContext(ctx, `SELECT payload_enc FROM pending_boxes WHERE box_id = ?`, boxID).Scan(&payload)
-	return payload, err
-}
-
-// ListPendingBoxes returns encrypted queued payloads for boxes assigned to nodeID.
-func (s *Store) ListPendingBoxes(ctx context.Context, nodeID string) (map[string][]byte, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.box_id, p.payload_enc FROM pending_boxes p JOIN boxes b ON b.id = p.box_id WHERE b.node_id = ? ORDER BY b.created_at, b.id`, nodeID)
-	if err != nil {
-		return nil, fmt.Errorf("list pending boxes: %w", err)
-	}
-	defer rows.Close()
-	result := make(map[string][]byte)
-	for rows.Next() {
-		var id string
-		var payload []byte
-		if err := rows.Scan(&id, &payload); err != nil {
-			return nil, err
-		}
-		result[id] = payload
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list pending boxes: %w", err)
-	}
-	return result, nil
-}
-
-// DeletePendingBox removes a queued payload after provisioning is resolved.
-func (s *Store) DeletePendingBox(ctx context.Context, boxID string) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM pending_boxes WHERE box_id = ?`, boxID)
-	if err != nil {
-		return fmt.Errorf("delete pending box: %w", err)
-	}
-	_, err = result.RowsAffected()
-	return err
-}
-
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, waiting_for, error_code, error FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
@@ -703,7 +532,7 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
-		&record.Box.WaitingFor, &record.Box.ErrorCode, &record.Box.Error)
+		&record.Box.ErrorCode, &record.Box.Error)
 	if err != nil {
 		return BoxRecord{}, err
 	}

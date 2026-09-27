@@ -55,7 +55,6 @@ boxes push <id> .
 boxes exec <id> -- bash -lc 'cd /config/<name> && <install> && <test>'
 ```
 
-Node: `npm ci || (rm -rf node_modules package-lock.json && npm install)`. The fallback handles lockfiles made on another OS or out of sync with package.json; it only changes the box's copy. Report the test results. Don't do extra work such as starting dev servers or taking screenshots unless asked.
 
 Run `boxes --help` for all commands. Add `--json` before a command for
 machine-readable output; JSON output is automatic when stdout is not a TTY.

@@ -122,7 +122,7 @@ func TestEnsureNetworkCreatesNetworkWhenMissing(t *testing.T) {
 }
 
 func TestEnsureImageInspectsBeforePulling(t *testing.T) {
-	image := "registry.example.test/boxes/box:dev"
+	image := "images.example.test/boxes/box:dev"
 	exec := &scriptedExecutor{responses: []struct {
 		code   int
 		err    error
@@ -176,8 +176,8 @@ func TestEnsureToolsVolumePopulatesOncePerImageDigest(t *testing.T) {
 	}
 }
 
-func TestEnsureToolsVolumePullsRegistryImageBeforePopulating(t *testing.T) {
-	image := "registry.example.test/boxes/tools:v7"
+func TestEnsureToolsVolumePullsImageBeforePopulating(t *testing.T) {
+	image := "images.example.test/boxes/tools:v7"
 	exec := &scriptedExecutor{responses: []struct {
 		code   int
 		err    error

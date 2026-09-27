@@ -2,9 +2,6 @@ package install
 
 import _ "embed"
 
-//go:embed node-install.sh
-var NodeScript []byte
-
 //go:embed traefik.yml
 var TraefikConfig []byte
 

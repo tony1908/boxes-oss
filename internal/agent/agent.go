@@ -380,12 +380,7 @@ func (a *Agent) health(w http.ResponseWriter, r *http.Request) {
 		"memoryPressureSomeAvg10": pressure, "diskFreeBytes": diskFreeBytes("/"),
 		"runtime": a.config.Runtime, "boxes": boxes,
 	}
-	if data, err := os.ReadFile("/var/lib/boxes/node-install-timing.json"); err == nil {
-		var timing map[string]float64
-		if json.Unmarshal(data, &timing) == nil {
-			response["installTiming"] = timing
-		}
-	}
+
 	writeJSON(w, http.StatusOK, response)
 }
 

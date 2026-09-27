@@ -28,11 +28,10 @@ func (s *Server) getOperation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteSandbox(w http.ResponseWriter, r *http.Request) {
 	if box, err := s.store.GetBox(r.Context(), pathID(r)); err == nil {
-		_, pendingErr := s.store.GetPendingBox(r.Context(), box.Box.ID)
-		local := pendingErr == nil || box.Box.ErrorCode == "no_capacity" || box.Box.ErrorCode == "provision_failed"
-		if !local && box.Box.State == types.StateStopped {
+		local := false
+		if box.Box.State == types.StateStopped {
 			if node, nodeErr := s.store.GetNode(r.Context(), box.Box.NodeID); nodeErr == nil {
-				local = node.Node.Status == "lost" || detachedNode(node)
+				local = node.Node.Status == "offline"
 			}
 		}
 		if local {

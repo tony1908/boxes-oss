@@ -108,41 +108,6 @@ func TestAPIKeyDailyUsageFlushAndSandboxAttribution(t *testing.T) {
 	}
 }
 
-func TestPoolAndAutoscaledNodeFieldsRoundTrip(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "pools.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	ctx := context.Background()
-	pool := PoolRecord{Pool: types.Pool{ID: "pl_test", Name: "test pool", Provider: "digitalocean", Region: "nyc3", Size: "s-2vcpu-4gb", Image: "ubuntu", SSHKeys: []string{"123"}, MinNodes: 1, MaxNodes: 3, IdleMinutes: 10, BootTimeoutMinutes: 15}, CredentialsEnc: []byte("encrypted-token")}
-	if err := s.CreatePool(ctx, pool); err != nil {
-		t.Fatalf("CreatePool(): %v", err)
-	}
-	got, err := s.GetPool(ctx, pool.Pool.ID)
-	if err != nil {
-		t.Fatalf("GetPool(): %v", err)
-	}
-	if got.Pool.Name != pool.Pool.Name || got.Pool.Provider != pool.Pool.Provider || got.Pool.MinNodes != 1 || got.Pool.MaxNodes != 3 || string(got.CredentialsEnc) != "encrypted-token" {
-		t.Fatalf("GetPool() = %#v", got)
-	}
-	listed, err := s.ListPools(ctx)
-	if err != nil || len(listed) != 1 || listed[0].Pool.ID != pool.Pool.ID {
-		t.Fatalf("ListPools() = %#v, %v", listed, err)
-	}
-	node := types.Node{ID: "nd_pooltest", Name: "managed", Status: "provisioning", PoolID: pool.Pool.ID, ProviderInstanceID: "i-42"}
-	if err := s.CreateNode(ctx, NodeRecord{Node: node}); err != nil {
-		t.Fatalf("CreateNode(): %v", err)
-	}
-	gotNode, err := s.GetNode(ctx, node.ID)
-	if err != nil || gotNode.Node.PoolID != pool.Pool.ID || gotNode.Node.ProviderInstanceID != "i-42" {
-		t.Fatalf("GetNode() = %#v, %v", gotNode, err)
-	}
-	if err := s.DeletePool(ctx, pool.Pool.ID); err != nil {
-		t.Fatalf("DeletePool(): %v", err)
-	}
-}
-
 func TestOpenMigratesAndPersistsUsers(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "boxes.db")

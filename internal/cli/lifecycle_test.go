@@ -135,7 +135,7 @@ func TestLifecycleCommandsResolveCurrentAndSendTTL(t *testing.T) {
 	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: configPath, HTTPClient: server.Client()}
 	commands := [][]string{
 		{"extend", "current", "--ttl", "7200"},
-		{"resume", "current", "--ttl", "900", "--type", "large", "--node", "nd_node"},
+		{"resume", "current", "--ttl", "900", "--type", "large"},
 		{"fork", "current", "--no-auto-stop"},
 		{"info", "current"},
 	}
@@ -150,7 +150,7 @@ func TestLifecycleCommandsResolveCurrentAndSendTTL(t *testing.T) {
 	if requests[0].method != http.MethodPatch || requests[0].path != "/api/v1/sandboxes/bx_current" || requests[0].body["ttlSeconds"] != float64(7200) {
 		t.Errorf("extend request = %#v", requests[0])
 	}
-	if requests[1].body["ttlSeconds"] != float64(900) || requests[1].body["type"] != "large" || requests[1].body["node"] != "nd_node" {
+	if requests[1].body["ttlSeconds"] != float64(900) || requests[1].body["type"] != "large" {
 		t.Errorf("resume request = %#v", requests[1])
 	}
 	if _, ok := requests[2].body["ttlSeconds"]; !ok || requests[2].body["ttlSeconds"] != nil {

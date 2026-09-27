@@ -33,7 +33,7 @@ func (s *Server) limits(w http.ResponseWriter, r *http.Request) {
 		items = append(items, map[string]any{"nodeId": node.Node.ID, "status": node.Node.Status,
 			"cpus": node.Node.CPUs, "memoryBytes": node.Node.MemoryBytes,
 			"freeMemoryBytes": node.Node.FreeMemoryBytes, "diskFreeBytes": node.Node.DiskFreeBytes,
-			"boxes": boxCount, "drained": node.Node.Drained})
+			"boxes": boxCount})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": items, "totals": map[string]any{
 		"cpus": totalCPUs, "memoryBytes": totalMemory, "diskFreeBytes": totalDisk, "boxes": readyBoxes,

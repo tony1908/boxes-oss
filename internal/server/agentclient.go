@@ -20,16 +20,15 @@ import (
 type agentClient struct{ http *http.Client }
 
 type agentHealth struct {
-	InstallTiming           map[string]float64 `json:"installTiming"`
-	CPUs                    int                `json:"cpus"`
-	MemoryBytes             int64              `json:"memoryBytes"`
-	FreeMemoryBytes         int64              `json:"freeMemoryBytes"`
-	MemAvailableBytes       int64              `json:"memAvailableBytes"`
-	SwapFreeBytes           int64              `json:"swapFreeBytes"`
-	SwapTotalBytes          int64              `json:"swapTotalBytes"`
-	MemoryPressureSomeAvg10 float64            `json:"memoryPressureSomeAvg10"`
-	DiskFreeBytes           int64              `json:"diskFreeBytes"`
-	Runtime                 string             `json:"runtime"`
+	CPUs                    int     `json:"cpus"`
+	MemoryBytes             int64   `json:"memoryBytes"`
+	FreeMemoryBytes         int64   `json:"freeMemoryBytes"`
+	MemAvailableBytes       int64   `json:"memAvailableBytes"`
+	SwapFreeBytes           int64   `json:"swapFreeBytes"`
+	SwapTotalBytes          int64   `json:"swapTotalBytes"`
+	MemoryPressureSomeAvg10 float64 `json:"memoryPressureSomeAvg10"`
+	DiskFreeBytes           int64   `json:"diskFreeBytes"`
+	Runtime                 string  `json:"runtime"`
 	Boxes                   []struct {
 		BoxID       string `json:"boxId"`
 		ContainerID string `json:"containerId"`

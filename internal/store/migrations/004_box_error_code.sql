@@ -1,0 +1,1 @@
+ALTER TABLE boxes ADD COLUMN error_code TEXT NOT NULL DEFAULT '';

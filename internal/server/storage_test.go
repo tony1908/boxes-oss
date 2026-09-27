@@ -50,8 +50,6 @@ func TestGetStorageSettingsIsOwnerOnlyAndNeverExposesCredentials(t *testing.T) {
 	if memberResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("member storage settings status = %d, want forbidden", memberResponse.StatusCode)
 	}
-	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/nodes", memberToken,
-		map[string]any{"name": "non-owner-node"}, http.StatusForbidden, nil)
 	ownerResponse := request(ownerToken)
 	defer ownerResponse.Body.Close()
 	if ownerResponse.StatusCode != http.StatusOK {
@@ -85,7 +83,7 @@ func TestS3RepositoryURLIncludesOptionalPrefix(t *testing.T) {
 	}
 }
 
-func TestStorageSwitchEncryptsCredentialsAndNodeInstallCommandSharesRepository(t *testing.T) {
+func TestStorageSwitchEncryptsCredentials(t *testing.T) {
 	srv, cleanup := newTestServer(t)
 	defer cleanup()
 	httpServer := httptest.NewServer(srv.Handler())
@@ -115,18 +113,6 @@ func TestStorageSwitchEncryptsCredentialsAndNodeInstallCommandSharesRepository(t
 	publicJSON, _ := json.Marshal(publicSettings)
 	if strings.Contains(string(publicJSON), "access-plaintext") || strings.Contains(string(publicJSON), "secret-plaintext") {
 		t.Fatalf("public storage settings exposed credentials: %s", publicJSON)
-	}
-	var node map[string]any
-	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/nodes", token,
-		map[string]any{"name": "s3-worker"}, http.StatusCreated, &node)
-	command, _ := node["installCommand"].(string)
-	for _, expected := range []string{"'--s3-endpoint' 'https://s3.example.test'", "'--s3-bucket' 'boxes'", "'--s3-prefix' 'snapshots'", "'--s3-region' 'region-1'", "BOXES_S3_ACCESS_KEY='access-plaintext'", "BOXES_S3_SECRET_KEY='secret-plaintext'", "RESTIC_PASSWORD='"} {
-		if !strings.Contains(command, expected) {
-			t.Errorf("node install command %q does not contain %q", command, expected)
-		}
-	}
-	if strings.Contains(command, "--s3-secret") {
-		t.Fatalf("S3 secret was passed as a command-line option: %q", command)
 	}
 }
 

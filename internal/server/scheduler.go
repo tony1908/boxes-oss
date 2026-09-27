@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"time"
 
@@ -12,27 +11,24 @@ import (
 	"github.com/boxes-oss/boxes/internal/types"
 )
 
-func (s *Server) schedule(ctx context.Context, requestedNode string, size types.Size, boxType string) (store.NodeRecord, error) {
-	return s.scheduleExcluding(ctx, requestedNode, size, boxType, "")
+func (s *Server) schedule(ctx context.Context, size types.Size, boxType string) (store.NodeRecord, error) {
+	return s.scheduleExcluding(ctx, size, boxType, "")
 }
 
-func (s *Server) scheduleExcluding(ctx context.Context, requestedNode string, size types.Size, boxType, excludedBoxID string) (store.NodeRecord, error) {
+func (s *Server) scheduleExcluding(ctx context.Context, size types.Size, boxType, excludedBoxID string) (store.NodeRecord, error) {
 	nodes, err := s.store.ListNodes(ctx)
 	if err != nil {
 		return store.NodeRecord{}, err
 	}
-	type candidate struct {
-		node      store.NodeRecord
-		remaining float64
-	}
-	eligible := make([]candidate, 0, len(nodes))
+	var localNode store.NodeRecord
+	var eligible bool
 	var largestFree float64
 	var swapLimited bool
-	for _, node := range nodes {
-		if requestedNode != "" && node.Node.ID != requestedNode {
+	for index, node := range nodes {
+		if index != 0 {
 			continue
 		}
-		if node.Node.Status != "healthy" || node.Node.Drained || node.Node.CPUs < size.CPUs {
+		if node.Node.Status != "healthy" || node.Node.CPUs < size.CPUs {
 			continue
 		}
 		if _, connected := s.hub.Client(node.Node.ID); !connected {
@@ -85,21 +81,13 @@ func (s *Server) scheduleExcluding(ctx context.Context, requestedNode string, si
 				continue
 			}
 		}
-		eligible = append(eligible, candidate{node: node, remaining: remaining})
+		localNode = node
+		eligible = true
 	}
-	if len(eligible) == 0 {
+	if !eligible {
 		return store.NodeRecord{}, &capacityError{boxType: boxType, neededBytes: size.MemoryReservationBytes, largestFreeBytes: largestFree, swapLimited: swapLimited}
 	}
-	sort.Slice(eligible, func(i, j int) bool {
-		if eligible[i].remaining == eligible[j].remaining {
-			if eligible[i].node.Node.FreeMemoryBytes == eligible[j].node.Node.FreeMemoryBytes {
-				return eligible[i].node.Node.ID < eligible[j].node.Node.ID
-			}
-			return eligible[i].node.Node.FreeMemoryBytes > eligible[j].node.Node.FreeMemoryBytes
-		}
-		return eligible[i].remaining > eligible[j].remaining
-	})
-	return eligible[0].node, nil
+	return localNode, nil
 }
 
 type capacityError struct {
@@ -110,7 +98,7 @@ type capacityError struct {
 }
 
 func (e *capacityError) Error() string {
-	message := fmt.Sprintf("no node has room for a %s box (needs %s GiB, largest free %s GiB); check memory buffer, pressure, or stale health, or add a node",
+	message := fmt.Sprintf("local machine has no room for a %s box (needs %s GiB, largest free %s GiB); check memory buffer, pressure, or stale health",
 		e.boxType, formatGiB(float64(e.neededBytes)), formatGiB(e.largestFreeBytes))
 	if e.swapLimited {
 		message += "; swap use is limiting capacity"

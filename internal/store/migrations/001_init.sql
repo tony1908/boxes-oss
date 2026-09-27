@@ -37,7 +37,6 @@ CREATE TABLE nodes (
     memory_bytes INTEGER NOT NULL DEFAULT 0,
     free_memory_bytes INTEGER NOT NULL DEFAULT 0,
     disk_free_bytes INTEGER NOT NULL DEFAULT 0,
-    drained INTEGER NOT NULL DEFAULT 0 CHECK (drained IN (0, 1)),
     last_seen TEXT
 );
 

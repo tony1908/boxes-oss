@@ -8,6 +8,21 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /machine:
+    get:
+      summary: Get local machine capacity and health
+      responses:
+        '200':
+          description: Local machine status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [machine]
+                properties:
+                  machine:
+                    $ref: '#/components/schemas/Machine'
+
   /install/cli.ps1:
     servers:
       - url: /
@@ -185,8 +200,6 @@ paths:
                   $ref: "#/components/schemas/TTLSeconds"
                 type:
                   $ref: "#/components/schemas/BoxSize"
-                node:
-                  type: string
       responses:
         "200":
           description: Resumed sandbox
@@ -457,28 +470,6 @@ paths:
       responses:
         "101":
           description: WebSocket connection established
-  /settings/registry:
-    get:
-      summary: Get built-in registry credentials
-      description: Owner-only settings used by the image publisher and node installers.
-      responses:
-        "200":
-          description: Registry address and credentials
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [url, username, password]
-                properties:
-                  url:
-                    type: string
-                  username:
-                    type: string
-                  password:
-                    type: string
-                    format: password
-        "403":
-          description: Owner role required
   /settings/images:
     put:
       summary: Update default container images
@@ -618,67 +609,6 @@ paths:
       summary: Revoke an API key
       responses:
         "204": {description: Request completed}
-  /nodes:
-    get:
-      summary: List nodes
-      responses:
-        "200": {description: Successful response}
-    post:
-      summary: Add a node
-      responses:
-        "200": {description: Successful response}
-  /nodes/{id}:
-    delete:
-      summary: Delete a node
-      responses:
-        "204": {description: Request completed}
-  /nodes/{id}/drain:
-    post:
-      summary: Drain a node
-      responses:
-        "200": {description: Successful response}
-  /nodes/{id}/undrain:
-    post:
-      summary: Undrain a node
-      responses:
-        "200": {description: Successful response}
-  /nodes/ssh:
-    post:
-      summary: Add a node over SSH
-      responses:
-        "200": {description: Successful response}
-  /pools:
-    get:
-      summary: List pools
-      responses:
-        "200": {description: Successful response}
-    post:
-      summary: Create a pool
-      responses:
-        "200": {description: Successful response}
-  /pools/{id}:
-    get:
-      summary: Get a pool
-      responses:
-        "200": {description: Successful response}
-    patch:
-      summary: Update a pool
-      responses:
-        "200": {description: Successful response}
-    delete:
-      summary: Delete a pool
-      responses:
-        "204": {description: Request completed}
-  /pools/{id}/bake:
-    post:
-      summary: Bake a pool image
-      responses:
-        "200": {description: Successful response}
-  /pools/{id}/bake-report:
-    post:
-      summary: Report pool image bake status
-      responses:
-        "200": {description: Successful response}
   /sandboxes/{id}/stop:
     post:
       summary: Stop a sandbox
@@ -875,6 +805,19 @@ components:
     InvalidRequest:
       description: Invalid request body or lifecycle value
   schemas:
+    Machine:
+      type: object
+      required: [cpus, memoryBytes, memAvailableBytes, diskFreeBytes, swapFreeBytes, memoryPressureSomeAvg10, status, runningBoxes, lastSeen]
+      properties:
+        cpus: {type: integer, minimum: 0}
+        memoryBytes: {type: integer, minimum: 0}
+        memAvailableBytes: {type: integer, minimum: 0}
+        diskFreeBytes: {type: integer, minimum: 0}
+        swapFreeBytes: {type: integer, minimum: 0}
+        memoryPressureSomeAvg10: {type: number, minimum: 0}
+        status: {type: string, enum: [healthy, unhealthy]}
+        runningBoxes: {type: integer, minimum: 0}
+        lastSeen: {type: string, format: date-time}
     Snapshot:
       type: object
       required: [id, boxId, resticId, sizeBytes, createdAt]

@@ -25,7 +25,6 @@ type createSandboxRequest struct {
 	NoSecrets       bool              `json:"noSecrets"`
 	FromSnapshot    string            `json:"fromSnapshot"`
 	From            string            `json:"from"`
-	Node            string            `json:"node"`
 	Fork            bool              `json:"-"`
 }
 
@@ -189,29 +188,13 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 			return types.Box{}, lookupErr
 		}
 	}
-	node, err := s.schedule(ctx, input.Node, size, boxType)
-	queuedForNode := false
+	node, err := s.schedule(ctx, size, boxType)
 	if err != nil {
-		var noCapacity *capacityError
-		if !errors.As(err, &noCapacity) || input.Node != "" {
-			return types.Box{}, err
-		}
-		node, err = s.scaleUpForCapacity(ctx)
-		if errors.Is(err, sql.ErrNoRows) {
-			return types.Box{}, noCapacity
-		}
-		if err != nil {
-			return types.Box{}, err
-		}
-		queuedForNode = true
+		return types.Box{}, err
 	}
-	var client *agentClient
-	if !queuedForNode {
-		var connected bool
-		client, connected = newAgentClient(s.hub, node.Node.ID)
-		if !connected {
-			return types.Box{}, errors.New("selected node disconnected")
-		}
+	client, connected := newAgentClient(s.hub, node.Node.ID)
+	if !connected {
+		return types.Box{}, errors.New("local agent disconnected")
 	}
 	boxID := types.NewID("bx_")
 	desktopPassword, err := randomToken(24)
@@ -233,9 +216,6 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	now := time.Now().UTC()
 	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: s.defaultImages().Box,
 		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot}
-	if queuedForNode {
-		box.WaitingFor = "node"
-	}
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
 		box.ExpiresAt = &expires
@@ -288,27 +268,6 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	record := store.BoxRecord{Box: box, DesktopPasswordEnc: passwordEnc, BoxdTokenEnc: boxdEnc, IdempotencyKey: idempotencyKey, SetupStatus: setupStatus}
 	if err := s.store.CreateBox(ctx, record); err != nil {
 		return types.Box{}, fmt.Errorf("persist provisioning box: %w", err)
-	}
-	if queuedForNode {
-		deferred, err := json.Marshal(payload)
-		if err != nil {
-			_ = s.store.DeleteBox(context.Background(), box.ID)
-			return types.Box{}, err
-		}
-		encrypted, err := s.secrets.encrypt(deferred)
-		if err != nil {
-			_ = s.store.DeleteBox(context.Background(), box.ID)
-			return types.Box{}, err
-		}
-		if err := s.store.CreatePendingBox(ctx, box.ID, encrypted); err != nil {
-			_ = s.store.DeleteBox(context.Background(), box.ID)
-			return types.Box{}, err
-		}
-		s.recordActivity(ctx, box.ID, "lifecycle", "created", map[string]any{"type": box.Type, "node": box.NodeID}, "ok")
-		if client, connected := newAgentClient(s.hub, node.Node.ID); connected {
-			go s.provisionPendingBoxes(s.lifecycleCtx, node.Node.ID, client)
-		}
-		return box, nil
 	}
 	if err := client.json(ctx, http.MethodPost, "/v1/boxes", payload, &created); err != nil {
 		s.recordActivity(ctx, box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
@@ -594,7 +553,6 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 
 type resumeSandboxRequest struct {
 	Type       string          `json:"type"`
-	Node       string          `json:"node"`
 	TTLSeconds json.RawMessage `json:"ttlSeconds"`
 }
 
@@ -630,7 +588,6 @@ func (s *Server) resumeSandbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resumeSandboxRequest) (store.BoxRecord, error) {
-	sourceNodeID := box.Box.NodeID
 	oldTTL := box.Box.TTLSeconds
 	if err := s.waitSnapshot(ctx, box.Box.ID); err != nil {
 		return box, errSnapshotBusy
@@ -664,8 +621,7 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 	}
 	if err := s.migrateBox(ctx, &box, struct {
 		Type string `json:"type"`
-		Node string `json:"node"`
-	}{Type: input.Type, Node: input.Node}); err != nil {
+	}{Type: input.Type}); err != nil {
 		s.recordActivity(ctx, box.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		box.Box.State = types.StateStopped
 		_ = s.store.UpdateBox(context.Background(), box)
@@ -690,7 +646,6 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 			s.recordActivity(ctx, box.Box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": ttl}, "ok")
 		}
 		s.recordActivity(ctx, box.Box.ID, "lifecycle", "resumed", map[string]any{"node": box.Box.NodeID}, "ok")
-		s.cleanupDetachedNode(ctx, sourceNodeID)
 		return box, nil
 	}
 	box.Box.State = types.StateReady
@@ -712,7 +667,6 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 		s.recordActivity(ctx, box.Box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": ttl}, "ok")
 	}
 	s.recordActivity(ctx, box.Box.ID, "lifecycle", "resumed", map[string]any{"node": box.Box.NodeID}, "ok")
-	s.cleanupDetachedNode(ctx, sourceNodeID)
 	s.syncEventPump(box.Box)
 	return box, nil
 }
@@ -737,15 +691,13 @@ func (s *Server) writeResumeError(w http.ResponseWriter, boxID string, err error
 			writeError(w, http.StatusConflict, "no_capacity", err.Error())
 			return
 		}
-		writeError(w, http.StatusBadGateway, "resume_failed", withAgentError("sandbox could not be moved to the requested node", err))
+		writeError(w, http.StatusBadGateway, "resume_failed", withAgentError("sandbox could not be resumed on the local machine", err))
 	}
 }
 
 func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input struct {
 	Type string `json:"type"`
-	Node string `json:"node"`
 }) error {
-	oldNodeID := record.Box.NodeID
 	snapshots, err := s.store.ListSnapshots(ctx, record.Box.ID)
 	if err != nil || len(snapshots) == 0 {
 		return errors.New("cannot migrate without a snapshot")
@@ -758,37 +710,15 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	if err != nil {
 		return err
 	}
-	node, err := s.scheduleExcluding(ctx, input.Node, size, targetType, record.Box.ID)
-	queuedForNode := false
+	node, err := s.scheduleExcluding(ctx, size, targetType, record.Box.ID)
 	if err != nil {
-		var noCapacity *capacityError
-		if !errors.As(err, &noCapacity) || input.Node != "" {
-			return err
-		}
-		node, err = s.scaleUpForCapacity(ctx)
-		if errors.Is(err, sql.ErrNoRows) {
-			return noCapacity
-		}
-		if err != nil {
-			return err
-		}
-		queuedForNode = true
+		return err
 	}
 	oldAgent, sourceConnected := newAgentClient(s.hub, record.Box.NodeID)
 	if !sourceConnected {
-		source, sourceErr := s.store.GetNode(ctx, record.Box.NodeID)
-		if sourceErr != nil || (source.Node.Status != "offline" && source.Node.Status != "lost" && source.Node.Status != "destroyed") {
-			return errors.New("source node offline")
-		}
+		return errors.New("local agent disconnected")
 	}
-	var newAgent *agentClient
-	if !queuedForNode {
-		var connected bool
-		newAgent, connected = newAgentClient(s.hub, node.Node.ID)
-		if !connected {
-			return errors.New("target node offline")
-		}
-	}
+	newAgent := oldAgent
 	password, err := s.secrets.decrypt(record.DesktopPasswordEnc)
 	if err != nil {
 		return err
@@ -804,39 +734,6 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	payload := map[string]any{"boxId": record.Box.ID, "image": record.Box.Image, "toolsImage": s.defaultImages().Tools, "type": targetType,
 		"desktopPassword": string(password), "boxdToken": string(boxdToken), "fromSnapshot": snapshots[len(snapshots)-1].ResticID,
 		"storage": restoreStorage}
-	if queuedForNode {
-		if sourceConnected {
-			_ = oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.Box.ID), nil, nil)
-		}
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		encrypted, err := s.secrets.encrypt(encoded)
-		if err != nil {
-			return err
-		}
-		record.Box.NodeID = node.Node.ID
-		record.Box.Type = targetType
-		record.Box.State = types.StateProvisioning
-		record.Box.WaitingFor = "node"
-		record.Box.ErrorCode = ""
-		if err := s.store.CreatePendingBox(ctx, record.Box.ID, encrypted); err != nil {
-			return err
-		}
-		if err := s.store.UpdateBox(ctx, *record); err != nil {
-			_ = s.store.DeletePendingBox(context.Background(), record.Box.ID)
-			return err
-		}
-		if oldNodeID != node.Node.ID {
-			s.recordActivity(ctx, record.Box.ID, "lifecycle", "moved to node", map[string]any{"oldNodeId": oldNodeID, "node": node.Node.ID}, "ok")
-		}
-		s.cleanupDetachedNode(ctx, oldNodeID)
-		if client, connected := newAgentClient(s.hub, node.Node.ID); connected {
-			go s.provisionPendingBoxes(s.lifecycleCtx, node.Node.ID, client)
-		}
-		return nil
-	}
 	if node.Node.ID == record.Box.NodeID {
 		if err := oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.Box.ID), nil, nil); err != nil {
 			return err
@@ -844,21 +741,11 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 		if err := newAgent.json(ctx, http.MethodPost, "/v1/boxes", payload, nil); err != nil {
 			return err
 		}
-	} else {
-		if err := newAgent.json(ctx, http.MethodPost, "/v1/boxes", payload, nil); err != nil {
-			return err
-		}
-		if sourceConnected {
-			_ = oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.Box.ID), nil, nil)
-		}
 	}
 	record.Box.NodeID = node.Node.ID
 	record.Box.Type = targetType
 	record.Box.State = types.StateReady
 	_ = s.pushCurrentBoxRoutes(ctx, newAgent, record.Box)
-	if oldNodeID != node.Node.ID {
-		s.recordActivity(ctx, record.Box.ID, "lifecycle", "moved to node", map[string]any{"oldNodeId": oldNodeID, "node": node.Node.ID}, "ok")
-	}
 	return nil
 }
 
@@ -909,9 +796,6 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	if input.Type == "" {
 		input.Type = source.Box.Type
 	}
-	if input.Node == "" {
-		input.Node = source.Box.NodeID
-	}
 	if len(input.IdleStopSeconds) == 0 {
 		input.IdleStopSeconds, _ = json.Marshal(source.Box.IdleStopSeconds)
 	}
@@ -953,11 +837,10 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteSandboxNow(w http.ResponseWriter, r *http.Request) {
 	queued, queuedErr := s.store.GetBox(r.Context(), pathID(r))
 	if queuedErr == nil {
-		_, pendingErr := s.store.GetPendingBox(r.Context(), queued.Box.ID)
-		localDelete := pendingErr == nil || queued.Box.ErrorCode == "no_capacity" || queued.Box.ErrorCode == "provision_failed"
-		if !localDelete && queued.Box.State == types.StateStopped {
+		localDelete := false
+		if queued.Box.State == types.StateStopped {
 			if node, err := s.store.GetNode(r.Context(), queued.Box.NodeID); err == nil {
-				localDelete = node.Node.Status == "lost" || detachedNode(node)
+				localDelete = node.Node.Status == "offline"
 			}
 		}
 		if localDelete {
@@ -993,7 +876,6 @@ func (s *Server) deleteSandboxNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.dropDesktopSession(box.Box.ID)
-	s.cleanupDetachedNode(r.Context(), box.Box.NodeID)
 	s.emitWebhookEvent(context.Background(), "sandbox.deleted", map[string]any{"sandbox": box.Box})
 	w.WriteHeader(http.StatusNoContent)
 	go s.forgetSnapshotsAsync(snapshots, client)
@@ -1039,45 +921,12 @@ func (s *Server) deleteDetachedSandbox(ctx context.Context, record store.BoxReco
 		}
 	}
 	s.stopEventPump(record.Box.ID)
-	_ = s.store.DeletePendingBox(ctx, record.Box.ID)
 	s.recordActivity(ctx, record.Box.ID, "lifecycle", "deleted", map[string]any{"boxId": record.Box.ID}, "ok")
 	if err := s.store.DeleteBox(ctx, record.Box.ID); err != nil {
 		return err
 	}
-	s.cleanupDetachedNode(ctx, record.Box.NodeID)
 	s.emitWebhookEvent(context.Background(), "sandbox.deleted", map[string]any{"sandbox": record.Box})
 	return nil
-}
-
-func (s *Server) cleanupDetachedNode(ctx context.Context, nodeID string) {
-	node, err := s.store.GetNode(ctx, nodeID)
-	if err != nil || !detachedNode(node) {
-		return
-	}
-	boxes, err := s.store.ListBoxes(ctx, nodeID)
-	if err == nil && len(boxes) == 0 {
-		_ = s.store.DeleteNode(ctx, nodeID)
-	}
-}
-
-func detachedNode(node store.NodeRecord) bool {
-	if node.Node.Status == "destroyed" {
-		return true
-	}
-	return node.Node.Status == "offline" && node.Node.PoolID == "" && node.Node.ProviderInstanceID == "" &&
-		node.Node.Host == "" && node.Node.HostBase == "" && node.TokenHash == ""
-}
-
-func (s *Server) cleanupDetachedNodes(ctx context.Context) {
-	nodes, err := s.store.ListNodes(ctx)
-	if err != nil {
-		return
-	}
-	for _, node := range nodes {
-		if detachedNode(node) {
-			s.cleanupDetachedNode(ctx, node.Node.ID)
-		}
-	}
 }
 
 func (s *Server) loadBoxAgent(ctx context.Context, id string) (store.BoxRecord, *agentClient, error) {

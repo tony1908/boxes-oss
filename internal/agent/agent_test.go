@@ -114,8 +114,8 @@ func TestToolsImageWarningIsLoggedOnce(t *testing.T) {
 }
 
 func TestCreateRequestToolsImageOverridesNodeDefault(t *testing.T) {
-	service := New(Config{ToolsImage: "registry.example.test/boxes/tools:old"}, dockercli.New(testExecutor{}), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
-	if got := service.toolsImage(createRequest{ToolsImage: "registry.example.test/boxes/tools:new"}); got != "registry.example.test/boxes/tools:new" {
+	service := New(Config{ToolsImage: "images.example.test/boxes/tools:old"}, dockercli.New(testExecutor{}), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	if got := service.toolsImage(createRequest{ToolsImage: "images.example.test/boxes/tools:new"}); got != "images.example.test/boxes/tools:new" {
 		t.Fatalf("tools image = %q, want image selected by the server", got)
 	}
 }
@@ -392,7 +392,7 @@ func TestCreateRecoversOnceFromCorruptImageContent(t *testing.T) {
 	startBoxdTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	var calls []callRecord
 	inspectCount, createCount := 0, 0
-	const image = "registry.example.test/boxes/box:dev"
+	const image = "images.example.test/boxes/box:dev"
 	dockerExec := testExecutor{calls: &calls, command: func(argv []string, _ []byte, stdout, stderr io.Writer) (int, error) {
 		if len(argv) < 2 || argv[0] != "docker" {
 			return 1, errors.New("unexpected command")
@@ -476,7 +476,7 @@ func TestCreateRecoversFromCorruptInitialImagePull(t *testing.T) {
 	startBoxdTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	var calls []callRecord
 	inspectCount, pullCount := 0, 0
-	const image = "registry.example.test/boxes/box:dev"
+	const image = "images.example.test/boxes/box:dev"
 	dockerExec := testExecutor{calls: &calls, command: func(argv []string, _ []byte, stdout, stderr io.Writer) (int, error) {
 		if len(argv) < 2 || argv[0] != "docker" {
 			return 1, errors.New("unexpected command")

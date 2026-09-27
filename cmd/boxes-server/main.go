@@ -73,7 +73,6 @@ func main() {
 	defer stop()
 	go srv.RunReaper(ctx)
 	go srv.RunSnapshotLoop(ctx)
-	go srv.RunAutoscaling(ctx)
 	httpServer := &http.Server{Addr: *addr, Handler: srv.Handler()}
 	go func() {
 		<-ctx.Done()

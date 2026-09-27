@@ -1,31 +1,14 @@
 # boxes-oss
 
-boxes-oss is an open-source, self-hosted platform for running and managing AI agent machines on your own VPSes. It is designed around a Go server, node agents, Docker/Sysbox boxes, snapshots, a web UI, and a CLI.
+boxes-oss is an open-source, self-hosted platform for running AI agent boxes on one VM. A Go server and its local boxes-agent use that VM’s Docker/Sysbox runtime and real memory capacity. The project includes snapshots, a web UI, and a CLI.
 
 ## Status
 
-### Verified (2026-09-24)
+A single VM hosts the control plane and every box. The local agent connects through the existing server tunnel. Admission uses live memory availability, pressure, swap use, and configured host headroom. Snapshots can use local disk or S3-compatible storage such as Spaces.
 
-A fresh DigitalOcean Ubuntu 24.04 droplet (4 vCPU/8 GB) was installed with `install/install.sh` and Sysbox 0.7.1. Verification confirmed Let's Encrypt issuance via `<ip>.sslip.io`, survival across a host reboot, and a successful installer re-run. `scripts/e2e-remote.sh` passed checks for box lifecycle; Docker-in-box; snapshots, including system changes across stop/resume/fork; desktop TLS and token authentication; public host URLs; SSH through `boxes proxy`; a real OpenCode prompt with a computer-use screenshot; and X server health.
+The installer configures Docker, Sysbox, Traefik, TLS, swap, sysctl settings, and the local server/agent services. `install/install.sh --upgrade` updates an existing installation while preserving its configuration.
 
-`scripts/e2e-local.sh` also verifies box lifecycle, exec/files, snapshot behavior (including `/config` and system changes surviving stop/resume; `/config` also survives fork), and desktop access through Traefik with token authentication. `scripts/e2e-agents.sh` verifies the web UI, CLI, computer-use MCP tools, and—when credentials are supplied—a real OpenCode prompt.
-
-### Verified (2026-09-25)
-
-- DigitalOcean autoscaling: scaling up from a full control plane creates a droplet with cloud-init that installs and joins the cluster in about 3 minutes; the requested box is ready in about 5 minutes.
-- Idle scale-down destroys the extra droplet about 3.5 minutes after its last box stops.
-- Resuming a box on a second, fresh droplet restores both user and system data from Spaces. Failed boots are cleaned up after the configured boot timeout.
-- Option A image: 5.78 GB; eight idle boxes use approximately 2.8 GB of host RAM on an 8 GB droplet.
-- Prebuilt node images (bake) verified on DigitalOcean 2026-09-25: bake 7.75 min; cold start on a new droplet from the baked image 2 min 29 s (was ~5 min); box on an already-running node ready in ~5 s (scale-ahead headroom / warm schedule keep one ready).
-- S3/Spaces snapshot storage, the built-in image registry, and safe `install.sh --upgrade` behavior are verified.
-
-### Not yet verified
-
-- Claude Code and Codex harnesses against real accounts
-- Hetzner and script providers with live nodes
-- arm64 nodes
-
-See [the design](docs/plans/2026-09-24-boxes-oss-design.md) and [implementation plan](docs/plans/2026-09-24-boxes-oss-implementation.md) for architecture and roadmap.
+See [the design](docs/plans/2026-09-24-boxes-oss-design.md) and [implementation plan](docs/plans/2026-09-24-boxes-oss-implementation.md) for project details.
 
 SDKs: [TypeScript](sdk/typescript/README.md) · [Python](sdk/python/README.md).
 

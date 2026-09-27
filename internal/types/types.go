@@ -77,7 +77,6 @@ type Box struct {
 	IdleStopSeconds    int64      `json:"idleStopSeconds,omitempty"`
 	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
 	FromSnapshot       string     `json:"fromSnapshot,omitempty"`
-	WaitingFor         string     `json:"waitingFor,omitempty"`
 	ErrorCode          string     `json:"errorCode,omitempty"`
 	Error              string     `json:"error,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
@@ -86,50 +85,19 @@ type Box struct {
 
 // Node describes a machine running a boxes agent.
 type Node struct {
-	ID                      string     `json:"id"`
-	Name                    string     `json:"name"`
-	Host                    string     `json:"host,omitempty"`
-	HostBase                string     `json:"hostBase,omitempty"`
-	Status                  string     `json:"status"`
-	CPUs                    int        `json:"cpus"`
-	MemoryBytes             int64      `json:"memoryBytes"`
-	FreeMemoryBytes         int64      `json:"freeMemoryBytes"`
-	MemAvailableBytes       int64      `json:"memAvailableBytes"`
-	SwapFreeBytes           int64      `json:"swapFreeBytes"`
-	MemoryPressureSomeAvg10 float64    `json:"memoryPressureSomeAvg10"`
-	DiskFreeBytes           int64      `json:"diskFreeBytes"`
-	Drained                 bool       `json:"drained"`
-	LastSeen                time.Time  `json:"lastSeen,omitempty"`
-	PoolID                  string     `json:"poolId,omitempty"`
-	ProviderInstanceID      string     `json:"providerInstanceId,omitempty"`
-	CreatedAt               time.Time  `json:"createdAt,omitempty"`
-	IdleSince               *time.Time `json:"idleSince,omitempty"`
-	BootSeconds             float64    `json:"bootSeconds,omitempty"`
-}
-
-// Pool describes an autoscaling group; credentials are represented only by a
-// boolean and are never part of a response payload.
-type Pool struct {
-	ID                 string    `json:"id"`
-	Name               string    `json:"name"`
-	Provider           string    `json:"provider"`
-	HasCredentials     bool      `json:"hasCredentials"`
-	Region             string    `json:"region"`
-	Size               string    `json:"size"`
-	Image              string    `json:"image"`
-	SSHKeys            []string  `json:"sshKeys,omitempty"`
-	MinNodes           int       `json:"minNodes"`
-	MaxNodes           int       `json:"maxNodes"`
-	IdleMinutes        int       `json:"idleMinutes"`
-	BootTimeoutMinutes int       `json:"bootTimeoutMinutes"`
-	HeadroomSlots      int       `json:"headroomSlots"`
-	WarmSchedule       string    `json:"warmSchedule,omitempty"`
-	AutoRebake         bool      `json:"autoRebake,omitempty"`
-	BakedImageID       string    `json:"bakedImageId,omitempty"`
-	BakedBoxDigest     string    `json:"bakedBoxDigest,omitempty"`
-	BakedToolsDigest   string    `json:"bakedToolsDigest,omitempty"`
-	BakeStatus         string    `json:"bakeStatus,omitempty"`
-	CreatedAt          time.Time `json:"createdAt,omitempty"`
+	ID                      string    `json:"id"`
+	Name                    string    `json:"name"`
+	Host                    string    `json:"host,omitempty"`
+	HostBase                string    `json:"hostBase,omitempty"`
+	Status                  string    `json:"status"`
+	CPUs                    int       `json:"cpus"`
+	MemoryBytes             int64     `json:"memoryBytes"`
+	FreeMemoryBytes         int64     `json:"freeMemoryBytes"`
+	MemAvailableBytes       int64     `json:"memAvailableBytes"`
+	SwapFreeBytes           int64     `json:"swapFreeBytes"`
+	MemoryPressureSomeAvg10 float64   `json:"memoryPressureSomeAvg10"`
+	DiskFreeBytes           int64     `json:"diskFreeBytes"`
+	LastSeen                time.Time `json:"lastSeen,omitempty"`
 }
 
 // Snapshot describes a restic snapshot associated with a box.

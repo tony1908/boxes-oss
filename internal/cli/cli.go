@@ -19,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -174,12 +173,6 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.limits(ctx, args[1:])
 	case "env":
 		return c.environment(ctx, args[1:])
-	case "node":
-		return c.node(ctx, args[1:])
-	case "image":
-		return c.image(ctx, args[1:])
-	case "pool":
-		return c.pool(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q; run boxes --help", args[0])
 	}
@@ -620,7 +613,6 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	environment := fs.String("environment", "", "environment ID")
 	noEnv := fs.Bool("no-env", false, "disable the default environment")
 	from := fs.String("from", "", "named snapshot to restore")
-	node := fs.String("node", "", "node ID")
 	setupFile := fs.String("setup-file", "", "setup script file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -670,9 +662,6 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	}
 	if *from != "" {
 		body["from"] = *from
-	}
-	if *node != "" {
-		body["node"] = *node
 	}
 	if *setupFile != "" {
 		script, err := os.ReadFile(*setupFile)
@@ -1437,7 +1426,7 @@ func (c *CLI) stop(ctx context.Context, args []string) error {
 
 func (c *CLI) resume(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes resume <id> [--type SIZE] [--node ID]")
+		return errors.New("usage: boxes resume <id> [--type SIZE]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1445,7 +1434,6 @@ func (c *CLI) resume(ctx context.Context, args []string) error {
 	}
 	fs := c.flagSet("resume")
 	boxType := fs.String("type", "", "box size")
-	node := fs.String("node", "", "node ID")
 	ttl := fs.Int64("ttl", 0, "time to live in seconds")
 	noAutoStop := fs.Bool("no-auto-stop", false, "disable the auto-stop timer")
 	if err := fs.Parse(flagsBeforePositionals(fs, args[1:])); err != nil {
@@ -1460,9 +1448,6 @@ func (c *CLI) resume(ctx context.Context, args []string) error {
 	body := map[string]any{}
 	if *boxType != "" {
 		body["type"] = *boxType
-	}
-	if *node != "" {
-		body["node"] = *node
 	}
 	if *noAutoStop {
 		body["ttlSeconds"] = nil
@@ -1942,244 +1927,6 @@ func (c *CLI) environment(ctx context.Context, args []string) error {
 	}
 }
 
-func (c *CLI) node(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: boxes node add|list|drain|undrain|rm ...")
-	}
-	switch args[0] {
-	case "list":
-		if len(args) != 1 {
-			return errors.New("usage: boxes node list")
-		}
-		result, err := c.client.doJSON(ctx, http.MethodGet, "/nodes", nil, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(unwrap(result, "nodes"))
-	case "add":
-		if len(args) != 2 {
-			return errors.New("usage: boxes node add <name>")
-		}
-		result, err := c.client.doJSON(ctx, http.MethodPost, "/nodes", map[string]string{"name": args[1]}, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(result)
-	case "drain":
-		if len(args) != 2 {
-			return errors.New("usage: boxes node drain <id>")
-		}
-		id, err := requiredID(args[1])
-		if err != nil {
-			return err
-		}
-		result, err := c.client.doJSON(ctx, http.MethodPost, "/nodes/"+url.PathEscape(id)+"/drain", map[string]any{}, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(result)
-	case "undrain":
-		if len(args) != 2 {
-			return errors.New("usage: boxes node undrain <id>")
-		}
-		id, err := requiredID(args[1])
-		if err != nil {
-			return err
-		}
-		result, err := c.client.doJSON(ctx, http.MethodPost, "/nodes/"+url.PathEscape(id)+"/undrain", map[string]any{}, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(result)
-	case "rm", "delete":
-		if len(args) != 2 {
-			return errors.New("usage: boxes node rm <id>")
-		}
-		id, err := requiredID(args[1])
-		if err != nil {
-			return err
-		}
-		_, err = c.client.Do(ctx, http.MethodDelete, "/nodes/"+url.PathEscape(id), nil, nil)
-		if err == nil && c.jsonOutput {
-			return c.printJSON(map[string]any{"ok": true})
-		}
-		return err
-	default:
-		return fmt.Errorf("unknown node command %q", args[0])
-	}
-}
-
-func (c *CLI) image(ctx context.Context, args []string) error {
-	if len(args) == 0 || args[0] != "push" {
-		return errors.New("usage: boxes image push [--box IMAGE] [--tools IMAGE] [--tag TAG]")
-	}
-	fs := c.flagSet("image push")
-	boxSource := fs.String("box", "", "local box image")
-	toolsSource := fs.String("tools", "", "local tools image")
-	tag := fs.String("tag", "latest", "tag for pushed images")
-	if err := fs.Parse(args[1:]); err != nil {
-		return err
-	}
-	if fs.NArg() != 0 || (*boxSource == "" && *toolsSource == "") {
-		return errors.New("usage: boxes image push [--box IMAGE] [--tools IMAGE] [--tag TAG]")
-	}
-	if !imageTagPattern.MatchString(*tag) {
-		return fmt.Errorf("invalid image tag %q", *tag)
-	}
-	var registry struct {
-		URL      string `json:"url"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := c.client.request(ctx, http.MethodGet, "/settings/registry", nil, &registry, nil); err != nil {
-		return err
-	}
-	if registry.URL == "" || registry.Username == "" || registry.Password == "" || strings.ContainsAny(registry.URL, "/\\\r\n\x00") {
-		return errors.New("server registry is not configured")
-	}
-	if err := c.RunCommandWithInput(ctx, strings.NewReader(registry.Password+"\n"), "docker", "login", registry.URL, "--username", registry.Username, "--password-stdin"); err != nil {
-		return fmt.Errorf("log in to registry: %w", err)
-	}
-	updated := make(map[string]string, 2)
-	if *boxSource != "" {
-		destination := registry.URL + "/boxes/box:" + *tag
-		if err := c.run(ctx, "docker", "tag", *boxSource, destination); err != nil {
-			return fmt.Errorf("tag box image: %w", err)
-		}
-		if err := c.run(ctx, "docker", "push", destination); err != nil {
-			return fmt.Errorf("push box image: %w", err)
-		}
-		updated["boxImage"] = destination
-	}
-	if *toolsSource != "" {
-		destination := registry.URL + "/boxes/tools:" + *tag
-		if err := c.run(ctx, "docker", "tag", *toolsSource, destination); err != nil {
-			return fmt.Errorf("tag tools image: %w", err)
-		}
-		if err := c.run(ctx, "docker", "push", destination); err != nil {
-			return fmt.Errorf("push tools image: %w", err)
-		}
-		updated["toolsImage"] = destination
-	}
-	result, err := c.client.doJSON(ctx, http.MethodPut, "/settings/images", updated, nil)
-	if err != nil {
-		return err
-	}
-	return c.printValue(result)
-}
-
-var imageTagPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
-
-func (c *CLI) pool(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: boxes pool list|add|set|bake|rm")
-	}
-	switch args[0] {
-	case "list":
-		if len(args) != 1 {
-			return errors.New("usage: boxes pool list")
-		}
-		result, err := c.client.doJSON(ctx, http.MethodGet, "/pools", nil, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(unwrap(result, "pools"))
-	case "add":
-		fs := c.flagSet("pool add")
-		name := fs.String("name", "", "pool name")
-		providerName := fs.String("provider", "", "digitalocean, hetzner, or script")
-		region := fs.String("region", "", "provider region or location")
-		size := fs.String("size", "", "provider machine size")
-		image := fs.String("image", "", "provider image")
-		minNodes := fs.Int("min-nodes", 0, "minimum warm nodes")
-		maxNodes := fs.Int("max-nodes", 1, "maximum pool nodes")
-		idleMinutes := fs.Int("idle-minutes", 10, "minutes idle before node removal")
-		bootTimeout := fs.Int("boot-timeout-minutes", 15, "node boot timeout")
-		sshKeys := fs.String("ssh-keys", "", "comma-separated provider SSH key IDs")
-		tokenStdin := fs.Bool("token-stdin", false, "read provider credentials from stdin")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if fs.NArg() != 0 || !*tokenStdin || *name == "" || *providerName == "" || *region == "" || *size == "" || *image == "" {
-			return errors.New("usage: boxes pool add --name NAME --provider PROVIDER --region REGION --size SIZE --image IMAGE [--min-nodes N --max-nodes N --idle-minutes N] --token-stdin")
-		}
-		credential, err := bufio.NewReader(c.In).ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("read provider credentials: %w", err)
-		}
-		credential = strings.TrimSpace(credential)
-		if credential == "" {
-			return errors.New("provider credentials from --token-stdin cannot be empty")
-		}
-		keys := make([]string, 0)
-		for _, key := range strings.Split(*sshKeys, ",") {
-			if key = strings.TrimSpace(key); key != "" {
-				keys = append(keys, key)
-			}
-		}
-		body := map[string]any{"name": *name, "provider": *providerName, "credentials": credential, "region": *region,
-			"size": *size, "image": *image, "sshKeys": keys, "minNodes": *minNodes, "maxNodes": *maxNodes,
-			"idleMinutes": *idleMinutes, "bootTimeoutMinutes": *bootTimeout}
-		result, err := c.client.doJSON(ctx, http.MethodPost, "/pools", body, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(unwrap(result, "pool"))
-	case "rm", "remove", "delete":
-		if len(args) != 2 {
-			return errors.New("usage: boxes pool rm <id>")
-		}
-		id, err := requiredID(args[1])
-		if err != nil {
-			return err
-		}
-		result, err := c.client.Do(ctx, http.MethodDelete, "/pools/"+url.PathEscape(id), nil, nil)
-		if err != nil {
-			return err
-		}
-		if len(strings.TrimSpace(string(result))) == 0 && c.jsonOutput {
-			return c.printJSON(map[string]bool{"ok": true})
-		}
-		if len(strings.TrimSpace(string(result))) == 0 {
-			return nil
-		}
-		return c.printValue(result)
-	case "bake":
-		if len(args) != 2 {
-			return errors.New("usage: boxes pool bake <id>")
-		}
-		result, err := c.client.doJSON(ctx, http.MethodPost, "/pools/"+url.PathEscape(args[1])+"/bake", map[string]any{}, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(result)
-	case "set":
-		if len(args) < 2 {
-			return errors.New("usage: boxes pool set <id> --headroom N --warm <spec>")
-		}
-		fs := c.flagSet("pool set")
-		headroom := fs.Int("headroom", -1, "small-box headroom slots")
-		warm := fs.String("warm", "", "warm schedule")
-		if err := fs.Parse(args[2:]); err != nil {
-			return err
-		}
-		body := map[string]any{}
-		if *headroom >= 0 {
-			body["headroomSlots"] = *headroom
-		}
-		if *warm != "" {
-			body["warmSchedule"] = *warm
-		}
-		result, err := c.client.doJSON(ctx, http.MethodPatch, "/pools/"+url.PathEscape(args[1]), body, nil)
-		if err != nil {
-			return err
-		}
-		return c.printValue(unwrap(result, "pool"))
-	default:
-		return fmt.Errorf("unknown pool command %q", args[0])
-	}
-}
-
 func (c *CLI) postAction(ctx context.Context, endpoint string, body any) error {
 	result, err := c.client.doJSON(ctx, http.MethodPost, endpoint, body, nil)
 	if err != nil {
@@ -2280,8 +2027,7 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend fork snapshot delete dashboard forward skill env node image")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend fork snapshot delete dashboard forward skill env node pool")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend fork snapshot delete dashboard forward skill env")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }
