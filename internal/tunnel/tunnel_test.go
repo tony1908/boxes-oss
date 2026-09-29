@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -150,6 +152,76 @@ func TestRunForeverReconnectsAfterTunnelDrops(t *testing.T) {
 		return connects.Load() >= 2 && hubHasClient(hub, "nd_test")
 	})
 	waitForCondition(t, "disconnect callback", func() bool { return disconnects.Load() >= 1 })
+}
+
+func TestRunForeverReconnectsAfterServerClosesTunnelWithOpenStreams(t *testing.T) {
+	previousProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previousProcs)
+
+	var connects atomic.Int32
+	var handlers atomic.Int32
+	var serverConn atomic.Value
+	hub := &Hub{}
+	hubHandler := hub.Handler(func(token string) (string, bool) { return "nd_busy", token == "secret" })
+	hub.OnConnect = func(string) { connects.Add(1) }
+	hubServer := httptest.NewUnstartedServer(hubHandler)
+	hubServer.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		if state == http.StateHijacked {
+			serverConn.Store(conn)
+		}
+	}
+	hubServer.Start()
+	defer hubServer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- RunForever(ctx, websocketURL(hubServer.URL), "secret", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handlers.Add(1)
+			_, _ = io.Copy(io.Discard, r.Body)
+		}))
+	}()
+
+	client := waitForClient(t, hub, "nd_busy")
+	const streamCount = 10
+	var bodyWriters []*io.PipeWriter
+	for i := 0; i < streamCount; i++ {
+		bodyReader, bodyWriter := io.Pipe()
+		bodyWriters = append(bodyWriters, bodyWriter)
+		go func() {
+			response, err := client.Post("http://agent/hold", "application/octet-stream", bodyReader)
+			if err == nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	t.Cleanup(func() {
+		for _, writer := range bodyWriters {
+			_ = writer.Close()
+		}
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("RunForever did not stop after context cancellation")
+		}
+	})
+
+	waitForCondition(t, "all tunnel handlers to hold open streams", func() bool { return handlers.Load() >= streamCount })
+	for _, writer := range bodyWriters {
+		if _, err := writer.Write([]byte("x")); err != nil {
+			t.Fatalf("write to held request body: %v", err)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	conn, ok := serverConn.Load().(net.Conn)
+	if !ok {
+		t.Fatal("hub did not expose the hijacked websocket connection")
+	}
+	_ = conn.Close()
+	waitForCondition(t, "agent to reconnect after server closed tunnel", func() bool {
+		return connects.Load() >= 2 && hubHasClient(hub, "nd_busy")
+	})
 }
 
 func websocketURL(httpURL string) string {
