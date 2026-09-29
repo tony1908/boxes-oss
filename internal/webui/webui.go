@@ -21,6 +21,12 @@ func Handler() http.Handler {
 	files := http.FileServer(http.FS(site))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/_next/static/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+
 		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 		if name == "." || name == "" || name == "index.html" {
 			r.URL.Path = "/"

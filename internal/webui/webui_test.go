@@ -23,3 +23,26 @@ func TestHandlerServesEmbeddedUIAndFallsBackForApplicationRoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestHandlerSetsCacheHeaders(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: "/_next/static/chunks/310vm2bl3xxpt.js", want: "public, max-age=31536000, immutable"},
+		{path: "/", want: "no-cache"},
+		{path: "/sandboxes/bx_123456789abc", want: "no-cache"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			response := httptest.NewRecorder()
+			Handler().ServeHTTP(response, request)
+
+			if got := response.Header().Get("Cache-Control"); got != tt.want {
+				t.Errorf("Cache-Control = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

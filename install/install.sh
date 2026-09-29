@@ -593,7 +593,7 @@ AWS_DEFAULT_REGION=${S3_REGION}
 EOF
 chmod 0600 /etc/boxes/server.env /etc/boxes/agent.env
 
-printf 'http:\n  routers:\n    boxes-server:\n      rule: "Host(`%s`)"\n      entryPoints: [websecure]\n      service: boxes-server\n      tls:\n        certResolver: letsencrypt\n  services:\n    boxes-server:\n      loadBalancer:\n        servers:\n          - url: "http://127.0.0.1:8080"\n' "$DOMAIN" \
+printf 'http:\n  routers:\n    boxes-server:\n      rule: "Host(`%s`)"\n      entryPoints: [websecure]\n      service: boxes-server\n      middlewares: [boxes-compress]\n      tls:\n        certResolver: letsencrypt\n  services:\n    boxes-server:\n      loadBalancer:\n        servers:\n          - url: "http://127.0.0.1:8080"\n  middlewares:\n    boxes-compress:\n      compress: {}\n' "$DOMAIN" \
   > /etc/boxes/traefik/dynamic/boxes-server.yml
 chmod 0600 /etc/boxes/traefik/dynamic/boxes-server.yml
 
