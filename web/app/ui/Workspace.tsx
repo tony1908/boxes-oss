@@ -5,6 +5,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { api, apiResponse, jsonBody } from '../lib/api';
 import { autoStopLabel, extendTTLSeconds, timerTTLSeconds } from '../lib/lifecycle.mjs';
 import { activityPresentation, usageCountsLabel } from '../lib/activity.mjs';
+import { createdAPIKeySecret, listResourceResponse } from '../lib/response-shapes.mjs';
 import { BrandMark } from './BrandMark';
 import { Icon } from './icons';
 
@@ -179,8 +180,7 @@ export function Workspace({ view }: { view: View }) {
       } else if (view === 'settings') {
         setItems(user ? [user] : []);
       } else {
-        const resourceKey: Partial<Record<View, string>> = { sandboxes: 'sandboxes', templates: 'snapshots', environments: 'environments', 'api-keys': 'keys', webhooks: 'webhooks' };
-        setItems(listFrom(result, resourceKey[view]));
+        setItems(listResourceResponse(result, view));
       }
     } catch (cause) {
       setItems([]);
@@ -298,8 +298,8 @@ export function Workspace({ view }: { view: View }) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     try {
-      const result = await api<{ key?: string; token?: string }>('/api-keys', { method: 'POST', body: jsonBody({ name: data.get('name'), scopes: ['*'] }) });
-      const secret = result.key ?? result.token;
+      const result = await api<{ apiKey?: { key?: string }; key?: string; token?: string }>('/api-keys', { method: 'POST', body: jsonBody({ name: data.get('name'), scopes: ['*'] }) });
+      const secret = createdAPIKeySecret(result);
       setDialog(false); setCreatedKey(secret ?? ''); flash(secret ? 'API key created. Copy it now; it will not be shown again.' : 'API key created.'); await refresh();
     } catch (cause) { setProblem(cause instanceof Error ? cause.message : 'API key could not be created.'); }
   }
@@ -582,13 +582,13 @@ function EnvironmentList({ loading, items, onCreate }: { loading: boolean; items
 }
 
 function APIKeyList({ loading, items, onCreate, onDelete }: { loading: boolean; items: unknown[]; onCreate: () => void; onDelete: (id: string) => void }) {
-  return <section className="resource-panel"><SectionHeader title="API keys" /><div className="table-scroll"><table><thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th /></tr></thead><tbody>
+  return <section className="resource-panel"><SectionHeader title="API keys" /><div className="table-scroll"><table><thead><tr><th>Name</th><th>Secret</th><th>Created</th><th>Expires</th><th>Usage</th><th /></tr></thead><tbody>
     {items.map((raw, index) => {
-      const key = raw as { id?: string; name?: string; prefix?: string; createdAt?: string; lastUsedAt?: string; usage?: { requests?: number; sandboxesCreated?: number } };
-      return <tr key={key.id ?? index}><td><strong>{key.name ?? 'Unnamed key'}</strong><small>{(key.usage?.requests ?? 0).toLocaleString()} requests · {key.usage?.sandboxesCreated ?? 0} boxes, last 30 days</small></td><td><code>{key.prefix ?? 'Hidden'}</code></td><td>{formatDate(key.createdAt)}</td><td>{formatDate(key.lastUsedAt)}</td><td><button className="text-link danger-link" onClick={() => key.id && onDelete(key.id)}>Revoke</button></td></tr>;
+      const key = raw as { id?: string; name?: string; createdAt?: string; expiresAt?: string; scopes?: string[]; usage?: { requests?: number; sandboxesCreated?: number } };
+      return <tr key={key.id ?? index}><td><strong>{key.name ?? 'Unnamed key'}</strong><small>{key.scopes?.join(', ') ?? '-'}</small></td><td>Shown once at creation</td><td>{formatDate(key.createdAt)}</td><td>{formatDate(key.expiresAt)}</td><td>{(key.usage?.requests ?? 0).toLocaleString()} requests · {key.usage?.sandboxesCreated ?? 0} boxes, last 30 days</td><td><button className="text-link danger-link" onClick={() => key.id && onDelete(key.id)}>Revoke</button></td></tr>;
     })}
-    {!loading && items.length === 0 && <tr><td colSpan={5}><EmptyState text="Create an API key to get started." /></td></tr>}
-    {loading && items.length === 0 && <tr><td colSpan={5}><LoadingState /></td></tr>}
+    {!loading && items.length === 0 && <tr><td colSpan={6}><EmptyState text="Create an API key to get started." /></td></tr>}
+    {loading && items.length === 0 && <tr><td colSpan={6}><LoadingState /></td></tr>}
   </tbody></table></div></section>;
 }
 
