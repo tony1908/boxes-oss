@@ -4,24 +4,18 @@
 
 | Work | Model | Effort | Where |
 |------|-------|--------|-------|
-| Thinking: planning, design, validation, review, debugging root cause, anything effort-heavy | Claude Opus 5.5 (`claude-opus-5-5`) | medium | Claude Code |
-| Execution: implementing a settled plan, edits, running commands, low-effort tasks | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | low | Claude Code headless (`claude -p`) |
+| Thinking: planning, design, validation, review, debugging root cause, anything effort-heavy | Claude Opus 5.5 (`claude-opus-5-5`) | medium | Claude Code (main session) |
+| Execution: implementing a settled plan, edits, running commands, low-effort tasks | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | low | Claude Code, in-session subagent |
 
-Flow: Opus plans → Haiku executes → Opus validates the result. Codex/Luna and OpenCode are no longer used.
+Flow: Opus plans → Haiku executes → Opus validates the result. Everything runs inside Claude Code. Codex/Luna and OpenCode are no longer used.
 
-Run an execution task with headless Claude Code. Write the prompt to a file and **feed it on stdin**, from the repo (or worktree) the task should change:
+Run an execution task by spawning the `executor` subagent from the main session with the Agent tool. The agent is defined in `~/.claude/agents/executor.md` (model `haiku`, effort `low`, tools: Bash, Read, Edit, Write, Glob, Grep).
 
-```sh
-claude -p --model claude-haiku-4-5-20251001 --effort low \
-  --permission-mode acceptEdits \
-  --allowedTools "Bash,Edit,Write,Read,Glob,Grep" \
-  < prompt.txt
-```
-
-- Always pass `--model` and `--effort low` (owner's choice, 2026-10-07). There is no "Haiku 5.5"; Haiku 4.5 is the newest Haiku.
-- `--allowedTools` must include `Bash`, or the executor cannot run builds and tests in headless mode.
-- Haiku at low effort needs tighter prompts than Luna did: one focused task per run, exact files, exact acceptance commands. Split large phases into several runs.
-- For parallel tasks, run each in its own git worktree.
+- If the `executor` agent type isn't listed in the session, spawn `general-purpose` with `model: "haiku"` and paste the executor rules into the prompt.
+- The owner has asked for this (2026-10-07), so spawning the executor for implementation work needs no further confirmation.
+- There is no "Haiku 5.5"; Haiku 4.5 is the newest Haiku.
+- Haiku at low effort needs tight prompts: one focused task per run, the absolute repo or worktree path, exact files, exact acceptance commands. Split large phases into several runs.
+- For parallel tasks, give each executor its own git worktree (`isolation: "worktree"` or an explicit worktree path).
 - The executor leaves changes uncommitted; Opus reviews the diff, runs the gates itself, and commits.
 - Stop after about 2 failures in a row and tell the user. Don't retry the same failing call.
 
