@@ -376,6 +376,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("DELETE /sandboxes/{id}", s.auth(http.HandlerFunc(s.deleteSandbox)))
 	mux.Handle("POST /sandboxes/{id}/stop", s.auth(http.HandlerFunc(s.stopSandbox)))
 	mux.Handle("POST /sandboxes/{id}/resume", s.auth(http.HandlerFunc(s.resumeSandbox)))
+	mux.Handle("POST /sandboxes/{id}/restore", s.auth(http.HandlerFunc(s.restoreSandbox)))
 	mux.Handle("POST /sandboxes/{id}/fork", s.auth(http.HandlerFunc(s.forkSandbox)))
 	mux.Handle("POST /sandboxes/{id}/commands", s.auth(http.HandlerFunc(s.commands)))
 	mux.Handle("GET /sandboxes/{id}/commands", s.auth(http.HandlerFunc(s.listCommands)))

@@ -14,7 +14,7 @@ Every route except the public ones below requires authentication.
 | Auth | `GET /auth/status`, `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /me` |
 | API keys | `GET`/`POST /api-keys`, `DELETE /api-keys/{id}`, `GET /api-keys/{id}/usage` |
 | Machine | `GET /machine`, `GET /limits` |
-| Sandboxes | `GET`/`POST /sandboxes`, `GET`/`PATCH`/`DELETE /sandboxes/{id}`, `POST /sandboxes/{id}/stop`, `POST /sandboxes/{id}/resume`, `POST /sandboxes/{id}/fork` |
+| Sandboxes | `GET`/`POST /sandboxes`, `GET`/`PATCH`/`DELETE /sandboxes/{id}`, `POST /sandboxes/{id}/stop`, `POST /sandboxes/{id}/resume`, `POST /sandboxes/{id}/restore`, `POST /sandboxes/{id}/fork` |
 | Commands and files | `POST /sandboxes/{id}/commands`, `GET /sandboxes/{id}/commands`, `GET /sandboxes/{id}/commands/{pid}`, `GET /sandboxes/{id}/commands/{pid}/logs`, `POST /sandboxes/{id}/commands/{pid}/kill`, `POST /sandboxes/{id}/commands/{pid}/stdin`, `GET`/`PUT /sandboxes/{id}/files`, `PUT /sandboxes/{id}/archive`, `GET /sandboxes/{id}/artifacts` |
 | Agent prompts | `POST /sandboxes/{id}/prompt`, `POST /sandboxes/{id}/steer`, `POST /sandboxes/{id}/interrupt`, `GET /sandboxes/{id}/conversations`, `GET /sandboxes/{id}/runs/{runId}`, `GET /sandboxes/{id}/events` |
 | Snapshots | `GET /sandboxes/{id}/snapshots`, `GET /sandboxes/{id}/snapshots/latest`, `DELETE /sandboxes/{id}/snapshots/{snapshotId}`, `GET /snapshots`, `GET /snapshots/{id}/download`, `GET /snapshots/{id}/tree`, `GET /snapshots/{id}/file`, `GET`/`POST /named-snapshots`, `GET`/`DELETE /named-snapshots/{name}` |
@@ -62,6 +62,8 @@ curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bear
 
 - `mode`: `allow-all` (the default), `deny-all` (no new outbound connections; existing ones may finish), or `allowlist` (only `allowDomains` and `allowCidrs`).
 - `denyCidrs` win over every other rule in every mode. `169.254.169.254/32` (cloud metadata) is always blocked.
+- `POST /sandboxes/{id}/restore` with `{"snapshotId": "..."}` rolls the sandbox back to one of its own snapshots (`404 snapshot_not_found` otherwise). A running sandbox is stopped, which captures a final snapshot so the rollback can be undone, and then resumed from the chosen snapshot. A stopped sandbox records the snapshot for its next resume. Busy states (`provisioning`, `stopping`, `resuming`, `deleting`) return `409 sandbox_busy`.
+- `keepSnapshots` on `POST /sandboxes` and `PATCH /sandboxes/{id}` sets how many automatic snapshots are kept, from 1 to 50; `0` or omitted uses the default of 5. Values outside that range return `400 invalid_keep_snapshots`. Forks copy the source value unless one is given. Named snapshots are never pruned.
 - `PATCH /sandboxes/{id}` with `networkPolicy` replaces the policy; `null` clears it. A running box is updated immediately; a stopped box stores the policy and applies it when it next starts or resumes. If the node cannot apply a running box's policy, the request returns `502 network_policy_failed`, the stored policy stays unchanged, and the box is stopped so it is never left unfiltered.
 - Limits: at most 64 entries per list; `allowDomains` entries are hostnames or `*.example.com`; CIDRs must be IPv4.
 

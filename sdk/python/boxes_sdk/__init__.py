@@ -147,6 +147,10 @@ class _Sandboxes(_Namespace):
         data = self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/resume", json=options)
         return data.get("sandbox", data)
 
+    def restore(self, sandbox_id: str, snapshot_id: str) -> Any:
+        """Roll back to one of the sandbox's own snapshots; a running sandbox is stopped and resumed from it."""
+        return self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/restore", json={"snapshotId": snapshot_id})["sandbox"]
+
     def fork(self, sandbox_id: str, *, idempotency_key: Optional[str] = None, **options: Any) -> Any:
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/fork", json=options, headers=headers)["sandbox"]

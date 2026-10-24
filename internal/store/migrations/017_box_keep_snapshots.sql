@@ -1,0 +1,2 @@
+ALTER TABLE boxes ADD COLUMN keep_snapshots INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE boxes ADD COLUMN restore_snapshot_id TEXT NOT NULL DEFAULT '';

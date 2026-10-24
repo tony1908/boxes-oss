@@ -155,6 +155,8 @@ export class Boxes {
       const result = await this.request<Row>('POST', `/sandboxes/${this.id(id)}/resume`, input);
       return (result.sandbox ?? result) as Sandbox;
     },
+    // Rolls back to one of the box's own snapshots. A running box is stopped and resumed from it; a stopped box resumes from it next.
+    restore: async (id: string, snapshotId: string) => (await this.request<{ sandbox: Sandbox }>('POST', `/sandboxes/${this.id(id)}/restore`, { snapshotId })).sandbox,
     fork: async (id: string, input: Record<string, unknown> = {}, idempotencyKey?: string) => {
       const result = await this.request<{ sandbox: Sandbox }>('POST', `/sandboxes/${this.id(id)}/fork`, input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {});
       return result.sandbox;

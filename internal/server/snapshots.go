@@ -292,8 +292,8 @@ func (s *Server) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	if box.Box.State == types.StateStopped && len(snapshots) > 0 && snapshots[len(snapshots)-1].ID == snapshot.ID && !force {
-		writeError(w, http.StatusConflict, "resume_snapshot", "the newest snapshot of a stopped sandbox is required to resume; pass force=true to delete it")
+	if box.Box.State == types.StateStopped && len(snapshots) > 0 && (snapshots[len(snapshots)-1].ID == snapshot.ID || box.RestoreSnapshotID == snapshot.ID) && !force {
+		writeError(w, http.StatusConflict, "resume_snapshot", "the snapshot a stopped sandbox resumes from is required; pass force=true to delete it")
 		return
 	}
 	client, ok := newAgentClient(s.hub, box.Box.NodeID)

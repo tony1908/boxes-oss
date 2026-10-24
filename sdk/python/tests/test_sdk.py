@@ -72,6 +72,20 @@ def test_sandbox_source_is_sent_verbatim_on_create():
         c.sandboxes.create(type="small",source={"type":"tarball","url":"https://example.test/src.tar.gz","path":"app"})
     assert json.loads(requests[0].read())["source"]=={"type":"tarball","url":"https://example.test/src.tar.gz","path":"app"}
 
+def test_keep_snapshots_and_restore_use_wire_names():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200,json={"id":"bx_k","sandbox":{"id":"bx_k","state":"stopped"}})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        c.sandboxes.create(type="small",keep_snapshots=3)
+        c.sandboxes.update("bx_k",keep_snapshots=2)
+        assert c.sandboxes.restore("bx_k","sn_1")["state"]=="stopped"
+    assert json.loads(requests[0].read())=={"type":"small","keepSnapshots":3}
+    assert json.loads(requests[1].read())=={"keepSnapshots":2}
+    assert requests[2].method=="POST" and requests[2].url.path=="/api/v1/sandboxes/bx_k/restore"
+    assert json.loads(requests[2].read())=={"snapshotId":"sn_1"}
+
 def test_network_policy_nested_keys_are_camel_cased_on_the_wire():
     requests=[]
     def handler(request):

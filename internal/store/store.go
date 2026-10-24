@@ -40,6 +40,8 @@ type BoxRecord struct {
 	RunningSeconds     int64
 	RunningSince       *time.Time
 	SetupStatus        string
+	// RestoreSnapshotID is the snapshot the next resume restores from; resume clears it.
+	RestoreSnapshotID string
 }
 
 // NodeRecord includes the node authentication hash, which must never be returned
@@ -447,12 +449,12 @@ func (s *Store) CreateBox(ctx context.Context, record BoxRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO boxes(id, node_id, type, state, image, env_id, env_version,
 		ttl_seconds, idle_stop_seconds, expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
 		string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds, box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt),
 		nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc), idempotencyKey,
 		box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source))
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID)
 	if err != nil {
 		return fmt.Errorf("create box: %w", err)
 	}
@@ -506,11 +508,11 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, box.ID)
 	return checkUpdated(result, err, "update box")
 }
 
@@ -521,7 +523,7 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
@@ -533,7 +535,7 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
-		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy, &source)
+		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy, &source, &record.Box.KeepSnapshots, &record.RestoreSnapshotID)
 	if err != nil {
 		return BoxRecord{}, err
 	}

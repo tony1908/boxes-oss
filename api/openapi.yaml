@@ -157,6 +157,8 @@ paths:
                   $ref: "#/components/schemas/TTLSeconds"
                 idleStopSeconds:
                   $ref: "#/components/schemas/IdleStopSeconds"
+                keepSnapshots:
+                  $ref: "#/components/schemas/KeepSnapshots"
                 tags:
                   $ref: "#/components/schemas/SandboxTags"
                 networkPolicy:
@@ -196,6 +198,35 @@ paths:
       responses:
         "200":
           description: Resumed sandbox
+  /sandboxes/{id}/restore:
+    post:
+      summary: Roll a sandbox back to one of its snapshots
+      description: The snapshot must belong to this sandbox. A running sandbox is stopped (capturing a final snapshot, so the rollback can be undone) and resumed from the chosen snapshot. A stopped sandbox records the snapshot and its next resume uses it.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshotId]
+              properties:
+                snapshotId: {type: string}
+      responses:
+        "200":
+          description: Sandbox after the rollback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sandbox:
+                    $ref: "#/components/schemas/Sandbox"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404": {description: snapshot_not_found, the snapshot does not belong to this sandbox}
+        "409": {description: sandbox_busy, the sandbox is provisioning, stopping, resuming, or deleting}
   /snapshots:
     get:
       summary: List completed snapshots across owned sandboxes
@@ -292,7 +323,7 @@ paths:
   /sandboxes/{id}/fork:
     post:
       summary: Fork a sandbox from its latest snapshot
-      description: Omitted ttlSeconds defaults to 3600 seconds; null disables auto-stop.
+      description: Omitted ttlSeconds defaults to 3600 seconds; null disables auto-stop. Omitted keepSnapshots copies the source sandbox setting.
       parameters:
         - $ref: "#/components/parameters/SandboxID"
       requestBody:
@@ -306,6 +337,8 @@ paths:
                   $ref: "#/components/schemas/TTLSeconds"
                 idleStopSeconds:
                   $ref: "#/components/schemas/IdleStopSeconds"
+                keepSnapshots:
+                  $ref: "#/components/schemas/KeepSnapshots"
                 tags:
                   $ref: "#/components/schemas/SandboxTags"
                 networkPolicy:
@@ -328,7 +361,7 @@ paths:
         - name: force
           in: query
           required: false
-          description: Allow deletion of the newest snapshot required to resume a stopped sandbox.
+          description: Allow deletion of the snapshot a stopped sandbox resumes from (its newest snapshot, or a pending restore target).
           schema: {type: boolean, default: false}
       responses:
         "204": {description: Snapshot permanently deleted}
@@ -1174,6 +1207,11 @@ components:
           description: Values above 2592000 are capped at 2592000 seconds.
         - type: "null"
           description: Disable auto-stop.
+    KeepSnapshots:
+      type: integer
+      minimum: 0
+      maximum: 50
+      description: Automatic snapshots retained per sandbox, 1 to 50. 0 (or omitted) uses the default of 5. Named snapshots are never pruned.
     IdleStopSeconds:
       oneOf:
         - type: integer
@@ -1199,6 +1237,8 @@ components:
           description: Omitted defaults to 3600 seconds; null disables auto-stop.
         idleStopSeconds:
           $ref: "#/components/schemas/IdleStopSeconds"
+        keepSnapshots:
+          $ref: "#/components/schemas/KeepSnapshots"
         env:
           type: object
           maxProperties: 100
@@ -1291,6 +1331,8 @@ components:
       type: object
       required: [id, state, autoStop, ttlSeconds, idleStopSeconds, expiresAt, ttlRemainingSeconds, lastSnapshotAt, desktopAvailable, runningSeconds, setupStatus]
       properties:
+        keepSnapshots:
+          $ref: "#/components/schemas/KeepSnapshots"
         tags:
           $ref: "#/components/schemas/SandboxTags"
         networkPolicy:

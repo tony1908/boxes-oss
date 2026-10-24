@@ -62,7 +62,7 @@ Run `boxes --help` for the command list. The full set of top-level commands is:
 ```
 login logout whoami new list get info status current exec ps logs kill ssh proxy scp
 push pull prompt events steer interrupt conversations snapshots snapshot usage
-limits desktop browser host stop resume extend fork delete dashboard forward
+limits desktop browser host stop resume restore extend fork delete dashboard forward
 skill env
 ```
 
@@ -71,10 +71,10 @@ Common forms:
 ```sh
 boxes new [--type SIZE] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
           [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env] \
-          [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]... \
+          [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]... \
           [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]]
 boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
-boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
+boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
 boxes info <id|current>
 boxes current
 boxes exec <id|current> [--detach] [--status PID] -- <command> [arguments]
@@ -96,6 +96,7 @@ boxes push <id> [dir] [--to PATH]
 boxes pull <id> <path> [-o DEST]
 boxes stop [id|current]
 boxes resume <id|current> [--type SIZE] [--ttl SECONDS | --no-auto-stop]
+boxes restore <id|current> <snapshotId>
 boxes fork <id|current> [--ttl SECONDS | --no-auto-stop]
 boxes extend <id|current> --hours N | --ttl SECONDS | --no-auto-stop | --idle-stop DURATION
 boxes delete <id|current> [--yes]
@@ -197,10 +198,16 @@ boxes desktop current                     # open the desktop session
 boxes prompt current "summarize the repo" --provider claude --stop-when-done
 boxes stop current                        # captures a snapshot, then stops
 boxes resume current                      # restores from the latest snapshot
+boxes restore current <snapshotId>        # roll back to one of its snapshots
 boxes fork current --ttl 1800             # copies the filesystem into a new box
 boxes delete current --yes
 ```
 
 `fork` creates a new box from a fresh capture of the source; `resume` brings a
-stopped box back from its latest snapshot. See [lifecycle.md](lifecycle.md) and
+stopped box back from its latest snapshot.
+
+`new --keep-snapshots N` and `update --keep-snapshots N` set how many automatic
+snapshots the box keeps (1 to 50; default 5). `restore` rolls the box back to one
+of its own snapshots: a running box is stopped and resumed from it, and a stopped
+box resumes from it next. Snapshot IDs come from `boxes snapshots <id>`. See [lifecycle.md](lifecycle.md) and
 [snapshots.md](snapshots.md).

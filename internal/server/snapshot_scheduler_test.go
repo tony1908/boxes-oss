@@ -411,3 +411,39 @@ func (t rewriteAgentTransport) RoundTrip(request *http.Request) (*http.Response,
 	copy.URL.Host = t.target.Host
 	return t.base.RoundTrip(copy)
 }
+
+func TestPruneKeepsBoxKeepSnapshotsNewestRows(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+	ctx := context.Background()
+	base := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	const nodeID, boxID = "nd_keeptwo", "bx_keeptwo123456"
+	if err := srv.store.CreateNode(ctx, store.NodeRecord{Node: types.Node{ID: nodeID, Name: "snapshot node", Status: "healthy"}, TokenHash: "keeptwo-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.store.CreateBox(ctx, store.BoxRecord{Box: types.Box{ID: boxID, NodeID: nodeID, Type: "small", State: types.StateReady, CreatedAt: base, KeepSnapshots: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		if err := srv.store.CreateSnapshot(ctx, types.Snapshot{ID: types.NewID("sn_"), BoxID: boxID, ResticID: "keep-" + string(rune('0'+i)), CreatedAt: base.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"error":{"code":"repository_not_found","message":"repository not found"}}`)
+	}))
+	defer agent.Close()
+	target, _ := url.Parse(agent.URL)
+	client := &agentClient{http: &http.Client{Transport: rewriteAgentTransport{target: target, base: http.DefaultTransport}}}
+	if err := srv.pruneSnapshots(ctx, boxID, client); err != nil {
+		t.Fatalf("prune snapshots: %v", err)
+	}
+	remaining, err := srv.store.ListSnapshots(ctx, boxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 2 || remaining[0].ResticID != "keep-2" || remaining[1].ResticID != "keep-3" {
+		t.Fatalf("remaining snapshots = %#v, want the two newest", remaining)
+	}
+}

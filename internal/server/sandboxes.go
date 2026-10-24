@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
@@ -30,6 +31,7 @@ type createSandboxRequest struct {
 	Tags            map[string]string    `json:"tags"`
 	NetworkPolicy   *types.NetworkPolicy `json:"networkPolicy"`
 	Source          *sandboxSource       `json:"source"`
+	KeepSnapshots   int                  `json:"keepSnapshots"`
 	Fork            bool                 `json:"-"`
 }
 
@@ -110,6 +112,10 @@ func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
 			return
 		}
+	}
+	if !validKeepSnapshots(input.KeepSnapshots) {
+		writeError(w, http.StatusBadRequest, "invalid_keep_snapshots", "keepSnapshots must be between 1 and 50, or 0 for the default")
+		return
 	}
 	if input.Source != nil {
 		source, err := validateSandboxSource(*input.Source)
@@ -300,7 +306,7 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	}
 	now := time.Now().UTC()
 	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: s.defaultImages().Box,
-		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags, NetworkPolicy: input.NetworkPolicy}
+		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags, NetworkPolicy: input.NetworkPolicy, KeepSnapshots: input.KeepSnapshots}
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
 		box.ExpiresAt = &expires
@@ -559,6 +565,7 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 		IdleStopSeconds json.RawMessage   `json:"idleStopSeconds"`
 		Tags            map[string]string `json:"tags"`
 		NetworkPolicy   json.RawMessage   `json:"networkPolicy"`
+		KeepSnapshots   *int              `json:"keepSnapshots"`
 	}
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid sandbox update")
@@ -566,6 +573,10 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := types.ValidateTags(input.Tags); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
+		return
+	}
+	if input.KeepSnapshots != nil && !validKeepSnapshots(*input.KeepSnapshots) {
+		writeError(w, http.StatusBadRequest, "invalid_keep_snapshots", "keepSnapshots must be between 1 and 50, or 0 for the default")
 		return
 	}
 	// An absent networkPolicy leaves the policy alone; null clears it.
@@ -616,6 +627,9 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 	if input.Tags != nil {
 		// Replaces the whole map; an empty object clears all tags.
 		box.Box.Tags = input.Tags
+	}
+	if input.KeepSnapshots != nil {
+		box.Box.KeepSnapshots = *input.KeepSnapshots
 	}
 	if policyChanged {
 		// A stopped box only stores the policy; it is sent on the next create (resume or start).
@@ -800,6 +814,8 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 		s.emitWebhookEvent(context.Background(), "sandbox.error", map[string]any{"sandbox": box.Box, "error": err.Error()})
 		return box, err
 	}
+	// The restore target is consumed by a successful resume.
+	box.RestoreSnapshotID = ""
 	now := time.Now().UTC()
 	if box.Box.State == types.StateProvisioning {
 		box.Box.StoppedAt = nil
@@ -841,6 +857,78 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 	s.recordActivity(ctx, box.Box.ID, "lifecycle", "resumed", map[string]any{"node": box.Box.NodeID}, "ok")
 	s.syncEventPump(box.Box)
 	return box, nil
+}
+
+// restoreSandbox rolls a box back to one of its own snapshots. A running box is stopped (capturing a
+// final snapshot, so the rollback can be undone) and resumed from the chosen snapshot; a stopped box
+// only records the snapshot, which the next resume uses.
+func (s *Server) restoreSandbox(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SnapshotID string `json:"snapshotId"`
+	}
+	if err := decodeJSON(r, &input); err != nil || input.SnapshotID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "snapshotId is required")
+		return
+	}
+	box, err := s.store.GetBox(r.Context(), pathID(r))
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	switch box.Box.State {
+	case types.StateProvisioning, types.StateStopping, types.StateResuming, types.StateDeleting:
+		writeError(w, http.StatusConflict, "sandbox_busy", "sandbox is "+string(box.Box.State)+"; retry when it settles")
+		return
+	}
+	snapshots, err := s.store.ListSnapshots(r.Context(), box.Box.ID)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	found := false
+	for _, snapshot := range snapshots {
+		found = found || snapshot.ID == input.SnapshotID
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "snapshot_not_found", "snapshot not found for this sandbox")
+		return
+	}
+	running := box.Box.State == types.StateReady || box.Box.State == types.StateIdle
+	if running {
+		// Reuse the stop handler; relay its response unchanged if the stop fails.
+		recorder := httptest.NewRecorder()
+		s.stopSandbox(recorder, r)
+		if recorder.Code != http.StatusOK {
+			for key, values := range recorder.Header() {
+				w.Header()[key] = values
+			}
+			w.WriteHeader(recorder.Code)
+			_, _ = w.Write(recorder.Body.Bytes())
+			return
+		}
+		if box, err = s.store.GetBox(r.Context(), box.Box.ID); err != nil {
+			s.apiError(w, err)
+			return
+		}
+	}
+	box.RestoreSnapshotID = input.SnapshotID
+	if err := s.store.UpdateBox(r.Context(), box); err != nil {
+		s.apiError(w, err)
+		return
+	}
+	s.recordActivity(r.Context(), box.Box.ID, "snapshot", "restore requested", map[string]any{"snapshotId": input.SnapshotID}, "ok")
+	if running {
+		if box, err = s.resumeBox(r.Context(), box, resumeSandboxRequest{}); err != nil {
+			s.writeResumeError(w, box.Box.ID, err)
+			return
+		}
+	}
+	view, err := s.sandboxView(r.Context(), box)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sandbox": view})
 }
 
 func (s *Server) writeResumeError(w http.ResponseWriter, boxID string, err error) {
@@ -899,12 +987,24 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	if err != nil {
 		return err
 	}
-	restoreStorage, err := s.snapshotStorage(snapshots[len(snapshots)-1])
+	source := snapshots[len(snapshots)-1]
+	if record.RestoreSnapshotID != "" {
+		found := false
+		for _, snapshot := range snapshots {
+			if snapshot.ID == record.RestoreSnapshotID {
+				source, found = snapshot, true
+			}
+		}
+		if !found {
+			return errors.New("restore snapshot no longer exists")
+		}
+	}
+	restoreStorage, err := s.snapshotStorage(source)
 	if err != nil {
 		return err
 	}
 	payload := map[string]any{"boxId": record.Box.ID, "image": record.Box.Image, "toolsImage": s.defaultImages().Tools, "type": targetType,
-		"desktopPassword": string(password), "boxdToken": string(boxdToken), "fromSnapshot": snapshots[len(snapshots)-1].ResticID,
+		"desktopPassword": string(password), "boxdToken": string(boxdToken), "fromSnapshot": source.ResticID,
 		"storage": restoreStorage}
 	if record.Box.NetworkPolicy != nil {
 		payload["networkPolicy"] = record.Box.NetworkPolicy
@@ -993,6 +1093,9 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.NetworkPolicy == nil {
 		input.NetworkPolicy = source.Box.NetworkPolicy
+	}
+	if input.KeepSnapshots == 0 {
+		input.KeepSnapshots = source.Box.KeepSnapshots
 	}
 	input.Fork = true
 	fork, err := s.provisionSandbox(r.Context(), input, captured.SnapshotID, "")

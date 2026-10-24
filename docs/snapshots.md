@@ -12,13 +12,17 @@ Snapshots are taken:
 - **On stop**, always, before the container is stopped. If the capture fails, the box stays running.
 - **Manually**, with `boxes snapshot <id> <name>` or `POST /api/v1/named-snapshots`.
 
-The server keeps the latest five automatic snapshots per box. Named snapshots are created on demand and kept separately.
+The server keeps the latest five automatic snapshots per box by default. Set `keepSnapshots` (1 to 50) on create or with `PATCH /api/v1/sandboxes/{id}` (`boxes new --keep-snapshots N`, `boxes update <id> --keep-snapshots N`) to change that; `0` restores the default. Named snapshots are created on demand and kept separately, and are never pruned.
 
 ## Restore
 
 Resume creates a fresh container from the pinned image, streams `restic dump` output through `docker cp -a` into that container, and starts it. The image's `/custom-cont-init.d/00-boxes-restore` init script applies recorded deletions. Resume always creates a fresh container.
 
 Fork creates another box from a fresh capture of the source. `boxes new --from NAME` restores a new box from a named snapshot.
+
+## Rollback
+
+`POST /api/v1/sandboxes/{id}/restore` with `{"snapshotId": "..."}` (or `boxes restore <id> <snapshotId>`) rolls a box back to one of its own snapshots. A running box is stopped first, which captures a final snapshot, so the rollback can itself be undone by restoring that newer snapshot. The box is then resumed from the chosen snapshot. A stopped box keeps the choice and its next resume uses it; the choice is cleared once a resume succeeds. The snapshot must belong to the box, otherwise the request returns `404 snapshot_not_found`.
 
 SSH host keys are generated at first startup and are included in box filesystem snapshots, so they remain stable across stop and resume. A fork receives a restore marker and generates new host keys on first startup rather than inheriting the source box's SSH identity.
 

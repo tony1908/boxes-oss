@@ -527,3 +527,37 @@ func TestBoxSourceRoundTripOmitsCredentials(t *testing.T) {
 		t.Fatalf("cleared source = %#v, want nil", cleared.Box.Source)
 	}
 }
+
+func TestBoxKeepSnapshotsAndRestoreSnapshotRoundTrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "keep.db"))
+	if err != nil {
+		t.Fatalf("Open(): %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_keep", Name: "node", Status: "healthy"}}); err != nil {
+		t.Fatalf("CreateNode(): %v", err)
+	}
+	if err := s.CreateBox(ctx, BoxRecord{Box: types.Box{ID: "bx_keep12345678", NodeID: "nd_keep", Type: "small", State: types.StateStopped, CreatedAt: time.Now().UTC(), KeepSnapshots: 2}, RestoreSnapshotID: "sn_restore1"}); err != nil {
+		t.Fatalf("CreateBox(): %v", err)
+	}
+	got, err := s.GetBox(ctx, "bx_keep12345678")
+	if err != nil {
+		t.Fatalf("GetBox(): %v", err)
+	}
+	if got.Box.KeepSnapshots != 2 || got.RestoreSnapshotID != "sn_restore1" {
+		t.Fatalf("created keepSnapshots = %d, restoreSnapshotId = %q", got.Box.KeepSnapshots, got.RestoreSnapshotID)
+	}
+	got.Box.KeepSnapshots = 7
+	got.RestoreSnapshotID = ""
+	if err := s.UpdateBox(ctx, got); err != nil {
+		t.Fatalf("UpdateBox(): %v", err)
+	}
+	updated, err := s.GetBox(ctx, "bx_keep12345678")
+	if err != nil {
+		t.Fatalf("GetBox() after update: %v", err)
+	}
+	if updated.Box.KeepSnapshots != 7 || updated.RestoreSnapshotID != "" {
+		t.Fatalf("updated keepSnapshots = %d, restoreSnapshotId = %q", updated.Box.KeepSnapshots, updated.RestoreSnapshotID)
+	}
+}

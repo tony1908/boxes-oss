@@ -168,6 +168,8 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.extend(ctx, args[1:])
 	case "update":
 		return c.update(ctx, args[1:])
+	case "restore":
+		return c.restore(ctx, args[1:])
 	case "conversations":
 		return c.boxSubresource(ctx, args[1:], "conversations")
 	case "snapshots":
@@ -630,18 +632,22 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	tarball := fs.String("tarball", "", "https URL of a .tar.gz to extract into the sandbox on first boot")
 	var tagFlags stringList
 	fs.Var(&tagFlags, "tag", "tag KEY=VALUE (repeatable)")
+	keepSnapshots := fs.Int("keep-snapshots", 0, "snapshots to retain, 1 to 50 (default 5)")
 	var network networkFlags
 	network.register(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
 	}
 	body := map[string]any{"type": *boxType}
+	if flagWasSet(fs, "keep-snapshots") {
+		body["keepSnapshots"] = *keepSnapshots
+	}
 	if flagWasSet(fs, "idle-stop") {
 		seconds, err := parseIdleStopFlag(*idleStop)
 		if err != nil {
@@ -831,7 +837,7 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 // update changes sandbox tags (--tag merges into the existing tags, --clear-tags removes them all)
 // and the outbound network policy (--network and friends).
 func (c *CLI) update(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	if len(args) == 0 {
 		return usage
 	}
@@ -843,6 +849,7 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 	var tagFlags stringList
 	fs.Var(&tagFlags, "tag", "tag KEY=VALUE to set, merged into existing tags (repeatable)")
 	clearTags := fs.Bool("clear-tags", false, "remove all tags")
+	keepSnapshots := fs.Int("keep-snapshots", 0, "snapshots to retain, 1 to 50 (0 restores the default of 5)")
 	var network networkFlags
 	network.register(fs)
 	if err := fs.Parse(args[1:]); err != nil {
@@ -858,12 +865,16 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if !*clearTags && len(tagFlags) == 0 && policy == nil {
-		return errors.New("choose --tag KEY=VALUE, --clear-tags, or a network flag (--network, --allow-domain, --allow-cidr, --deny-cidr)")
+	keepSet := flagWasSet(fs, "keep-snapshots")
+	if !*clearTags && len(tagFlags) == 0 && policy == nil && !keepSet {
+		return errors.New("choose --tag KEY=VALUE, --clear-tags, --keep-snapshots N, or a network flag (--network, --allow-domain, --allow-cidr, --deny-cidr)")
 	}
 	body := map[string]any{}
 	if policy != nil {
 		body["networkPolicy"] = policy
+	}
+	if keepSet {
+		body["keepSnapshots"] = *keepSnapshots
 	}
 	if *clearTags || len(tagFlags) != 0 {
 		tags := map[string]string{}
@@ -892,6 +903,22 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 		body["tags"] = tags
 	}
 	result, err := c.client.doJSON(ctx, http.MethodPatch, "/sandboxes/"+url.PathEscape(id), body, nil)
+	if err != nil {
+		return err
+	}
+	return c.printValue(unwrap(result, "sandbox"))
+}
+
+// restore rolls a box back to one of its own snapshots; a running box is stopped and resumed from it.
+func (c *CLI) restore(ctx context.Context, args []string) error {
+	if len(args) != 2 {
+		return errors.New("usage: boxes restore <id|current> <snapshotId>")
+	}
+	id, err := c.boxID(args[0])
+	if err != nil {
+		return err
+	}
+	result, err := c.client.doJSON(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(id)+"/restore", map[string]any{"snapshotId": args[1]}, nil)
 	if err != nil {
 		return err
 	}
@@ -2395,7 +2422,7 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }

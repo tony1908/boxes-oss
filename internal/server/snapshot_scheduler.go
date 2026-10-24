@@ -14,7 +14,8 @@ import (
 	"github.com/tony1908/boxes-oss/internal/types"
 )
 
-const snapshotsPerBox = 5
+const snapshotsPerBox = 5 // default retention when a box has no keepSnapshots
+const maxKeepSnapshots = 50
 const snapshotWaitTimeout = 10 * time.Minute
 const snapshotPruneBackoff = time.Hour
 const snapshotPruneInterval = 6 * time.Hour
@@ -118,12 +119,30 @@ func (s *Server) recordPeriodicSnapshotResult(ctx context.Context, boxID string,
 	return false, nil
 }
 
+// keepSnapshotsFor returns how many snapshots a box retains; 0 means the default.
+func keepSnapshotsFor(box types.Box) int {
+	if box.KeepSnapshots > 0 {
+		return box.KeepSnapshots
+	}
+	return snapshotsPerBox
+}
+
+// validKeepSnapshots accepts 0 (default) or 1 through maxKeepSnapshots.
+func validKeepSnapshots(n int) bool {
+	return n >= 0 && n <= maxKeepSnapshots
+}
+
 func (s *Server) pruneSnapshots(ctx context.Context, boxID string, client *agentClient) error {
+	box, err := s.store.GetBox(ctx, boxID)
+	if err != nil {
+		return err
+	}
+	keep := keepSnapshotsFor(box.Box)
 	snapshots, err := s.store.ListSnapshots(ctx, boxID)
 	if err != nil {
 		return err
 	}
-	if len(snapshots) <= snapshotsPerBox {
+	if len(snapshots) <= keep {
 		return nil
 	}
 	s.pruneMu.Lock()
@@ -146,7 +165,7 @@ func (s *Server) pruneSnapshots(ctx context.Context, boxID string, client *agent
 		headers   http.Header
 	}
 	groups := make(map[string]*expiredGroup)
-	cutoff := len(snapshots) - snapshotsPerBox
+	cutoff := len(snapshots) - keep
 	for _, snapshot := range snapshots[:cutoff] {
 		if snapshot.ID == snapshots[len(snapshots)-1].ID {
 			continue

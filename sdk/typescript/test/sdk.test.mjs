@@ -71,6 +71,19 @@ test('sends sandbox tags on create, update, and list filters', async t => {
   assert.equal(seen[2].url,'/api/v1/sandboxes?tag=team%3Dagents&tag=owner');
 });
 
+test('sends keepSnapshots on create and update and restores from a snapshot', async t => {
+  const seen=[]; const server=createServer((req,res)=>{let body=''; req.on('data',c=>body+=c); req.on('end',()=>{seen.push({method:req.method,url:req.url,body});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:'bx_k',sandbox:{id:'bx_k',state:'stopped'}}));});});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close()); const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});
+  await c.sandboxes.create({type:'small',keepSnapshots:3});
+  await c.sandboxes.update('bx_k',{keepSnapshots:2});
+  assert.equal((await c.sandboxes.restore('bx_k','sn_1')).state,'stopped');
+  assert.deepEqual(JSON.parse(seen[0].body),{type:'small',keepSnapshots:3});
+  assert.deepEqual(JSON.parse(seen[1].body),{keepSnapshots:2});
+  assert.equal(seen[2].method,'POST');
+  assert.equal(seen[2].url,'/api/v1/sandboxes/bx_k/restore');
+  assert.deepEqual(JSON.parse(seen[2].body),{snapshotId:'sn_1'});
+});
+
 test('sends network policy on create and update as networkPolicy', async t => {
   const seen=[]; const server=createServer((req,res)=>{let body=''; req.on('data',c=>body+=c); req.on('end',()=>{seen.push({method:req.method,body});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:'bx_n',sandbox:{id:'bx_n'}}));});});
   await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close()); const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});

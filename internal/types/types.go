@@ -80,6 +80,7 @@ type Box struct {
 	IdleStopSeconds    int64             `json:"idleStopSeconds,omitempty"`
 	ExpiresAt          *time.Time        `json:"expiresAt,omitempty"`
 	FromSnapshot       string            `json:"fromSnapshot,omitempty"`
+	KeepSnapshots      int               `json:"keepSnapshots,omitempty"`
 	Tags               map[string]string `json:"tags,omitempty"`
 	NetworkPolicy      *NetworkPolicy    `json:"networkPolicy,omitempty"`
 	Source             *BoxSource        `json:"source,omitempty"`
