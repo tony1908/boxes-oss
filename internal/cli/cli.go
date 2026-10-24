@@ -616,6 +616,12 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	noEnv := fs.Bool("no-env", false, "disable the default environment")
 	from := fs.String("from", "", "named snapshot to restore")
 	setupFile := fs.String("setup-file", "", "setup script file")
+	gitURL := fs.String("git", "", "clone this https git repository into the sandbox on first boot")
+	revision := fs.String("revision", "", "git branch, tag, or commit SHA to check out (with --git)")
+	depth := fs.Int("depth", 0, "shallow clone depth, 1 to 1000 (with --git)")
+	gitTokenEnv := fs.String("git-token-env", "", "environment variable holding a git token for a private repository (with --git)")
+	sourcePath := fs.String("path", "", "directory under /config for the source (default project)")
+	tarball := fs.String("tarball", "", "https URL of a .tar.gz to extract into the sandbox on first boot")
 	var tagFlags stringList
 	fs.Var(&tagFlags, "tag", "tag KEY=VALUE (repeatable)")
 	var network networkFlags
@@ -624,7 +630,7 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
@@ -668,6 +674,13 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	}
 	if *from != "" {
 		body["from"] = *from
+	}
+	source, err := sourceBody(*gitURL, *revision, *depth, *gitTokenEnv, *sourcePath, *tarball)
+	if err != nil {
+		return err
+	}
+	if source != nil {
+		body["source"] = source
 	}
 	tags, err := parseTagFlags(tagFlags)
 	if err != nil {
@@ -713,6 +726,51 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 		}
 	}
 	return c.printValue(box)
+}
+
+// sourceBody builds the create-request source from --git or --tarball flags. The git token is read
+// from the environment variable named by tokenEnv, never from a flag value. It returns nil when no source is requested.
+func sourceBody(gitURL, revision string, depth int, tokenEnv, path, tarball string) (map[string]any, error) {
+	if gitURL != "" && tarball != "" {
+		return nil, errors.New("--git and --tarball are mutually exclusive")
+	}
+	if gitURL == "" && tarball == "" {
+		if revision != "" || depth != 0 || tokenEnv != "" {
+			return nil, errors.New("--revision, --depth, and --git-token-env require --git")
+		}
+		if path != "" {
+			return nil, errors.New("--path requires --git or --tarball")
+		}
+		return nil, nil
+	}
+	if tarball != "" {
+		if revision != "" || depth != 0 || tokenEnv != "" {
+			return nil, errors.New("--revision, --depth, and --git-token-env are not valid with --tarball")
+		}
+		source := map[string]any{"type": "tarball", "url": tarball}
+		if path != "" {
+			source["path"] = path
+		}
+		return source, nil
+	}
+	source := map[string]any{"type": "git", "url": gitURL}
+	if revision != "" {
+		source["revision"] = revision
+	}
+	if depth != 0 {
+		source["depth"] = depth
+	}
+	if path != "" {
+		source["path"] = path
+	}
+	if tokenEnv != "" {
+		token := os.Getenv(tokenEnv)
+		if token == "" {
+			return nil, fmt.Errorf("environment variable %s is empty or unset", tokenEnv)
+		}
+		source["token"] = token
+	}
+	return source, nil
 }
 
 func (c *CLI) list(ctx context.Context, args []string) error {

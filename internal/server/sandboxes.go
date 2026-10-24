@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,7 +29,70 @@ type createSandboxRequest struct {
 	From            string               `json:"from"`
 	Tags            map[string]string    `json:"tags"`
 	NetworkPolicy   *types.NetworkPolicy `json:"networkPolicy"`
+	Source          *sandboxSource       `json:"source"`
 	Fork            bool                 `json:"-"`
+}
+
+const (
+	defaultSourcePath       = "project"
+	sourceTokenSecret       = "source-token"
+	sourceTokenPath         = "/run/boxes/secrets/" + sourceTokenSecret
+	maximumSourceTokenBytes = 4096
+	maximumSourceDepth      = 1000
+)
+
+var sourceRevisionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$`)
+
+// sandboxSource is the request form of a project source. Token is never persisted on the box.
+type sandboxSource struct {
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+	Revision string `json:"revision,omitempty"`
+	Depth    *int   `json:"depth,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Path     string `json:"path,omitempty"`
+}
+
+// validateSandboxSource checks a source request and fills defaults. Only https URLs are accepted.
+func validateSandboxSource(source sandboxSource) (sandboxSource, error) {
+	if source.Path == "" {
+		source.Path = defaultSourcePath
+	}
+	if source.Path[0] == '/' || strings.ContainsAny(source.Path, "\\\x00") {
+		return sandboxSource{}, errors.New("source path must be a relative directory name")
+	}
+	for _, segment := range strings.Split(source.Path, "/") {
+		if segment == "" || strings.HasPrefix(segment, ".") {
+			return sandboxSource{}, errors.New("source path must be a relative directory name without dot segments")
+		}
+	}
+	parsed, err := url.Parse(source.URL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return sandboxSource{}, errors.New("source url must be an https URL without embedded credentials")
+	}
+	switch source.Type {
+	case "git":
+		if source.Revision != "" && !sourceRevisionPattern.MatchString(source.Revision) {
+			return sandboxSource{}, errors.New("source revision must be a branch, tag, or commit SHA")
+		}
+		if source.Depth != nil && (*source.Depth < 1 || *source.Depth > maximumSourceDepth) {
+			return sandboxSource{}, fmt.Errorf("source depth must be between 1 and %d", maximumSourceDepth)
+		}
+		if len(source.Token) > maximumSourceTokenBytes || strings.ContainsAny(source.Token, "\r\n\x00") {
+			return sandboxSource{}, fmt.Errorf("source token must be at most %d bytes on one line", maximumSourceTokenBytes)
+		}
+	case "tarball":
+		if source.Revision != "" || source.Depth != nil || source.Token != "" {
+			return sandboxSource{}, errors.New("tarball sources accept only type, url, and path")
+		}
+	default:
+		return sandboxSource{}, errors.New("source type must be git or tarball")
+	}
+	return source, nil
+}
+
+func (s sandboxSource) boxSource() *types.BoxSource {
+	return &types.BoxSource{Type: s.Type, URL: s.URL, Revision: s.Revision, Path: s.Path}
 }
 
 func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +110,14 @@ func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
 			return
 		}
+	}
+	if input.Source != nil {
+		source, err := validateSandboxSource(*input.Source)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_source", err.Error())
+			return
+		}
+		input.Source = &source
 	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key != "" {
@@ -263,8 +336,11 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 		payload["files"] = files
 		box.EnvironmentVersion = version
 	}
-	if len(input.Env) != 0 || input.SetupScript != nil {
-		files, err := mergeProvisionFiles(payloadFiles(payload), input.Env, input.SetupScript)
+	if input.Source != nil {
+		box.Source = input.Source.boxSource()
+	}
+	if len(input.Env) != 0 || input.SetupScript != nil || input.Source != nil {
+		files, err := mergeProvisionFiles(payloadFiles(payload), input.Env, input.SetupScript, input.Source)
 		if err != nil {
 			return types.Box{}, err
 		}
@@ -855,6 +931,10 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_request", "invalid fork request")
 			return
 		}
+	}
+	if input.Source != nil {
+		writeError(w, http.StatusBadRequest, "invalid_source", "source is not supported for forks; the fork already has the files")
+		return
 	}
 	if err := types.ValidateTags(input.Tags); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())

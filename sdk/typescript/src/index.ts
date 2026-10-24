@@ -1,6 +1,8 @@
 export type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
 /** Outbound network policy. allow-all is the default; deny-cidrs win in every mode; 169.254.169.254 is always blocked. */
 export interface NetworkPolicy { mode: 'allow-all' | 'deny-all' | 'allowlist'; allowDomains?: string[]; allowCidrs?: string[]; denyCidrs?: string[] }
+/** Project source for a new sandbox. git clones on first boot; tarball extracts a .tar.gz. Only https URLs; token is for private git repos and is never returned. */
+export type SandboxSource = { type: 'git'; url: string; revision?: string; depth?: number; token?: string; path?: string } | { type: 'tarball'; url: string; path?: string }
 export interface Sandbox { id: string; type?: string; state: string; tags?: Record<string, string>; networkPolicy?: NetworkPolicy | null; autoStop?: boolean; ttlSeconds?: number | null; idleStopSeconds?: number | null; expiresAt?: string | null; ttlRemainingSeconds?: number | null; lastSnapshotAt?: string | null; desktopAvailable?: boolean; runningSeconds?: number; setupStatus?: string; [key: string]: unknown }
 export interface Machine { cpus: number; memoryBytes: number; memAvailableBytes: number; diskFreeBytes: number; swapFreeBytes: number; memoryPressureSomeAvg10: number; status: 'healthy' | 'unhealthy'; runningBoxes: number; lastSeen: string }
 export interface Snapshot { id: string; boxId: string; resticId: string; sizeBytes: number; createdAt: string; [key: string]: unknown }
@@ -67,7 +69,7 @@ export class Boxes {
 
   machine = async () => (await this.request<{ machine: Machine }>('GET', '/machine')).machine;
   sandboxes = {
-    create: (input: Record<string, unknown> & { networkPolicy?: NetworkPolicy | null } = {}, idempotencyKey?: string) => this.request<Sandbox>('POST', '/sandboxes', input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    create: (input: Record<string, unknown> & { networkPolicy?: NetworkPolicy | null; source?: SandboxSource } = {}, idempotencyKey?: string) => this.request<Sandbox>('POST', '/sandboxes', input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     // tags: "key=value" (exact match) or "key" (has key); all must match. Create/update take `tags` in their input.
     list: async (filter?: string, tags?: string[]) => (await this.request<{ sandboxes: Sandbox[] }>('GET', `/sandboxes${this.query({ filter }, { tag: tags ?? [] })}`)).sandboxes,
     get: async (id: string) => (await this.request<{ sandbox: Sandbox }>('GET', `/sandboxes/${this.id(id)}`)).sandbox,

@@ -493,3 +493,37 @@ func TestBoxNetworkPolicyRoundTrip(t *testing.T) {
 		t.Fatalf("cleared policy = %#v, want nil", cleared.Box.NetworkPolicy)
 	}
 }
+
+func TestBoxSourceRoundTripOmitsCredentials(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "source.db"))
+	if err != nil {
+		t.Fatalf("Open(): %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_source", Name: "node", Status: "healthy"}}); err != nil {
+		t.Fatalf("CreateNode(): %v", err)
+	}
+	source := &types.BoxSource{Type: "git", URL: "https://example.test/repo.git", Revision: "v1.0.0", Path: "project"}
+	if err := s.CreateBox(ctx, BoxRecord{Box: types.Box{ID: "bx_source1234567", NodeID: "nd_source", Type: "small", State: types.StateReady, CreatedAt: time.Now().UTC(), Source: source}}); err != nil {
+		t.Fatalf("CreateBox(): %v", err)
+	}
+	got, err := s.GetBox(ctx, "bx_source1234567")
+	if err != nil {
+		t.Fatalf("GetBox(): %v", err)
+	}
+	if !reflect.DeepEqual(got.Box.Source, source) {
+		t.Fatalf("source = %#v, want %#v", got.Box.Source, source)
+	}
+	got.Box.Source = nil
+	if err := s.UpdateBox(ctx, got); err != nil {
+		t.Fatalf("UpdateBox(): %v", err)
+	}
+	cleared, err := s.GetBox(ctx, "bx_source1234567")
+	if err != nil {
+		t.Fatalf("GetBox() after clear: %v", err)
+	}
+	if cleared.Box.Source != nil {
+		t.Fatalf("cleared source = %#v, want nil", cleared.Box.Source)
+	}
+}

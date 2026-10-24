@@ -35,6 +35,7 @@ Public routes (no bearer token):
 Sandboxes accept up to 10 key/value `tags`. Keys must match `^[a-z0-9][a-z0-9_.-]{0,62}$`; values are at most 255 characters with no control characters. Invalid tags return `400 invalid_tags`.
 
 - `POST /sandboxes` takes `tags` in the body.
+- `POST /sandboxes` takes `source` to place project files on first boot: `{"type":"git","url":"https://...","revision":"main","depth":1,"token":"...","path":"app"}` or `{"type":"tarball","url":"https://...","path":"app"}`. The source runs once, before `setupScript`; `path` defaults to `project` under `/config`. Only https URLs are accepted (no `git@`/ssh URLs or embedded credentials). `token` is for private git repositories and is never returned or stored; the response reports `source` without it. Tarballs must be `.tar.gz`. Invalid sources return `400 invalid_source`; `POST /sandboxes/{id}/fork` rejects `source` because the fork already has the files.
 - `PATCH /sandboxes/{id}` with `tags` replaces the whole map; `{}` clears all tags; omitting `tags` leaves them unchanged.
 - `GET /sandboxes?tag=key=value` returns sandboxes whose tag equals the value; `?tag=key` matches any value of that key. Repeat `tag` to require several matches (AND).
 - `POST /sandboxes/{id}/fork` copies the source sandbox's tags unless the body sets `tags`.

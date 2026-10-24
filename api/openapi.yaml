@@ -1093,6 +1093,38 @@ components:
           $ref: "#/components/schemas/SandboxTags"
         networkPolicy:
           $ref: "#/components/schemas/NetworkPolicy"
+        source:
+          $ref: "#/components/schemas/SandboxSource"
+    SandboxSource:
+      type: object
+      description: "Project files placed in the sandbox once on first boot, before setupScript runs. git clones a repository into /config/<path>; tarball downloads a .tar.gz and extracts it into /config/<path>. Only https URLs are accepted (no ssh or git@ URLs, no embedded credentials). Private repositories use token, which is sent to the box as a secret file, removed after cloning, and never returned or stored by the platform. Forks reject source. Git depth limits clone history. A revision that is a commit SHA is checked out detached after a full clone. Tarball sources are .tar.gz only."
+      required: [type, url]
+      properties:
+        type:
+          type: string
+          enum: [git, tarball]
+        url:
+          type: string
+          pattern: "^https://"
+          maxLength: 2048
+        revision:
+          type: string
+          description: "git only. Branch, tag, or commit SHA."
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$"
+        depth:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: "git only. Shallow clone depth."
+        token:
+          type: string
+          maxLength: 4096
+          writeOnly: true
+          description: "git only. Token for a private repository; never returned."
+        path:
+          type: string
+          default: project
+          description: "Directory name under /config (may be nested; no leading slash, no '..', no dot-prefixed segments)."
     NetworkPolicy:
       type: object
       description: "Outbound network policy for a box. Modes: allow-all (default), deny-all (no new outbound connections), allowlist (only allowDomains and allowCidrs). denyCidrs win in every mode, and 169.254.169.254/32 is always blocked. Limits: at most 64 domains and 64 CIDRs per list; IPv4 only. Domains are hostnames or *.example.com. Limits of the allowlist: domains are resolved on the node and the resolved IPv4 addresses are re-resolved every 60 seconds, so CDN IP rotation can break connections between refreshes. Wildcard subdomains match only the apex domain (*.x.com resolves x.com). DNS lookups (UDP and TCP port 53) are not blocked in allowlist mode. allowDomains and allowCidrs are ignored in deny-all and allow-all."
@@ -1138,6 +1170,20 @@ components:
           oneOf:
             - $ref: "#/components/schemas/NetworkPolicy"
             - type: "null"
+        source:
+          type: object
+          description: Where the project files came from. The token is never included.
+          required: [type, url, path]
+          properties:
+            type:
+              type: string
+              enum: [git, tarball]
+            url:
+              type: string
+            revision:
+              type: string
+            path:
+              type: string
         id:
           type: string
         nodeId:

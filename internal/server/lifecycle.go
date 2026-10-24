@@ -132,7 +132,28 @@ func validateSandboxEnv(env map[string]string) error {
 	return nil
 }
 
-func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScript *string) ([]map[string]any, error) {
+// provisionRepo and provisionSetup mirror the setup.json document read by boxd.
+type provisionRepo struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Branch      string `json:"branch,omitempty"`
+	Revision    string `json:"revision,omitempty"`
+	Depth       int    `json:"depth,omitempty"`
+	TokenSecret string `json:"tokenSecret,omitempty"`
+}
+
+type provisionTarball struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+type provisionSetup struct {
+	Repos       []provisionRepo    `json:"repos"`
+	Tarballs    []provisionTarball `json:"tarballs,omitempty"`
+	SetupScript string             `json:"setupScript"`
+}
+
+func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScript *string, source *sandboxSource) ([]map[string]any, error) {
 	byPath := make(map[string]map[string]any, len(files)+2)
 	for _, file := range files {
 		name, _ := file["path"].(string)
@@ -180,14 +201,11 @@ func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScr
 		}
 		writeFile("/run/boxes/env", 0600, []byte(dotenv.String()))
 	}
-	if setupScript != nil {
-		if len(*setupScript) > maximumSetupBytes {
+	if setupScript != nil || source != nil {
+		if setupScript != nil && len(*setupScript) > maximumSetupBytes {
 			return nil, fmt.Errorf("setupScript must not exceed %d bytes", maximumSetupBytes)
 		}
-		setup := struct {
-			Repos       []environmentRepo `json:"repos"`
-			SetupScript string            `json:"setupScript"`
-		}{Repos: []environmentRepo{}}
+		setup := provisionSetup{Repos: []provisionRepo{}}
 		data, err := decodeFile("/run/boxes/setup.json")
 		if err != nil {
 			return nil, fmt.Errorf("decode setup configuration: %w", err)
@@ -197,22 +215,37 @@ func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScr
 				return nil, fmt.Errorf("decode setup configuration: %w", err)
 			}
 		}
-		setup.SetupScript = *setupScript
+		if setupScript != nil {
+			setup.SetupScript = *setupScript
+		}
+		if source != nil {
+			// Source runs before the setup script; its token travels as a secret file that boxd removes after cloning.
+			if source.Type == "tarball" {
+				setup.Tarballs = append(setup.Tarballs, provisionTarball{Name: source.Path, URL: source.URL})
+			} else {
+				repo := provisionRepo{Name: source.Path, URL: source.URL, Revision: source.Revision}
+				if source.Depth != nil {
+					repo.Depth = *source.Depth
+				}
+				if source.Token != "" {
+					writeFile(sourceTokenPath, 0600, []byte(source.Token))
+					repo.TokenSecret = sourceTokenSecret
+				}
+				setup.Repos = append(setup.Repos, repo)
+			}
+		}
 		data, err = json.Marshal(setup)
 		if err != nil {
 			return nil, err
 		}
 		writeFile("/run/boxes/setup.json", 0600, data)
 	}
-	if len(env) != 0 || setupScript != nil {
+	if len(env) != 0 || setupScript != nil || source != nil {
 		if byPath["/run/boxes/env"] == nil {
 			writeFile("/run/boxes/env", 0600, nil)
 		}
 		if byPath["/run/boxes/setup.json"] == nil {
-			data, _ := json.Marshal(struct {
-				Repos       []environmentRepo `json:"repos"`
-				SetupScript string            `json:"setupScript"`
-			}{Repos: []environmentRepo{}})
+			data, _ := json.Marshal(provisionSetup{Repos: []provisionRepo{}})
 			writeFile("/run/boxes/setup.json", 0600, data)
 		}
 	}
@@ -241,10 +274,11 @@ func setupConfigured(files []map[string]any) bool {
 		}
 		var setup struct {
 			Repos       []json.RawMessage `json:"repos"`
+			Tarballs    []json.RawMessage `json:"tarballs"`
 			SetupScript string            `json:"setupScript"`
 		}
 		if json.Unmarshal(data, &setup) == nil {
-			return len(setup.Repos) > 0 || setup.SetupScript != ""
+			return len(setup.Repos) > 0 || len(setup.Tarballs) > 0 || setup.SetupScript != ""
 		}
 	}
 	return false

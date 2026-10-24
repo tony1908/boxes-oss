@@ -71,7 +71,8 @@ Common forms:
 ```sh
 boxes new [--type SIZE] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
           [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env] \
-          [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
+          [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]... \
+          [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]]
 boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
 boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
 boxes info <id|current>
@@ -139,6 +140,13 @@ appear in the `tags` field of `boxes info` and `boxes get` output.
 
 `boxes new` and `boxes update <id|current>` take the same network flags:
 
+- `--git URL` clones an https repository into `/config/<path>` once on first boot, before `--setup-file` runs. `--revision` takes a branch, tag, or commit SHA; `--depth N` makes a shallow clone (1 to 1000); `--path` picks the directory (default `project`).
+- `--git-token-env VAR` reads the git token from the environment variable `VAR` for private repositories. The token is never passed as a flag value and is not stored.
+- `--tarball URL` downloads a `.tar.gz` and extracts it into `/config/<path>`. It cannot be combined with `--git`, and `--revision`, `--depth`, and `--git-token-env` apply only to `--git`.
+
+```sh
+boxes new --git https://github.com/acme/app.git --revision v2.1.0 --depth 1 --git-token-env GITHUB_TOKEN --path app
+```
 - `--network allow-all|deny-all|allowlist` sets the mode (`allow-all` is the default for new boxes).
 - `--allow-domain HOST` (repeatable) allows a hostname or `*.example.com`; `--allow-cidr CIDR` (repeatable) allows an IPv4 range. Both require `--network allowlist`.
 - `--deny-cidr CIDR` (repeatable) blocks an IPv4 range in every mode and wins over allows. `169.254.169.254/32` is always blocked.

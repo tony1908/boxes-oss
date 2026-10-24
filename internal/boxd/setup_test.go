@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -172,4 +173,115 @@ func hasItem(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// shaRejectingFake fails every "--branch" clone, as git does for a commit SHA.
+type shaRejectingFake struct{ setupFake }
+
+func (f *shaRejectingFake) Run(ctx context.Context, argv []string, dir string, env []string, stdout, stderr io.Writer) (int, error) {
+	if hasItem(argv, "--branch") {
+		f.calls = append(f.calls, append([]string(nil), argv...))
+		f.envs = append(f.envs, append([]string(nil), env...))
+		return 1, nil
+	}
+	return f.setupFake.Run(ctx, argv, dir, env, stdout, stderr)
+}
+
+func writeSetupDoc(t *testing.T, root, doc string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".boxd"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	setupFile := filepath.Join(root, "setup.json")
+	if err := os.WriteFile(setupFile, []byte(doc), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return setupFile
+}
+
+func TestSetupCloneDepthAndRevisionArgv(t *testing.T) {
+	root := t.TempDir()
+	fake := &setupFake{}
+	setupFile := writeSetupDoc(t, root, `{"repos":[{"name":"project","url":"https://example.test/p.git","revision":"v1.2.3","depth":1}]}`)
+	if err := RunSetup(context.Background(), SetupOptions{Root: root, SetupFile: setupFile, SecretsDir: filepath.Join(root, "secrets"), Executor: fake}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"git", "clone", "--depth", "1", "--branch", "v1.2.3", "--", "https://example.test/p.git", filepath.Join(root, "project")}
+	if len(fake.calls) != 1 || !reflect.DeepEqual(fake.calls[0], want) {
+		t.Fatalf("clone calls = %#v, want %#v", fake.calls, want)
+	}
+}
+
+func TestSetupCloneFallsBackToDetachedRevisionForSHA(t *testing.T) {
+	root := t.TempDir()
+	fake := &shaRejectingFake{}
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	setupFile := writeSetupDoc(t, root, `{"repos":[{"name":"project","url":"https://example.test/p.git","revision":"`+sha+`","depth":1}]}`)
+	if err := RunSetup(context.Background(), SetupOptions{Root: root, SetupFile: setupFile, SecretsDir: filepath.Join(root, "secrets"), Executor: fake}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "project")
+	want := [][]string{
+		{"git", "clone", "--depth", "1", "--branch", sha, "--", "https://example.test/p.git", target},
+		{"git", "clone", "--", "https://example.test/p.git", target},
+		{"git", "-C", target, "checkout", "--detach", sha},
+	}
+	if !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("clone calls = %#v, want %#v", fake.calls, want)
+	}
+}
+
+func TestSetupTarballRunsCurlWithArgvNotShellInterpolation(t *testing.T) {
+	root := t.TempDir()
+	fake := &setupFake{}
+	url := "https://example.test/src.tar.gz?x=$(touch /pwned)"
+	setupFile := writeSetupDoc(t, root, `{"tarballs":[{"name":"project","url":"`+url+`"}]}`)
+	if err := RunSetup(context.Background(), SetupOptions{Root: root, SetupFile: setupFile, SecretsDir: filepath.Join(root, "secrets"), Executor: fake}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "project")
+	if len(fake.calls) != 1 || len(fake.calls[0]) != 6 || fake.calls[0][0] != "/bin/sh" || fake.calls[0][3] != "sh" || fake.calls[0][4] != url || fake.calls[0][5] != target {
+		t.Fatalf("tarball call = %#v", fake.calls)
+	}
+	if strings.Contains(fake.calls[0][2], "example.test") {
+		t.Fatal("tarball URL interpolated into shell script")
+	}
+	if info, err := os.Stat(target); err != nil || !info.IsDir() {
+		t.Fatalf("tarball target not created: %v", err)
+	}
+}
+
+func TestSetupFailedTarballLeavesNoTargetDir(t *testing.T) {
+	root := t.TempDir()
+	fake := &setupFake{exitCode: 1}
+	setupFile := writeSetupDoc(t, root, `{"tarballs":[{"name":"project","url":"https://example.test/src.tar.gz"}]}`)
+	if err := RunSetup(context.Background(), SetupOptions{Root: root, SetupFile: setupFile, SecretsDir: filepath.Join(root, "secrets"), Executor: fake}); err == nil {
+		t.Fatal("RunSetup() succeeded for a failed tarball command")
+	}
+	if _, err := os.Stat(filepath.Join(root, "project")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed tarball left target dir behind: %v", err)
+	}
+}
+
+func TestSetupSourceTokenIsUsedThenRemoved(t *testing.T) {
+	root := t.TempDir()
+	fake := &setupFake{}
+	secrets := filepath.Join(root, "secrets")
+	if err := os.MkdirAll(secrets, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secrets, "source-token"), []byte("src-token\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	setupFile := writeSetupDoc(t, root, `{"repos":[{"name":"project","url":"https://example.test/p.git","tokenSecret":"source-token"}]}`)
+	if err := RunSetup(context.Background(), SetupOptions{Root: root, SetupFile: setupFile, SecretsDir: secrets, Executor: fake}); err != nil {
+		t.Fatal(err)
+	}
+	wantAuth := "GIT_CONFIG_VALUE_0=Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:src-token"))
+	if len(fake.envs) != 1 || !hasItem(fake.envs[0], wantAuth) {
+		t.Fatalf("clone env missing source token header: %#v", fake.envs)
+	}
+	if _, err := os.Stat(filepath.Join(secrets, "source-token")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("source token file still exists: %v", err)
+	}
 }

@@ -63,6 +63,15 @@ def test_sandbox_tags_are_sent_verbatim_and_filterable():
     assert json.loads(requests[1].read())=={"tags":{}}
     assert requests[2].url.params.get_list("tag")==["team=agents","owner"]
 
+def test_sandbox_source_is_sent_verbatim_on_create():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(201,json={"id":"bx_s","state":"provisioning"})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        c.sandboxes.create(type="small",source={"type":"tarball","url":"https://example.test/src.tar.gz","path":"app"})
+    assert json.loads(requests[0].read())["source"]=={"type":"tarball","url":"https://example.test/src.tar.gz","path":"app"}
+
 def test_network_policy_nested_keys_are_camel_cased_on_the_wire():
     requests=[]
     def handler(request):

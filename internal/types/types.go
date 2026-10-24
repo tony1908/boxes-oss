@@ -82,10 +82,19 @@ type Box struct {
 	FromSnapshot       string            `json:"fromSnapshot,omitempty"`
 	Tags               map[string]string `json:"tags,omitempty"`
 	NetworkPolicy      *NetworkPolicy    `json:"networkPolicy,omitempty"`
+	Source             *BoxSource        `json:"source,omitempty"`
 	ErrorCode          string            `json:"errorCode,omitempty"`
 	Error              string            `json:"error,omitempty"`
 	CreatedAt          time.Time         `json:"createdAt"`
 	StoppedAt          *time.Time        `json:"stoppedAt,omitempty"`
+}
+
+// BoxSource records where a sandbox's project files came from. It never holds credentials.
+type BoxSource struct {
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+	Revision string `json:"revision,omitempty"`
+	Path     string `json:"path"`
 }
 
 // MaxTags is the maximum number of tags a box may carry.

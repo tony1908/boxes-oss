@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -50,13 +51,22 @@ func (osSetupExecutor) Run(ctx context.Context, argv []string, dir string, env [
 	return -1, err
 }
 
+// sourceTokenSecret is the secret file carrying a source repository token; it is removed after cloning.
+const sourceTokenSecret = "source-token"
+
 type setupDocument struct {
 	Repos []struct {
 		Name        string `json:"name"`
 		URL         string `json:"url"`
 		Branch      string `json:"branch"`
+		Revision    string `json:"revision"`
+		Depth       int    `json:"depth"`
 		TokenSecret string `json:"tokenSecret"`
 	} `json:"repos"`
+	Tarballs []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"tarballs"`
 	SetupScript string `json:"setupScript"`
 }
 
@@ -85,7 +95,7 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 		return err
 	}
 	marker := filepath.Join(root, ".boxd", "setup.done")
-	configured := len(doc.Repos) != 0 || doc.SetupScript != ""
+	configured := len(doc.Repos) != 0 || len(doc.Tarballs) != 0 || doc.SetupScript != ""
 	if _, err := os.Stat(marker); err == nil {
 		if configured {
 			return writeSetupStatus(root, "succeeded")
@@ -128,7 +138,53 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 	if secretsDir == "" {
 		secretsDir = "/run/boxes/secrets"
 	}
-	for _, repo := range doc.Repos {
+	if err := cloneSetupRepos(ctx, executor, store, doc.Repos, root, secretsDir, env); err != nil {
+		return err
+	}
+	for _, tarball := range doc.Tarballs {
+		if strings.TrimSpace(tarball.Name) == "" || strings.TrimSpace(tarball.URL) == "" {
+			return errors.New("setup tarball requires name and url")
+		}
+		target := filepath.Join(root, filepath.Clean(tarball.Name))
+		if !inside(root, target) {
+			return fmt.Errorf("setup tarball path %q is outside config directory", tarball.Name)
+		}
+		if _, err := os.Stat(target); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.MkdirAll(target, 0755); err != nil {
+			return err
+		}
+		// ponytail: .tar.gz only; add zip support when a caller needs it.
+		// The URL and target are passed as argv, never interpolated into the shell string.
+		args := []string{"/bin/sh", "-c", `curl -fsSL "$1" | tar -xz -C "$2" --strip-components=0`, "sh", tarball.URL, target}
+		if err := runSetupCommand(ctx, executor, store, args, root, env); err != nil {
+			// Remove the partial extraction so a later run does not treat it as already set up.
+			_ = os.RemoveAll(target)
+			return err
+		}
+	}
+	if doc.SetupScript != "" {
+		if err := runSetupCommand(ctx, executor, store, []string{"/bin/sh", "-lc", doc.SetupScript}, root, env); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(marker, []byte("done\n"), 0600)
+}
+
+// cloneSetupRepos clones each repository into root once. The source token secret file is removed when this returns.
+func cloneSetupRepos(ctx context.Context, executor SetupExecutor, store *Outbox, repos []struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Branch      string `json:"branch"`
+	Revision    string `json:"revision"`
+	Depth       int    `json:"depth"`
+	TokenSecret string `json:"tokenSecret"`
+}, root, secretsDir string, env []string) error {
+	defer os.Remove(filepath.Join(secretsDir, sourceTokenSecret))
+	for _, repo := range repos {
 		if strings.TrimSpace(repo.Name) == "" || strings.TrimSpace(repo.URL) == "" {
 			return errors.New("setup repository requires name and url")
 		}
@@ -141,11 +197,10 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		args := []string{"git", "clone"}
-		if repo.Branch != "" {
-			args = append(args, "--branch", repo.Branch)
+		revision := repo.Revision
+		if revision == "" {
+			revision = repo.Branch
 		}
-		args = append(args, "--", repo.URL, target)
 		repoEnv := append([]string(nil), env...)
 		if repo.TokenSecret != "" {
 			secretPath := filepath.Join(secretsDir, filepath.Clean(repo.TokenSecret))
@@ -163,16 +218,33 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 			authorization := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
 			repoEnv = append(repoEnv, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraheader", "GIT_CONFIG_VALUE_0="+authorization)
 		}
-		if err := runSetupCommand(ctx, executor, store, args, root, repoEnv); err != nil {
+		args := []string{"git", "clone"}
+		if repo.Depth > 0 {
+			args = append(args, "--depth", strconv.Itoa(repo.Depth))
+		}
+		if revision == "" {
+			if err := runSetupCommand(ctx, executor, store, append(args, "--", repo.URL, target), root, repoEnv); err != nil {
+				_ = os.RemoveAll(target)
+				return err
+			}
+			continue
+		}
+		// A branch or tag clones directly; a commit SHA fails that form, so fall back to a full clone and detach.
+		err := runSetupCommand(ctx, executor, store, append(args, "--branch", revision, "--", repo.URL, target), root, repoEnv)
+		if err == nil {
+			continue
+		}
+		_ = os.RemoveAll(target)
+		if err := runSetupCommand(ctx, executor, store, []string{"git", "clone", "--", repo.URL, target}, root, repoEnv); err != nil {
+			_ = os.RemoveAll(target)
+			return err
+		}
+		if err := runSetupCommand(ctx, executor, store, []string{"git", "-C", target, "checkout", "--detach", revision}, root, repoEnv); err != nil {
+			_ = os.RemoveAll(target)
 			return err
 		}
 	}
-	if doc.SetupScript != "" {
-		if err := runSetupCommand(ctx, executor, store, []string{"/bin/sh", "-lc", doc.SetupScript}, root, env); err != nil {
-			return err
-		}
-	}
-	return os.WriteFile(marker, []byte("done\n"), 0600)
+	return nil
 }
 
 func writeSetupStatus(root, status string) error {
