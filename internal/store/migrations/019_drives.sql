@@ -1,0 +1,5 @@
+CREATE TABLE drives (
+    name TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+);
+ALTER TABLE boxes ADD COLUMN mounts TEXT NOT NULL DEFAULT '[]';

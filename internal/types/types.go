@@ -83,6 +83,7 @@ type Box struct {
 	KeepSnapshots      int               `json:"keepSnapshots,omitempty"`
 	Tags               map[string]string `json:"tags,omitempty"`
 	NetworkPolicy      *NetworkPolicy    `json:"networkPolicy,omitempty"`
+	Mounts             []Mount           `json:"mounts,omitempty"`
 	Source             *BoxSource        `json:"source,omitempty"`
 	ErrorCode          string            `json:"errorCode,omitempty"`
 	Error              string            `json:"error,omitempty"`

@@ -936,6 +936,91 @@ paths:
       summary: Delete a named snapshot
       responses:
         "200": {description: Successful response}
+  /drives:
+    get:
+      summary: List drives and the sandboxes that mount them
+      responses:
+        "200":
+          description: Drives with their current mounts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drives]
+                properties:
+                  drives:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Drive"
+    post:
+      summary: Create a drive
+      description: Creates a named persistent volume that sandboxes can mount. Data persists until the drive is deleted and is not included in snapshots.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+      responses:
+        "201":
+          description: Created drive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Drive"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: A drive with this name already exists (drive_exists).
+  /drives/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete a drive
+      description: Deletes the drive and its data. Returns 409 drive_in_use while any sandbox, running or stopped, mounts it.
+      responses:
+        "204": {description: Drive deleted}
+        "404": {description: Drive not found}
+        "409": {description: Drive is mounted by a sandbox (drive_in_use)}
+  /drives/{name}/fork:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Copy a drive into a new drive
+      description: Copies the source drive's data into a new drive. Returns 409 drive_busy while a running sandbox mounts the source read-write, because the copy would be inconsistent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+      responses:
+        "201":
+          description: Created drive holding the copied data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Drive"
+        "404": {description: Source drive not found}
+        "409": {description: Target name exists (drive_exists) or source is mounted read-write by a running sandbox (drive_busy)}
   /sandboxes/{id}/desktop:
     get:
       summary: Get sandbox desktop URL
@@ -1279,6 +1364,45 @@ components:
           $ref: "#/components/schemas/NetworkPolicy"
         source:
           $ref: "#/components/schemas/SandboxSource"
+        mounts:
+          type: array
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/Mount"
+    Drive:
+      type: object
+      required: [name, createdAt]
+      properties:
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        mountedBy:
+          type: array
+          description: Present on GET /drives only.
+          items:
+            type: object
+            properties:
+              sandboxId:
+                type: string
+              path:
+                type: string
+              readOnly:
+                type: boolean
+    Mount:
+      type: object
+      required: [drive, path]
+      description: "Attaches a drive at path, which must be a clean absolute path under /mnt/ (not /mnt itself). At most 4 mounts, no duplicate or nested paths, and at most one read-write mount per drive across non-deleted sandboxes. Read-only mounts see live data."
+      properties:
+        drive:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+        path:
+          type: string
+          pattern: "^/mnt/.+"
+        readOnly:
+          type: boolean
     SandboxSource:
       type: object
       description: "Project files placed in the sandbox once on first boot, before setupScript runs. git clones a repository into /config/<path>; tarball downloads a .tar.gz and extracts it into /config/<path>. Only https URLs are accepted (no ssh or git@ URLs, no embedded credentials). Private repositories use token, which is sent to the box as a secret file, removed after cloning, and never returned or stored by the platform. Forks reject source. Git depth limits clone history. A revision that is a commit SHA is checked out detached after a full clone. Tarball sources are .tar.gz only."
@@ -1359,6 +1483,11 @@ components:
           oneOf:
             - $ref: "#/components/schemas/NetworkPolicy"
             - type: "null"
+        mounts:
+          type: array
+          description: Drive mounts. Forks keep only the read-only mounts of the source sandbox.
+          items:
+            $ref: "#/components/schemas/Mount"
         source:
           type: object
           description: Where the project files came from. The token is never included.

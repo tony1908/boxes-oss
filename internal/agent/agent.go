@@ -82,6 +82,7 @@ type Agent struct {
 	networkMu            sync.Mutex
 	firewall             dockercli.Executor
 	readFile             func(string) ([]byte, error) // host file reads for box usage; faked in tests
+	usageWarned          sync.Map                     // box IDs whose usage read already failed and was logged
 }
 
 type authCredential struct {
@@ -104,6 +105,7 @@ type createRequest struct {
 	BoxdToken       string                  `json:"boxdToken"`
 	Storage         storageUpdate           `json:"storage"`
 	NetworkPolicy   *boxtypes.NetworkPolicy `json:"networkPolicy,omitempty"`
+	Mounts          []boxtypes.Mount        `json:"mounts,omitempty"`
 }
 
 type boxFile struct {
@@ -203,6 +205,9 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/boxes/{id}/routes", validateBoxID(a.putRoutes))
 	mux.HandleFunc("PUT /v1/boxes/{id}/network", validateBoxID(a.putNetwork))
 	mux.HandleFunc("GET /v1/boxes/{id}/tcp/{port}", validateBoxID(a.tcpBridge))
+	mux.HandleFunc("PUT /v1/drives/{name}", validateDriveName(a.putDrive))
+	mux.HandleFunc("DELETE /v1/drives/{name}", validateDriveName(a.deleteDrive))
+	mux.HandleFunc("POST /v1/drives/{name}/fork", validateDriveName(a.forkDrive))
 	mux.HandleFunc("/v1/boxes/{id}/boxd/{path...}", validateBoxID(a.proxyBoxd))
 	return logFailures(mux)
 }
@@ -248,7 +253,10 @@ func (a *Agent) boxStats(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{"cpuPercent": value, "desktopConnections": desktopConnections}
 	// Usage counters are best effort: a host without the expected cgroup layout must not break the CPU reading.
 	if usage, err := a.readBoxUsage(r.Context(), boxName(r.PathValue("id"))); err != nil {
-		log.Printf("box usage box=%s error=%q", r.PathValue("id"), err)
+		// ponytail: warn once per box; a host without the cgroup layout would otherwise log on every poll.
+		if _, warned := a.usageWarned.LoadOrStore(r.PathValue("id"), true); !warned {
+			log.Printf("box usage box=%s error=%q", r.PathValue("id"), err)
+		}
 	} else {
 		response["cpuSeconds"], response["rxBytes"], response["txBytes"] = usage.CPUSeconds, usage.RxBytes, usage.TxBytes
 	}
@@ -416,6 +424,10 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := boxtypes.ValidateMounts(request.Mounts); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_mounts", err.Error())
+		return
+	}
 	if request.Type == "" {
 		request.Type = "default"
 	}
@@ -469,6 +481,7 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 	spec := dockercli.Spec{
 		BoxID: request.BoxID, Image: request.Image, Type: request.Type, Runtime: runtimeName,
 		DesktopPassword: request.DesktopPassword, BoxdToken: request.BoxdToken, Env: request.Env, ToolsVolume: toolsVolume,
+		Mounts: request.Mounts,
 	}
 	containerID, err := a.docker.Create(r.Context(), spec)
 	if isImageContentCorruption(err) {
@@ -683,6 +696,7 @@ func (a *Agent) deleteBox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "box_delete_failed", "cannot remove box container")
 		return
 	}
+	a.usageWarned.Delete(boxID)
 	a.dropNetworkRules(r.Context(), boxID)
 	if err := a.deleteNetworkPolicyFile(boxID); err != nil {
 		writeError(w, http.StatusInternalServerError, "network_policy_delete_failed", "cannot remove box network policy")
@@ -1198,6 +1212,52 @@ func cleanBoxPath(value string) (string, error) {
 		}
 	}
 	return clean, nil
+}
+
+func (a *Agent) putDrive(w http.ResponseWriter, r *http.Request) {
+	if err := a.docker.CreateDriveVolume(r.Context(), r.PathValue("name")); err != nil {
+		a.writeOperationError(w, r, http.StatusBadGateway, "drive_create_failed", "cannot create drive volume", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *Agent) deleteDrive(w http.ResponseWriter, r *http.Request) {
+	if err := a.docker.RemoveDriveVolume(r.Context(), r.PathValue("name")); err != nil {
+		a.writeOperationError(w, r, http.StatusBadGateway, "drive_delete_failed", "cannot remove drive volume", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *Agent) forkDrive(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Target string `json:"target"`
+		Image  string `json:"image"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid drive fork request")
+		return
+	}
+	if err := boxtypes.ValidateDriveName(request.Target); err != nil || request.Image == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "a valid target drive and image are required")
+		return
+	}
+	if err := a.docker.CopyDriveVolume(r.Context(), r.PathValue("name"), request.Target, request.Image); err != nil {
+		a.writeOperationError(w, r, http.StatusBadGateway, "drive_fork_failed", "cannot copy drive data", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func validateDriveName(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := boxtypes.ValidateDriveName(r.PathValue("name")); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_drive", err.Error())
+			return
+		}
+		next(w, r)
+	}
 }
 
 func boxName(boxID string) string { return "box-" + boxID }

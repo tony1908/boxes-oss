@@ -147,3 +147,43 @@ test('detached commands stream logs across chunks and expose wait, kill, stdin, 
   assert.ok(seen.some(line => line.startsWith('POST /api/v1/sandboxes/bx_3/commands/p1/stdin?close=1')));
   assert.ok(seen.includes('GET /api/v1/sandboxes/bx_3/commands/p1/logs?follow=1 '));
 });
+
+test('manages drives and sends mounts on create', async t => {
+  const seen = [];
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    seen.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : undefined });
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/v1/drives' && req.method === 'GET') { res.end(JSON.stringify({ drives: [{ name: 'data', mountedBy: [] }] })); return; }
+    if (req.url === '/api/v1/drives' && req.method === 'POST') { res.writeHead(201); res.end(JSON.stringify({ name: 'data' })); return; }
+    if (req.url === '/api/v1/drives/data' && req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    if (req.url === '/api/v1/drives/data/fork') { res.writeHead(201); res.end(JSON.stringify({ name: 'copy' })); return; }
+    if (req.url === '/api/v1/sandboxes') { res.writeHead(201); res.end(JSON.stringify({ id: 'bx_m', state: 'provisioning' })); return; }
+    res.writeHead(404); res.end('{}');
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r)); t.after(() => server.close());
+  const c = new Boxes({ baseUrl: `http://127.0.0.1:${server.address().port}`, apiKey: 'secret' });
+  assert.equal((await c.drives.create('data')).name, 'data');
+  assert.deepEqual(await c.drives.list(), [{ name: 'data', mountedBy: [] }]);
+  assert.equal((await c.drives.fork('data', 'copy')).name, 'copy');
+  await c.drives.delete('data');
+  assert.deepEqual(seen.map(s => `${s.method} ${s.url}`), ['POST /api/v1/drives', 'GET /api/v1/drives', 'POST /api/v1/drives/data/fork', 'DELETE /api/v1/drives/data']);
+  assert.deepEqual(seen[0].body, { name: 'data' });
+  assert.deepEqual(seen[2].body, { name: 'copy' });
+});
+
+test('sends drive mounts on sandbox create', async t => {
+  const seen = [];
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    seen.push(JSON.parse(body));
+    res.writeHead(201, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ id: 'bx_m', state: 'provisioning' }));
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r)); t.after(() => server.close());
+  const c = new Boxes({ baseUrl: `http://127.0.0.1:${server.address().port}`, apiKey: 'secret' });
+  await c.sandboxes.create({ type: 'small', mounts: [{ drive: 'data', path: '/mnt/data' }, { drive: 'cache', path: '/mnt/cache', readOnly: true }] });
+  assert.deepEqual(seen[0].mounts, [{ drive: 'data', path: '/mnt/data' }, { drive: 'cache', path: '/mnt/cache', readOnly: true }]);
+});

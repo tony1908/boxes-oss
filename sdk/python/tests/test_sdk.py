@@ -148,3 +148,28 @@ def test_image_on_create_and_usage_totals_are_returned():
     assert box["image"]=="ghcr.io/example/custom-box:1"
     assert json.loads(requests[0].read())=={"type":"small","image":"ghcr.io/example/custom-box:1"}
     assert usage["totals"]=={"cpuSeconds":2.5,"rxBytes":10,"txBytes":20}
+
+def test_drives_manage_volumes_and_mounts_use_wire_names():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/drives") and request.method == "GET":
+            return httpx.Response(200,json={"drives":[{"name":"data","mountedBy":[]}]})
+        if request.url.path.endswith("/drives/data/fork"):
+            return httpx.Response(201,json={"name":"copy"})
+        if request.url.path.endswith("/sandboxes"):
+            return httpx.Response(201,json={"id":"bx_m","state":"provisioning"})
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        return httpx.Response(201,json={"name":"data"})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        assert c.drives.create("data")["name"] == "data"
+        assert c.drives.list() == [{"name":"data","mountedBy":[]}]
+        assert c.drives.fork("data", "copy")["name"] == "copy"
+        c.drives.delete("data")
+        c.sandboxes.create(type="small", mounts=[{"drive":"cache","path":"/mnt/cache","read_only":True}])
+    assert [(r.method, r.url.path) for r in requests] == [
+        ("POST","/api/v1/drives"),("GET","/api/v1/drives"),("POST","/api/v1/drives/data/fork"),("DELETE","/api/v1/drives/data"),("POST","/api/v1/sandboxes")]
+    assert json.loads(requests[0].read()) == {"name":"data"}
+    assert json.loads(requests[2].read()) == {"name":"copy"}
+    assert json.loads(requests[4].read())["mounts"] == [{"drive":"cache","path":"/mnt/cache","readOnly":True}]

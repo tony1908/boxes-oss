@@ -61,6 +61,7 @@ class Boxes:
         self.environments = _Environments(self)
         self.api_keys = _APIKeys(self)
         self.webhooks = _Webhooks(self)
+        self.drives = _Drives(self)
 
     def _request(self, method: str, path: str, *, json: Any = None, content: Any = None, headers: Optional[dict] = None, params: Optional[dict] = None) -> Any:
         response = self._http.request(method, self.base_url + path, json=_wire(json) if json is not None else None, content=content, headers=headers, params=params)
@@ -269,6 +270,20 @@ class _NamedSnapshots(_Namespace):
 
     def delete(self, name: str) -> Any:
         return self._c._request("DELETE", f"/named-snapshots/{self._id(name)}")
+
+
+class _Drives(_Namespace):
+    def create(self, name: str) -> Any:
+        return self._c._request("POST", "/drives", json={"name": name})
+
+    def list(self) -> Any:
+        return self._c._request("GET", "/drives")["drives"]
+
+    def delete(self, name: str) -> Any:
+        return self._c._request("DELETE", f"/drives/{self._id(name)}")
+
+    def fork(self, name: str, target: str) -> Any:
+        return self._c._request("POST", f"/drives/{self._id(name)}/fork", json={"name": target})
 
 
 class _Hosts(_Namespace):

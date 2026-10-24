@@ -17,6 +17,7 @@ Every route except the public ones below requires authentication.
 | Sandboxes | `GET`/`POST /sandboxes`, `GET`/`PATCH`/`DELETE /sandboxes/{id}`, `POST /sandboxes/{id}/stop`, `POST /sandboxes/{id}/resume`, `POST /sandboxes/{id}/restore`, `POST /sandboxes/{id}/fork` |
 | Commands and files | `POST /sandboxes/{id}/commands`, `GET /sandboxes/{id}/commands`, `GET /sandboxes/{id}/commands/{pid}`, `GET /sandboxes/{id}/commands/{pid}/logs`, `POST /sandboxes/{id}/commands/{pid}/kill`, `POST /sandboxes/{id}/commands/{pid}/stdin`, `GET`/`PUT /sandboxes/{id}/files`, `PUT /sandboxes/{id}/archive`, `GET /sandboxes/{id}/artifacts` |
 | Agent prompts | `POST /sandboxes/{id}/prompt`, `POST /sandboxes/{id}/steer`, `POST /sandboxes/{id}/interrupt`, `GET /sandboxes/{id}/conversations`, `GET /sandboxes/{id}/runs/{runId}`, `GET /sandboxes/{id}/events` |
+| Drives | `GET`/`POST /drives`, `DELETE /drives/{name}`, `POST /drives/{name}/fork` |
 | Snapshots | `GET /sandboxes/{id}/snapshots`, `GET /sandboxes/{id}/snapshots/latest`, `DELETE /sandboxes/{id}/snapshots/{snapshotId}`, `GET /snapshots`, `GET /snapshots/{id}/download`, `GET /snapshots/{id}/tree`, `GET /snapshots/{id}/file`, `GET`/`POST /named-snapshots`, `GET`/`DELETE /named-snapshots/{name}` |
 | Access | `POST /sandboxes/{id}/desktop`, `GET /sandboxes/{id}/desktop`, `GET`/`POST /sandboxes/{id}/hosts`, `DELETE /sandboxes/{id}/hosts/{port}`, `POST /sandboxes/{id}/ssh-key`, `GET /sandboxes/{id}/tcp/{port}` (WebSocket), `/sandboxes/{id}/boxd/{path...}` |
 | Usage and activity | `GET /sandboxes/{id}/usage`, `GET /sandboxes/{id}/activity`, `GET`/`PUT /settings/pricing`, `GET`/`PUT /settings/retention` |
@@ -63,6 +64,23 @@ curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bear
 Custom images must be built `FROM ghcr.io/tony1908/boxes-box`, which carries `boxd`. An image without it never becomes ready and the create call returns `503 box_not_ready`.
 
 `POST /sandboxes/{id}/fork` always runs the source box's image; an `image` in the fork body is ignored. Resume and migrate also keep the box's own image.
+
+## Drives
+
+A drive is a named persistent volume. Sandboxes mount drives with `mounts` on `POST /sandboxes`:
+
+```json
+{"mounts": [{"drive": "data", "path": "/mnt/data"}, {"drive": "cache", "path": "/mnt/cache", "readOnly": true}]}
+```
+
+- `path` must be a clean absolute path under `/mnt/` (not `/mnt` itself). No more than 4 mounts, and no duplicate or nested paths. Invalid mounts return `400 invalid_mounts`.
+- A drive must exist. At most one non-deleted sandbox may mount a drive read-write (`409 drive_busy`). Read-only mounts are unlimited and see live data.
+- `POST /drives` with `{"name"}` creates a drive (`201`); a taken name returns `409 drive_exists`. Names match `^[a-z0-9][a-z0-9-]{0,62}$`.
+- `GET /drives` returns `{"drives": [{name, createdAt, mountedBy: [{sandboxId, path, readOnly}]}]}`.
+- `DELETE /drives/{name}` returns `409 drive_in_use` while any sandbox, running or stopped, mounts it. Otherwise the drive and its data are deleted.
+- `POST /drives/{name}/fork` with `{"name": target}` copies the data into a new drive (`201`). It returns `409 drive_busy` while a running sandbox mounts the source read-write.
+- Forks keep only the source's read-only mounts; read-write drives are not copied.
+- Drive data persists until the drive is deleted and is not included in snapshots. There is no size quota.
 
 ## Outbound network policy
 

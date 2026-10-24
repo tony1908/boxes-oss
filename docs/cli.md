@@ -63,7 +63,7 @@ Run `boxes --help` for the command list. The full set of top-level commands is:
 login logout whoami new list get info status current exec ps logs kill ssh proxy scp
 push pull prompt events steer interrupt conversations snapshots snapshot usage
 limits desktop browser host stop resume restore extend fork delete dashboard forward
-skill env
+skill env drive
 ```
 
 Common forms:
@@ -166,6 +166,25 @@ boxes update current --network deny-all
 
 `update` applies to a running box at once and to a stopped box on its next start.
 Allowlists are DNS-based and IPv4 only; see the limits in the API reference.
+
+### Drives
+
+Drives are named volumes that survive box deletion. Create one, then mount it
+with `--mount DRIVE:PATH[:ro]` (repeatable; `PATH` must be under `/mnt`):
+
+```
+boxes drive create data
+boxes new --mount data:/mnt/data --mount cache:/mnt/cache:ro
+boxes drive list
+boxes drive fork data data-copy
+boxes drive rm data
+```
+
+Data persists until the drive is deleted and is not included in snapshots.
+A drive can be mounted read-write by one box at a time; read-only mounts see
+live data from the writer. `drive rm` fails while any box mounts the drive.
+`drive fork` copies the data and fails while a running box mounts the source
+read-write. Forks keep only read-only mounts. There is no size quota.
 
 ### Desktop, browser, and forwarding
 

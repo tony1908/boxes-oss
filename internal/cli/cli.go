@@ -183,6 +183,8 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.limits(ctx, args[1:])
 	case "env":
 		return c.environment(ctx, args[1:])
+	case "drive":
+		return c.drive(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q; run boxes --help", args[0])
 	}
@@ -634,13 +636,15 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	var tagFlags stringList
 	fs.Var(&tagFlags, "tag", "tag KEY=VALUE (repeatable)")
 	keepSnapshots := fs.Int("keep-snapshots", 0, "snapshots to retain, 1 to 50 (default 5)")
+	var mountFlags stringList
+	fs.Var(&mountFlags, "mount", "drive mount DRIVE:PATH[:ro] (repeatable; PATH under /mnt)")
 	var network networkFlags
 	network.register(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+		return errors.New("usage: boxes new [--mount DRIVE:PATH[:ro]]... [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
@@ -704,6 +708,13 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	}
 	if len(tags) != 0 {
 		body["tags"] = tags
+	}
+	mounts, err := parseMountFlags(mountFlags)
+	if err != nil {
+		return err
+	}
+	if len(mounts) != 0 {
+		body["mounts"] = mounts
 	}
 	policy, err := network.policy()
 	if err != nil {
@@ -2326,6 +2337,74 @@ func (c *CLI) environment(ctx context.Context, args []string) error {
 	}
 }
 
+// parseMountFlags turns --mount DRIVE:PATH[:ro] values into create-request mounts.
+func parseMountFlags(values []string) ([]map[string]any, error) {
+	var mounts []map[string]any
+	for _, value := range values {
+		parts := strings.Split(value, ":")
+		if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || parts[1] == "" {
+			return nil, fmt.Errorf("mount %q must be DRIVE:PATH or DRIVE:PATH:ro", value)
+		}
+		mount := map[string]any{"drive": parts[0], "path": parts[1]}
+		if len(parts) == 3 {
+			if parts[2] != "ro" {
+				return nil, fmt.Errorf("mount %q has unknown option %q; only ro is supported", value, parts[2])
+			}
+			mount["readOnly"] = true
+		}
+		mounts = append(mounts, mount)
+	}
+	return mounts, nil
+}
+
+// drive manages named persistent volumes: boxes drive create|list|rm|fork.
+func (c *CLI) drive(ctx context.Context, args []string) error {
+	usage := errors.New("usage: boxes drive create <name> | list | rm <name> | fork <source> <target>")
+	if len(args) == 0 {
+		return usage
+	}
+	switch args[0] {
+	case "create":
+		if len(args) != 2 {
+			return usage
+		}
+		result, err := c.client.doJSON(ctx, http.MethodPost, "/drives", map[string]any{"name": args[1]}, nil)
+		if err != nil {
+			return err
+		}
+		return c.printValue(result)
+	case "list", "ls":
+		if len(args) != 1 {
+			return usage
+		}
+		result, err := c.client.doJSON(ctx, http.MethodGet, "/drives", nil, nil)
+		if err != nil {
+			return err
+		}
+		return c.printValue(unwrap(result, "drives"))
+	case "rm", "delete":
+		if len(args) != 2 {
+			return usage
+		}
+		_, err := c.client.Do(ctx, http.MethodDelete, "/drives/"+url.PathEscape(args[1]), nil, nil)
+		if err == nil && c.jsonOutput {
+			return c.printJSON(map[string]any{"ok": true})
+		}
+		return err
+	case "fork":
+		if len(args) != 3 {
+			return usage
+		}
+		result, err := c.client.doJSON(ctx, http.MethodPost, "/drives/"+url.PathEscape(args[1])+"/fork", map[string]any{"name": args[2]}, nil)
+		if err != nil {
+			return err
+		}
+		return c.printValue(result)
+	default:
+		return fmt.Errorf("unknown drive command %q", args[0])
+	}
+}
+
 func (c *CLI) postAction(ctx context.Context, endpoint string, body any) error {
 	result, err := c.client.doJSON(ctx, http.MethodPost, endpoint, body, nil)
 	if err != nil {
@@ -2426,7 +2505,8 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env drive")
+	_, _ = fmt.Fprintln(c.Out, "Drives: boxes drive create|list|rm|fork; boxes new --mount DRIVE:PATH[:ro] (PATH under /mnt)")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }

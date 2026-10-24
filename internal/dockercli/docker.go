@@ -32,6 +32,7 @@ type Spec struct {
 	Env             map[string]string
 	DiskQuota       bool
 	ToolsVolume     string
+	Mounts          []boxtypes.Mount
 }
 
 // Container is the Docker state needed by the agent.
@@ -70,6 +71,39 @@ type Docker struct {
 // New creates a Docker CLI runtime backed by executor.
 func New(executor Executor) *Docker {
 	return &Docker{executor: executor}
+}
+
+// DriveVolume returns the Docker volume name that backs a drive.
+func DriveVolume(drive string) string { return "boxes-drive-" + drive }
+
+// CreateDriveVolume creates the Docker volume for a drive. It is idempotent.
+func (d *Docker) CreateDriveVolume(ctx context.Context, drive string) error {
+	_, _, err := d.run(ctx, []string{"docker", "volume", "create", "--label", "boxes.drive=" + drive, DriveVolume(drive)}, nil, nil, nil, nil)
+	return err
+}
+
+// RemoveDriveVolume removes the Docker volume for a drive.
+func (d *Docker) RemoveDriveVolume(ctx context.Context, drive string) error {
+	_, _, err := d.run(ctx, []string{"docker", "volume", "rm", DriveVolume(drive)}, nil, nil, nil, nil)
+	return err
+}
+
+// CopyDriveVolume creates the volume for dst and copies src into it using image's cp binary, with no
+// network and the default runtime. The destination volume is removed if the copy fails.
+func (d *Docker) CopyDriveVolume(ctx context.Context, src, dst, image string) error {
+	if image == "" {
+		return fmt.Errorf("image is required")
+	}
+	if err := d.CreateDriveVolume(ctx, dst); err != nil {
+		return err
+	}
+	argv := []string{"docker", "run", "--rm", "--network", "none", "--runtime", "runc", "--entrypoint", "cp",
+		"-v", DriveVolume(src) + ":/from:ro", "-v", DriveVolume(dst) + ":/to", image, "-a", "/from/.", "/to/"}
+	if _, _, err := d.run(ctx, argv, nil, nil, nil, nil); err != nil {
+		_ = d.RemoveDriveVolume(context.Background(), dst)
+		return err
+	}
+	return nil
 }
 
 // CreateArgs returns the argv for creating a managed box container.
@@ -124,6 +158,16 @@ func CreateArgs(spec Spec) ([]string, error) {
 			return nil, fmt.Errorf("invalid tools volume name %q", spec.ToolsVolume)
 		}
 		argv = append(argv, "--mount", "type=volume,source="+spec.ToolsVolume+",target=/opt/boxes-tools,readonly")
+	}
+	if err := boxtypes.ValidateMounts(spec.Mounts); err != nil {
+		return nil, err
+	}
+	for _, mount := range spec.Mounts {
+		volume := "type=volume,source=" + DriveVolume(mount.Drive) + ",target=" + mount.Path
+		if mount.ReadOnly {
+			volume += ",readonly"
+		}
+		argv = append(argv, "--mount", volume)
 	}
 	if spec.DiskQuota {
 		argv = append(argv, "--storage-opt", "size="+strconv.FormatInt(size.DiskBytes, 10))

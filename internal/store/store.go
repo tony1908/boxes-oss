@@ -453,12 +453,12 @@ func (s *Store) CreateBox(ctx context.Context, record BoxRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO boxes(id, node_id, type, state, image, env_id, env_version,
 		ttl_seconds, idle_stop_seconds, expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, mounts)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
 		string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds, box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt),
 		nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc), idempotencyKey,
 		box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, mountsJSON(box.Mounts))
 	if err != nil {
 		return fmt.Errorf("create box: %w", err)
 	}
@@ -512,12 +512,74 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=?, total_cpu_seconds=?, total_rx_bytes=?, total_tx_bytes=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=?, total_cpu_seconds=?, total_rx_bytes=?, total_tx_bytes=?, mounts=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, record.TotalCPUSeconds, record.TotalRxBytes, record.TotalTxBytes, box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, record.TotalCPUSeconds, record.TotalRxBytes, record.TotalTxBytes, mountsJSON(box.Mounts), box.ID)
 	return checkUpdated(result, err, "update box")
+}
+
+// ErrDriveExists is returned by CreateDrive when the name is already taken.
+var ErrDriveExists = errors.New("drive already exists")
+
+// CreateDrive inserts a drive. It returns ErrDriveExists when the name is taken.
+func (s *Store) CreateDrive(ctx context.Context, drive types.Drive) error {
+	result, err := s.db.ExecContext(ctx, `INSERT INTO drives(name, created_at) VALUES(?, ?) ON CONFLICT(name) DO NOTHING`,
+		drive.Name, encodeTime(drive.CreatedAt))
+	if err != nil {
+		return fmt.Errorf("create drive: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("create drive: get affected rows: %w", err)
+	}
+	if count == 0 {
+		return ErrDriveExists
+	}
+	return nil
+}
+
+// GetDrive returns a drive by name.
+func (s *Store) GetDrive(ctx context.Context, name string) (types.Drive, error) {
+	var drive types.Drive
+	var createdAt string
+	err := s.db.QueryRowContext(ctx, `SELECT name, created_at FROM drives WHERE name = ?`, name).Scan(&drive.Name, &createdAt)
+	if err != nil {
+		return types.Drive{}, err
+	}
+	drive.CreatedAt, err = decodeTime(createdAt)
+	return drive, err
+}
+
+// ListDrives returns drives ordered by name.
+func (s *Store) ListDrives(ctx context.Context) ([]types.Drive, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, created_at FROM drives ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list drives: %w", err)
+	}
+	defer rows.Close()
+	drives := make([]types.Drive, 0)
+	for rows.Next() {
+		var drive types.Drive
+		var createdAt string
+		if err := rows.Scan(&drive.Name, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan drive: %w", err)
+		}
+		if drive.CreatedAt, err = decodeTime(createdAt); err != nil {
+			return nil, err
+		}
+		drives = append(drives, drive)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list drives: %w", err)
+	}
+	return drives, nil
+}
+
+// DeleteDrive removes a drive row. Callers must check that no box mounts it.
+func (s *Store) DeleteDrive(ctx context.Context, name string) error {
+	return deleteByID(ctx, s.db, "drives", "name", name)
 }
 
 // DeleteBox deletes a box and its dependent data.
@@ -527,7 +589,7 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, total_cpu_seconds, total_rx_bytes, total_tx_bytes FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, total_cpu_seconds, total_rx_bytes, total_tx_bytes, mounts FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
@@ -535,14 +597,21 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var envID, idempotencyKey, expires, stopped, runningSince sql.NullString
 	var created, tags string
 	var networkPolicy, source sql.NullString
+	var mounts string
 	err := row.Scan(&record.Box.ID, &record.Box.NodeID, &record.Box.Type, &state, &record.Box.Image,
 		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
 		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy, &source, &record.Box.KeepSnapshots, &record.RestoreSnapshotID,
-		&record.TotalCPUSeconds, &record.TotalRxBytes, &record.TotalTxBytes)
+		&record.TotalCPUSeconds, &record.TotalRxBytes, &record.TotalTxBytes, &mounts)
 	if err != nil {
 		return BoxRecord{}, err
+	}
+	if err := json.Unmarshal([]byte(mounts), &record.Box.Mounts); err != nil {
+		return BoxRecord{}, fmt.Errorf("decode box mounts: %w", err)
+	}
+	if len(record.Box.Mounts) == 0 {
+		record.Box.Mounts = nil
 	}
 	if networkPolicy.Valid {
 		var policy types.NetworkPolicy
@@ -600,6 +669,18 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		record.SetupStatus = "none"
 	}
 	return record, nil
+}
+
+// mountsJSON encodes box mounts as a JSON array; no mounts stores "[]".
+func mountsJSON(mounts []types.Mount) string {
+	if len(mounts) == 0 {
+		return "[]"
+	}
+	data, err := json.Marshal(mounts)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
 }
 
 // networkPolicyJSON encodes a policy as JSON; a nil policy stores NULL.

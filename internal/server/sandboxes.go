@@ -33,6 +33,7 @@ type createSandboxRequest struct {
 	NetworkPolicy   *types.NetworkPolicy `json:"networkPolicy"`
 	Source          *sandboxSource       `json:"source"`
 	KeepSnapshots   int                  `json:"keepSnapshots"`
+	Mounts          []types.Mount        `json:"mounts"`
 	Fork            bool                 `json:"-"`
 }
 
@@ -122,6 +123,10 @@ func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validKeepSnapshots(input.KeepSnapshots) {
 		writeError(w, http.StatusBadRequest, "invalid_keep_snapshots", "keepSnapshots must be between 1 and 50, or 0 for the default")
+		return
+	}
+	if err := s.checkMounts(r.Context(), input.Mounts, ""); err != nil {
+		s.writeDriveError(w, err)
 		return
 	}
 	if input.Source != nil {
@@ -317,7 +322,7 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 		image = s.defaultImages().Box
 	}
 	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: image,
-		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags, NetworkPolicy: input.NetworkPolicy, KeepSnapshots: input.KeepSnapshots}
+		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags, NetworkPolicy: input.NetworkPolicy, KeepSnapshots: input.KeepSnapshots, Mounts: input.Mounts}
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
 		box.ExpiresAt = &expires
@@ -334,6 +339,9 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	}
 	if box.NetworkPolicy != nil {
 		payload["networkPolicy"] = box.NetworkPolicy
+	}
+	if len(box.Mounts) != 0 {
+		payload["mounts"] = box.Mounts
 	}
 	if restoreStorage != nil {
 		payload["storage"] = restoreStorage
@@ -1035,6 +1043,9 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	if record.Box.NetworkPolicy != nil {
 		payload["networkPolicy"] = record.Box.NetworkPolicy
 	}
+	if len(record.Box.Mounts) != 0 {
+		payload["mounts"] = record.Box.Mounts
+	}
 	if node.Node.ID == record.Box.NodeID {
 		if err := oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.Box.ID), nil, nil); err != nil {
 			return err
@@ -1124,6 +1135,8 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	if input.KeepSnapshots == 0 {
 		input.KeepSnapshots = source.Box.KeepSnapshots
 	}
+	// Forks keep read-only drive mounts only; read-write drives are not copied (see docs).
+	input.Mounts = readOnlyMounts(source.Box.Mounts)
 	input.Fork = true
 	fork, err := s.provisionSandbox(r.Context(), input, captured.SnapshotID, "")
 	if err != nil {

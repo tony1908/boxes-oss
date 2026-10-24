@@ -7,6 +7,7 @@ export type SandboxSource = { type: 'git'; url: string; revision?: string; depth
 export interface UsageCounters { cpuSeconds: number; rxBytes: number; txBytes: number }
 /** Usage for a sandbox. live is present only while the box runs and its agent answers; totals = accumulated at each stop + live. */
 export interface SandboxUsage { runningSeconds: number; runningSecondsThisMonth: number; perDay: Row[]; commandsCount: number; agentRunsCount: number; desktopSessionsCount: number; snapshotsCount: number; snapshotsBytes: number; lastSnapshotAt: string | null; since: string | null; estimatedCost?: Row; live?: UsageCounters; totals: UsageCounters; [key: string]: unknown }
+export interface DriveMount { drive: string; path: string; readOnly?: boolean }
 export interface Sandbox { id: string; type?: string; image?: string; state: string; tags?: Record<string, string>; networkPolicy?: NetworkPolicy | null; autoStop?: boolean; ttlSeconds?: number | null; idleStopSeconds?: number | null; expiresAt?: string | null; ttlRemainingSeconds?: number | null; lastSnapshotAt?: string | null; desktopAvailable?: boolean; runningSeconds?: number; setupStatus?: string; [key: string]: unknown }
 export interface Machine { cpus: number; memoryBytes: number; memAvailableBytes: number; diskFreeBytes: number; swapFreeBytes: number; memoryPressureSomeAvg10: number; status: 'healthy' | 'unhealthy'; runningBoxes: number; lastSeen: string }
 export interface Snapshot { id: string; boxId: string; resticId: string; sizeBytes: number; createdAt: string; [key: string]: unknown }
@@ -146,7 +147,7 @@ export class Boxes {
 
   machine = async () => (await this.request<{ machine: Machine }>('GET', '/machine')).machine;
   sandboxes = {
-    create: (input: Record<string, unknown> & { image?: string; networkPolicy?: NetworkPolicy | null; source?: SandboxSource } = {}, idempotencyKey?: string) => this.request<Sandbox>('POST', '/sandboxes', input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    create: (input: Record<string, unknown> & { image?: string; networkPolicy?: NetworkPolicy | null; source?: SandboxSource; mounts?: DriveMount[] } = {}, idempotencyKey?: string) => this.request<Sandbox>('POST', '/sandboxes', input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     // tags: "key=value" (exact match) or "key" (has key); all must match. Create/update take `tags` in their input.
     list: async (filter?: string, tags?: string[]) => (await this.request<{ sandboxes: Sandbox[] }>('GET', `/sandboxes${this.query({ filter }, { tag: tags ?? [] })}`)).sandboxes,
     get: async (id: string) => (await this.request<{ sandbox: Sandbox }>('GET', `/sandboxes/${this.id(id)}`)).sandbox,
@@ -212,6 +213,12 @@ export class Boxes {
     create: async (input: Record<string, unknown>) => (await this.request<{ namedSnapshot: Row }>('POST', '/named-snapshots', input)).namedSnapshot,
     get: async (name: string) => (await this.request<{ namedSnapshot: Row }>('GET', `/named-snapshots/${this.id(name)}`)).namedSnapshot,
     delete: (name: string) => this.request<void>('DELETE', `/named-snapshots/${this.id(name)}`),
+  };
+  drives = {
+    create: (name: string) => this.request<Row>('POST', '/drives', { name }),
+    list: async () => (await this.request<{ drives: Row[] }>('GET', '/drives')).drives,
+    delete: (name: string) => this.request<void>('DELETE', `/drives/${this.id(name)}`),
+    fork: (name: string, target: string) => this.request<Row>('POST', `/drives/${this.id(name)}/fork`, { name: target }),
   };
   hosts = {
     expose: async (id: string, port: number, privateHost = false) => (await this.request<{ host: Row }>('POST', `/sandboxes/${this.id(id)}/hosts`, { port, private: privateHost })).host,
