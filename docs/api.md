@@ -45,6 +45,29 @@ curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
 curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bearer $KEY"
 ```
 
+## Outbound network policy
+
+`networkPolicy` controls where a box can send traffic. It is accepted by `POST /sandboxes` (and copied by `POST /sandboxes/{id}/fork` unless the body sets its own). Invalid policies return `400 invalid_network_policy`.
+
+- `mode`: `allow-all` (the default), `deny-all` (no new outbound connections; existing ones may finish), or `allowlist` (only `allowDomains` and `allowCidrs`).
+- `denyCidrs` win over every other rule in every mode. `169.254.169.254/32` (cloud metadata) is always blocked.
+- `PATCH /sandboxes/{id}` with `networkPolicy` replaces the policy; `null` clears it. A running box is updated immediately; a stopped box stores the policy and applies it when it next starts or resumes. If the node cannot apply a running box's policy, the request returns `502 network_policy_failed`, the stored policy stays unchanged, and the box is stopped so it is never left unfiltered.
+- Limits: at most 64 entries per list; `allowDomains` entries are hostnames or `*.example.com`; CIDRs must be IPv4.
+
+Ceilings of the allowlist, so plan around them:
+
+- It is DNS-based. Domains are resolved on the node and the IPv4 addresses are re-resolved every 60 seconds. A CDN that rotates addresses faster than that can break connections.
+- `*.example.com` allows only `example.com`. Wildcard subdomains cannot be enumerated without an SNI proxy.
+- IPv4 only. Boxes use an IPv4 bridge network, so IPv6 is rejected rather than filtered.
+- DNS lookups (UDP and TCP port 53) are not blocked in allowlist mode, so a box can still resolve any name. The rules control destination addresses, not names.
+
+```sh
+curl -X POST "$BOXES/api/v1/sandboxes" -H "Authorization: Bearer $KEY" \
+  -d '{"networkPolicy":{"mode":"allowlist","allowDomains":["api.github.com","*.npmjs.org"],"denyCidrs":["10.0.0.0/8"]}}'
+curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
+  -d '{"networkPolicy":{"mode":"deny-all"}}'
+```
+
 ## Activity
 
 `GET /api/v1/sandboxes/{id}/activity` returns newest first. `category` is optional, `before` is the opaque `nextCursor` from the preceding page, and `limit` defaults to 50 with a maximum of 100.

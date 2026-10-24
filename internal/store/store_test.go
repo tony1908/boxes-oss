@@ -447,3 +447,49 @@ func TestCreateBoxEnforcesNodeForeignKey(t *testing.T) {
 		t.Fatal("CreateBox() succeeded with a missing node")
 	}
 }
+
+func TestBoxNetworkPolicyRoundTrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "network.db"))
+	if err != nil {
+		t.Fatalf("Open(): %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_net", Name: "node", Status: "healthy"}}); err != nil {
+		t.Fatalf("CreateNode(): %v", err)
+	}
+	policy := &types.NetworkPolicy{Mode: types.NetworkAllowlist, AllowDomains: []string{"api.github.com"}, AllowCIDRs: []string{"10.0.0.0/8"}, DenyCIDRs: []string{"10.1.0.0/16"}}
+	if err := s.CreateBox(ctx, BoxRecord{Box: types.Box{ID: "bx_netpolicy1234", NodeID: "nd_net", Type: "small", State: types.StateReady, CreatedAt: now, NetworkPolicy: policy}}); err != nil {
+		t.Fatalf("CreateBox(): %v", err)
+	}
+	got, err := s.GetBox(ctx, "bx_netpolicy1234")
+	if err != nil {
+		t.Fatalf("GetBox(): %v", err)
+	}
+	if !reflect.DeepEqual(got.Box.NetworkPolicy, policy) {
+		t.Fatalf("created policy = %#v, want %#v", got.Box.NetworkPolicy, policy)
+	}
+	got.Box.NetworkPolicy = &types.NetworkPolicy{Mode: types.NetworkDenyAll}
+	if err := s.UpdateBox(ctx, got); err != nil {
+		t.Fatalf("UpdateBox(): %v", err)
+	}
+	updated, err := s.GetBox(ctx, "bx_netpolicy1234")
+	if err != nil {
+		t.Fatalf("GetBox() after update: %v", err)
+	}
+	if updated.Box.NetworkPolicy == nil || updated.Box.NetworkPolicy.Mode != types.NetworkDenyAll || len(updated.Box.NetworkPolicy.AllowDomains) != 0 {
+		t.Fatalf("updated policy = %#v", updated.Box.NetworkPolicy)
+	}
+	updated.Box.NetworkPolicy = nil
+	if err := s.UpdateBox(ctx, updated); err != nil {
+		t.Fatalf("UpdateBox(nil): %v", err)
+	}
+	cleared, err := s.GetBox(ctx, "bx_netpolicy1234")
+	if err != nil {
+		t.Fatalf("GetBox() after clear: %v", err)
+	}
+	if cleared.Box.NetworkPolicy != nil {
+		t.Fatalf("cleared policy = %#v, want nil", cleared.Box.NetworkPolicy)
+	}
+}

@@ -159,6 +159,11 @@ paths:
                   $ref: "#/components/schemas/IdleStopSeconds"
                 tags:
                   $ref: "#/components/schemas/SandboxTags"
+                networkPolicy:
+                  description: Replaces the outbound network policy; null clears it. Applied live on running boxes and on the next start otherwise.
+                  oneOf:
+                    - $ref: "#/components/schemas/NetworkPolicy"
+                    - type: "null"
       responses:
         "400":
           $ref: "#/components/responses/InvalidRequest"
@@ -303,6 +308,11 @@ paths:
                   $ref: "#/components/schemas/IdleStopSeconds"
                 tags:
                   $ref: "#/components/schemas/SandboxTags"
+                networkPolicy:
+                  description: Replaces the outbound network policy; null clears it. Applied live on running boxes and on the next start otherwise.
+                  oneOf:
+                    - $ref: "#/components/schemas/NetworkPolicy"
+                    - type: "null"
       responses:
         "201":
           description: Forked sandbox
@@ -1081,6 +1091,34 @@ components:
           type: boolean
         tags:
           $ref: "#/components/schemas/SandboxTags"
+        networkPolicy:
+          $ref: "#/components/schemas/NetworkPolicy"
+    NetworkPolicy:
+      type: object
+      description: "Outbound network policy for a box. Modes: allow-all (default), deny-all (no new outbound connections), allowlist (only allowDomains and allowCidrs). denyCidrs win in every mode, and 169.254.169.254/32 is always blocked. Limits: at most 64 domains and 64 CIDRs per list; IPv4 only. Domains are hostnames or *.example.com. Limits of the allowlist: domains are resolved on the node and the resolved IPv4 addresses are re-resolved every 60 seconds, so CDN IP rotation can break connections between refreshes. Wildcard subdomains match only the apex domain (*.x.com resolves x.com). DNS lookups (UDP and TCP port 53) are not blocked in allowlist mode. allowDomains and allowCidrs are ignored in deny-all and allow-all."
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [allow-all, deny-all, allowlist]
+        allowDomains:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            maxLength: 253
+        allowCidrs:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            description: IPv4 CIDR such as 10.0.0.0/8
+        denyCidrs:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            description: IPv4 CIDR such as 10.0.0.0/8
     SandboxTags:
       type: object
       description: Up to 10 key/value tags. Keys match ^[a-z0-9][a-z0-9_.-]{0,62}$; values are at most 255 characters with no control characters. Forks copy the source sandbox tags unless tags are given.
@@ -1096,6 +1134,10 @@ components:
       properties:
         tags:
           $ref: "#/components/schemas/SandboxTags"
+        networkPolicy:
+          oneOf:
+            - $ref: "#/components/schemas/NetworkPolicy"
+            - type: "null"
         id:
           type: string
         nodeId:

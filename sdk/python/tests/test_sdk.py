@@ -62,3 +62,14 @@ def test_sandbox_tags_are_sent_verbatim_and_filterable():
     assert json.loads(requests[0].read())=={"tags":{"env_name":"prod"}}
     assert json.loads(requests[1].read())=={"tags":{}}
     assert requests[2].url.params.get_list("tag")==["team=agents","owner"]
+
+def test_network_policy_nested_keys_are_camel_cased_on_the_wire():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200,json={"id":"bx_n","sandbox":{"id":"bx_n"}})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        c.sandboxes.create(network_policy={"mode":"allowlist","allow_domains":["api.github.com"],"allow_cidrs":["10.0.0.0/8"],"deny_cidrs":["10.1.0.0/16"]})
+        c.sandboxes.update("bx_n",network_policy=None)
+    assert json.loads(requests[0].read())=={"networkPolicy":{"mode":"allowlist","allowDomains":["api.github.com"],"allowCidrs":["10.0.0.0/8"],"denyCidrs":["10.1.0.0/16"]}}
+    assert json.loads(requests[1].read())=={"networkPolicy":None}

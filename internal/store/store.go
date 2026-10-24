@@ -447,12 +447,12 @@ func (s *Store) CreateBox(ctx context.Context, record BoxRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO boxes(id, node_id, type, state, image, env_id, env_version,
 		ttl_seconds, idle_stop_seconds, expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
 		string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds, box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt),
 		nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc), idempotencyKey,
 		box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags))
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy))
 	if err != nil {
 		return fmt.Errorf("create box: %w", err)
 	}
@@ -506,11 +506,11 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), box.ID)
 	return checkUpdated(result, err, "update box")
 }
 
@@ -521,20 +521,28 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
 	var state string
 	var envID, idempotencyKey, expires, stopped, runningSince sql.NullString
 	var created, tags string
+	var networkPolicy sql.NullString
 	err := row.Scan(&record.Box.ID, &record.Box.NodeID, &record.Box.Type, &state, &record.Box.Image,
 		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
-		&record.Box.ErrorCode, &record.Box.Error, &tags)
+		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy)
 	if err != nil {
 		return BoxRecord{}, err
+	}
+	if networkPolicy.Valid {
+		var policy types.NetworkPolicy
+		if err := json.Unmarshal([]byte(networkPolicy.String), &policy); err != nil {
+			return BoxRecord{}, fmt.Errorf("decode box network policy: %w", err)
+		}
+		record.Box.NetworkPolicy = &policy
 	}
 	if err := json.Unmarshal([]byte(tags), &record.Box.Tags); err != nil {
 		return BoxRecord{}, fmt.Errorf("decode box tags: %w", err)
@@ -578,6 +586,18 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		record.SetupStatus = "none"
 	}
 	return record, nil
+}
+
+// networkPolicyJSON encodes a policy as JSON; a nil policy stores NULL.
+func networkPolicyJSON(policy *types.NetworkPolicy) any {
+	if policy == nil {
+		return nil
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return nil
+	}
+	return string(data)
 }
 
 // tagsJSON encodes tags as a JSON object; nil and empty maps both store "{}".

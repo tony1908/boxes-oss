@@ -56,6 +56,7 @@ type Config struct {
 	Runtime          string
 	ToolsImage       string
 	TraefikDir       string
+	NetworkDir       string
 	ForwardAuthURL   string
 	StoragePath      string
 	ProcRoot         string
@@ -78,6 +79,8 @@ type Agent struct {
 	processes            map[string]*execProcess
 	snapshotFingerprints map[string]string
 	toolsWarning         sync.Once
+	networkMu            sync.Mutex
+	firewall             dockercli.Executor
 }
 
 type authCredential struct {
@@ -87,18 +90,19 @@ type authCredential struct {
 }
 
 type createRequest struct {
-	BoxID           string            `json:"boxId"`
-	Image           string            `json:"image"`
-	ToolsImage      string            `json:"toolsImage,omitempty"`
-	Type            string            `json:"type"`
-	Runtime         string            `json:"runtime"`
-	Env             map[string]string `json:"env"`
-	Files           []boxFile         `json:"files"`
-	FromSnapshot    string            `json:"fromSnapshot"`
-	Fork            bool              `json:"fork"`
-	DesktopPassword string            `json:"desktopPassword"`
-	BoxdToken       string            `json:"boxdToken"`
-	Storage         storageUpdate     `json:"storage"`
+	BoxID           string                  `json:"boxId"`
+	Image           string                  `json:"image"`
+	ToolsImage      string                  `json:"toolsImage,omitempty"`
+	Type            string                  `json:"type"`
+	Runtime         string                  `json:"runtime"`
+	Env             map[string]string       `json:"env"`
+	Files           []boxFile               `json:"files"`
+	FromSnapshot    string                  `json:"fromSnapshot"`
+	Fork            bool                    `json:"fork"`
+	DesktopPassword string                  `json:"desktopPassword"`
+	BoxdToken       string                  `json:"boxdToken"`
+	Storage         storageUpdate           `json:"storage"`
+	NetworkPolicy   *boxtypes.NetworkPolicy `json:"networkPolicy,omitempty"`
 }
 
 type boxFile struct {
@@ -150,6 +154,9 @@ func New(config Config, docker *dockercli.Docker, snapshots *snapshot.Engine) *A
 	if config.TraefikDir == "" {
 		config.TraefikDir = defaultTraefikDir
 	}
+	if config.NetworkDir == "" {
+		config.NetworkDir = defaultNetworkDir
+	}
 	if config.ForwardAuthURL == "" {
 		config.ForwardAuthURL = defaultForwardAuthURL
 	}
@@ -169,6 +176,7 @@ func New(config Config, docker *dockercli.Docker, snapshots *snapshot.Engine) *A
 		config: config, docker: docker, snapshots: snapshots,
 		boxdTokens: make(map[string]string), desktopPasswords: make(map[string]string), forwardAuth: make(map[string]authCredential),
 		processes: make(map[string]*execProcess), snapshotFingerprints: make(map[string]string), storageInitLocks: make(map[string]*sync.Mutex),
+		firewall: ExecExecutor{},
 	}
 }
 
@@ -196,6 +204,7 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/snapshots/forget", a.forgetSnapshots)
 	mux.HandleFunc("POST /v1/snapshots/prune", a.pruneSnapshots)
 	mux.HandleFunc("PUT /v1/boxes/{id}/routes", validateBoxID(a.putRoutes))
+	mux.HandleFunc("PUT /v1/boxes/{id}/network", validateBoxID(a.putNetwork))
 	mux.HandleFunc("GET /v1/boxes/{id}/tcp/{port}", validateBoxID(a.tcpBridge))
 	mux.HandleFunc("/v1/boxes/{id}/boxd/{path...}", validateBoxID(a.proxyBoxd))
 	return logFailures(mux)
@@ -394,6 +403,12 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a valid boxId and image are required")
 		return
 	}
+	if request.NetworkPolicy != nil {
+		if err := boxtypes.ValidateNetworkPolicy(*request.NetworkPolicy); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
+			return
+		}
+	}
 	if request.Type == "" {
 		request.Type = "default"
 	}
@@ -496,6 +511,12 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 		a.writeOperationError(w, r, http.StatusBadGateway, "box_start_failed", "cannot start box container", err)
 		return
 	}
+	if request.NetworkPolicy != nil {
+		if err := a.setNetworkPolicy(r.Context(), request.BoxID, request.NetworkPolicy); err != nil {
+			a.writeOperationError(w, r, http.StatusBadGateway, "network_policy_failed", "cannot apply box network policy", err)
+			return
+		}
+	}
 	if err := a.waitForBoxd(r.Context(), containerName, boxdReadyTimeout); err != nil {
 		a.writeOperationError(w, r, http.StatusServiceUnavailable, "box_not_ready", "boxd did not become ready within 180 seconds", err)
 		return
@@ -587,6 +608,7 @@ func (a *Agent) stopBox(w http.ResponseWriter, r *http.Request) {
 		a.writeOperationError(w, r, http.StatusBadGateway, "box_stop_failed", "cannot stop box container", err)
 		return
 	}
+	a.dropNetworkRules(r.Context(), r.PathValue("id"))
 	response := map[string]any{}
 	response["snapshot"] = map[string]any{
 		"snapshotId": snapshot.ResticID,
@@ -600,6 +622,15 @@ func (a *Agent) startBox(w http.ResponseWriter, r *http.Request) {
 	containerName := boxName(r.PathValue("id"))
 	if err := a.docker.Start(r.Context(), containerName); err != nil {
 		a.writeOperationError(w, r, http.StatusBadGateway, "box_start_failed", "cannot start box container", err)
+		return
+	}
+	policy, err := a.loadNetworkPolicy(r.PathValue("id"))
+	if err == nil && policy != nil {
+		err = a.setNetworkPolicy(r.Context(), r.PathValue("id"), policy)
+	}
+	if err != nil {
+		_ = a.docker.Stop(context.Background(), containerName, 10*time.Second)
+		a.writeOperationError(w, r, http.StatusBadGateway, "network_policy_failed", "cannot apply box network policy", err)
 		return
 	}
 	if err := a.waitForBoxd(r.Context(), containerName, boxdReadyTimeout); err != nil {
@@ -643,6 +674,11 @@ func (a *Agent) deleteBox(w http.ResponseWriter, r *http.Request) {
 	boxID := r.PathValue("id")
 	if err := a.docker.Remove(r.Context(), boxName(boxID), true); err != nil {
 		writeError(w, http.StatusBadGateway, "box_delete_failed", "cannot remove box container")
+		return
+	}
+	a.dropNetworkRules(r.Context(), boxID)
+	if err := a.deleteNetworkPolicyFile(boxID); err != nil {
+		writeError(w, http.StatusInternalServerError, "network_policy_delete_failed", "cannot remove box network policy")
 		return
 	}
 	for _, extension := range []string{".yml", ".json"} {

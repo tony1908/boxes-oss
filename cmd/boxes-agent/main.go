@@ -26,6 +26,7 @@ func main() {
 	nodeID := flag.String("node-id", envOr("BOXES_NODE_ID", ""), "node ID")
 	runtimeName := flag.String("runtime", envOr("BOXES_RUNTIME", "sysbox-runc"), "Docker runtime")
 	traefikDir := flag.String("traefik-dir", envOr("BOXES_TRAEFIK_DIR", "/etc/boxes/traefik/dynamic"), "Traefik dynamic configuration directory")
+	networkDir := flag.String("network-dir", envOr("BOXES_NETWORK_DIR", "/var/lib/boxes/network"), "directory for saved per-box network policies")
 	forwardAuthAddr := envOr("BOXES_FORWARD_AUTH_ADDR", "127.0.0.1:7001")
 	forwardAuthURL := envOr("BOXES_FORWARD_AUTH_URL", "http://127.0.0.1:7001/auth/forward")
 	storagePath := flag.String("storage-file", envOr("BOXES_STORAGE_FILE", "/etc/boxes/storage.json"), "private snapshot storage settings file")
@@ -61,7 +62,9 @@ func main() {
 		log.Fatalf("initialize snapshot repository: %v", err)
 	}
 
-	service := agent.New(agent.Config{NodeID: *nodeID, Runtime: *runtimeName, TraefikDir: *traefikDir, ForwardAuthURL: forwardAuthURL, StoragePath: *storagePath}, docker, engine)
+	service := agent.New(agent.Config{NodeID: *nodeID, Runtime: *runtimeName, TraefikDir: *traefikDir, NetworkDir: *networkDir, ForwardAuthURL: forwardAuthURL, StoragePath: *storagePath}, docker, engine)
+	service.RestoreNetworkPolicies(ctx)
+	go service.RunNetworkRefresh(ctx)
 	forwardAuth := &http.Server{Addr: forwardAuthAddr, Handler: service.ForwardAuthHandler(), ReadHeaderTimeout: 5 * time.Second}
 	forwardAuthErrors := make(chan error, 1)
 	go func() {

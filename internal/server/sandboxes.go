@@ -15,18 +15,19 @@ import (
 )
 
 type createSandboxRequest struct {
-	Type            string            `json:"type"`
-	TTLSeconds      json.RawMessage   `json:"ttlSeconds"`
-	IdleStopSeconds json.RawMessage   `json:"idleStopSeconds"`
-	Env             map[string]string `json:"env"`
-	SetupScript     *string           `json:"setupScript"`
-	Environment     string            `json:"environment"`
-	NoEnv           bool              `json:"noEnv"`
-	NoSecrets       bool              `json:"noSecrets"`
-	FromSnapshot    string            `json:"fromSnapshot"`
-	From            string            `json:"from"`
-	Tags            map[string]string `json:"tags"`
-	Fork            bool              `json:"-"`
+	Type            string               `json:"type"`
+	TTLSeconds      json.RawMessage      `json:"ttlSeconds"`
+	IdleStopSeconds json.RawMessage      `json:"idleStopSeconds"`
+	Env             map[string]string    `json:"env"`
+	SetupScript     *string              `json:"setupScript"`
+	Environment     string               `json:"environment"`
+	NoEnv           bool                 `json:"noEnv"`
+	NoSecrets       bool                 `json:"noSecrets"`
+	FromSnapshot    string               `json:"fromSnapshot"`
+	From            string               `json:"from"`
+	Tags            map[string]string    `json:"tags"`
+	NetworkPolicy   *types.NetworkPolicy `json:"networkPolicy"`
+	Fork            bool                 `json:"-"`
 }
 
 func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +39,12 @@ func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
 	if err := types.ValidateTags(input.Tags); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
 		return
+	}
+	if input.NetworkPolicy != nil {
+		if err := types.ValidateNetworkPolicy(*input.NetworkPolicy); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
+			return
+		}
 	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key != "" {
@@ -220,7 +227,7 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	}
 	now := time.Now().UTC()
 	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: s.defaultImages().Box,
-		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags}
+		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags, NetworkPolicy: input.NetworkPolicy}
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
 		box.ExpiresAt = &expires
@@ -234,6 +241,9 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	}
 	if fromSnapshot != "" {
 		payload["fromSnapshot"] = fromSnapshot
+	}
+	if box.NetworkPolicy != nil {
+		payload["networkPolicy"] = box.NetworkPolicy
 	}
 	if restoreStorage != nil {
 		payload["storage"] = restoreStorage
@@ -472,6 +482,7 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 		TTLSeconds      json.RawMessage   `json:"ttlSeconds"`
 		IdleStopSeconds json.RawMessage   `json:"idleStopSeconds"`
 		Tags            map[string]string `json:"tags"`
+		NetworkPolicy   json.RawMessage   `json:"networkPolicy"`
 	}
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid sandbox update")
@@ -480,6 +491,21 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 	if err := types.ValidateTags(input.Tags); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
 		return
+	}
+	// An absent networkPolicy leaves the policy alone; null clears it.
+	var policyUpdate *types.NetworkPolicy
+	policyChanged := input.NetworkPolicy != nil
+	if policyChanged && string(input.NetworkPolicy) != "null" {
+		var policy types.NetworkPolicy
+		if err := json.Unmarshal(input.NetworkPolicy, &policy); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_network_policy", "networkPolicy must be an object or null")
+			return
+		}
+		if err := types.ValidateNetworkPolicy(policy); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
+			return
+		}
+		policyUpdate = &policy
 	}
 	box, err := s.store.GetBox(r.Context(), pathID(r))
 	if err != nil {
@@ -514,6 +540,27 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 	if input.Tags != nil {
 		// Replaces the whole map; an empty object clears all tags.
 		box.Box.Tags = input.Tags
+	}
+	if policyChanged {
+		// A stopped box only stores the policy; it is sent on the next create (resume or start).
+		if box.Box.State == types.StateReady || box.Box.State == types.StateIdle {
+			client, connected := newAgentClient(s.hub, box.Box.NodeID)
+			if !connected {
+				writeError(w, http.StatusBadGateway, "network_policy_failed", "box node is offline")
+				return
+			}
+			var body any = json.RawMessage("null")
+			if policyUpdate != nil {
+				body = policyUpdate
+			}
+			if err := client.json(r.Context(), http.MethodPut, agentPath("v1", "boxes", box.Box.ID, "network"), body, nil); err != nil {
+				s.recordActivity(r.Context(), box.Box.ID, "network", "error", map[string]any{"reason": err.Error()}, "error")
+				writeError(w, http.StatusBadGateway, "network_policy_failed", withAgentError("network policy could not be applied", err))
+				return
+			}
+		}
+		box.Box.NetworkPolicy = policyUpdate
+		s.recordActivity(r.Context(), box.Box.ID, "network", "policy changed", map[string]any{"mode": networkMode(policyUpdate)}, "ok")
 	}
 	if err := s.store.UpdateBox(r.Context(), box); err != nil {
 		s.apiError(w, err)
@@ -783,6 +830,9 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	payload := map[string]any{"boxId": record.Box.ID, "image": record.Box.Image, "toolsImage": s.defaultImages().Tools, "type": targetType,
 		"desktopPassword": string(password), "boxdToken": string(boxdToken), "fromSnapshot": snapshots[len(snapshots)-1].ResticID,
 		"storage": restoreStorage}
+	if record.Box.NetworkPolicy != nil {
+		payload["networkPolicy"] = record.Box.NetworkPolicy
+	}
 	if node.Node.ID == record.Box.NodeID {
 		if err := oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.Box.ID), nil, nil); err != nil {
 			return err
@@ -809,6 +859,12 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	if err := types.ValidateTags(input.Tags); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
 		return
+	}
+	if input.NetworkPolicy != nil {
+		if err := types.ValidateNetworkPolicy(*input.NetworkPolicy); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
+			return
+		}
 	}
 	source, client, err := s.loadBoxAgent(r.Context(), pathID(r))
 	if err != nil {
@@ -854,6 +910,9 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Tags == nil {
 		input.Tags = source.Box.Tags
+	}
+	if input.NetworkPolicy == nil {
+		input.NetworkPolicy = source.Box.NetworkPolicy
 	}
 	input.Fork = true
 	fork, err := s.provisionSandbox(r.Context(), input, captured.SnapshotID, "")
@@ -995,4 +1054,15 @@ func (s *Server) loadBoxAgent(ctx context.Context, id string) (store.BoxRecord, 
 		return store.BoxRecord{}, nil, errors.New("box node is offline")
 	}
 	return box, client, nil
+}
+
+// networkMode names a policy's mode for activity records; nil means no policy.
+func networkMode(policy *types.NetworkPolicy) string {
+	if policy == nil {
+		return "none"
+	}
+	if policy.Mode == "" {
+		return types.NetworkAllowAll
+	}
+	return policy.Mode
 }

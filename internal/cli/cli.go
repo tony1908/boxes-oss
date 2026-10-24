@@ -618,11 +618,13 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	setupFile := fs.String("setup-file", "", "setup script file")
 	var tagFlags stringList
 	fs.Var(&tagFlags, "tag", "tag KEY=VALUE (repeatable)")
+	var network networkFlags
+	network.register(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]...")
+		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
@@ -673,6 +675,13 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	}
 	if len(tags) != 0 {
 		body["tags"] = tags
+	}
+	policy, err := network.policy()
+	if err != nil {
+		return err
+	}
+	if policy != nil {
+		body["networkPolicy"] = policy
 	}
 	if *setupFile != "" {
 		script, err := os.ReadFile(*setupFile)
@@ -755,10 +764,10 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 	return nil
 }
 
-// update changes sandbox tags: --tag merges into the existing tags and
-// --clear-tags removes them all.
+// update changes sandbox tags (--tag merges into the existing tags, --clear-tags removes them all)
+// and the outbound network policy (--network and friends).
 func (c *CLI) update(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags]")
+	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	if len(args) == 0 {
 		return usage
 	}
@@ -770,6 +779,8 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 	var tagFlags stringList
 	fs.Var(&tagFlags, "tag", "tag KEY=VALUE to set, merged into existing tags (repeatable)")
 	clearTags := fs.Bool("clear-tags", false, "remove all tags")
+	var network networkFlags
+	network.register(fs)
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -779,37 +790,95 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 	if *clearTags && len(tagFlags) != 0 {
 		return errors.New("--tag and --clear-tags are mutually exclusive")
 	}
-	if !*clearTags && len(tagFlags) == 0 {
-		return errors.New("choose --tag KEY=VALUE or --clear-tags")
+	policy, err := network.policy()
+	if err != nil {
+		return err
 	}
-	tags := map[string]string{}
-	if !*clearTags {
-		parsed, err := parseTagFlags(tagFlags)
-		if err != nil {
-			return err
-		}
-		current, err := c.client.doJSON(ctx, http.MethodGet, "/sandboxes/"+url.PathEscape(id), nil, nil)
-		if err != nil {
-			return err
-		}
-		var box struct {
-			Tags map[string]string `json:"tags"`
-		}
-		if err := json.Unmarshal(unwrap(current, "sandbox"), &box); err != nil {
-			return fmt.Errorf("decode sandbox tags: %w", err)
-		}
-		for key, value := range box.Tags {
-			tags[key] = value
-		}
-		for key, value := range parsed {
-			tags[key] = value
-		}
+	if !*clearTags && len(tagFlags) == 0 && policy == nil {
+		return errors.New("choose --tag KEY=VALUE, --clear-tags, or a network flag (--network, --allow-domain, --allow-cidr, --deny-cidr)")
 	}
-	result, err := c.client.doJSON(ctx, http.MethodPatch, "/sandboxes/"+url.PathEscape(id), map[string]any{"tags": tags}, nil)
+	body := map[string]any{}
+	if policy != nil {
+		body["networkPolicy"] = policy
+	}
+	if *clearTags || len(tagFlags) != 0 {
+		tags := map[string]string{}
+		if !*clearTags {
+			parsed, err := parseTagFlags(tagFlags)
+			if err != nil {
+				return err
+			}
+			current, err := c.client.doJSON(ctx, http.MethodGet, "/sandboxes/"+url.PathEscape(id), nil, nil)
+			if err != nil {
+				return err
+			}
+			var box struct {
+				Tags map[string]string `json:"tags"`
+			}
+			if err := json.Unmarshal(unwrap(current, "sandbox"), &box); err != nil {
+				return fmt.Errorf("decode sandbox tags: %w", err)
+			}
+			for key, value := range box.Tags {
+				tags[key] = value
+			}
+			for key, value := range parsed {
+				tags[key] = value
+			}
+		}
+		body["tags"] = tags
+	}
+	result, err := c.client.doJSON(ctx, http.MethodPatch, "/sandboxes/"+url.PathEscape(id), body, nil)
 	if err != nil {
 		return err
 	}
 	return c.printValue(unwrap(result, "sandbox"))
+}
+
+// networkFlags are the outbound network policy flags shared by new and update.
+type networkFlags struct {
+	mode         string
+	allowDomains stringList
+	allowCIDRs   stringList
+	denyCIDRs    stringList
+}
+
+func (n *networkFlags) register(fs *flag.FlagSet) {
+	fs.StringVar(&n.mode, "network", "", "outbound network mode: allow-all, deny-all, or allowlist")
+	fs.Var(&n.allowDomains, "allow-domain", "domain or *.example.com allowed when --network allowlist (repeatable)")
+	fs.Var(&n.allowCIDRs, "allow-cidr", "IPv4 CIDR allowed when --network allowlist (repeatable)")
+	fs.Var(&n.denyCIDRs, "deny-cidr", "IPv4 CIDR always blocked, in any mode (repeatable)")
+}
+
+// policy returns the networkPolicy request body, or nil when no network flag was given.
+func (n networkFlags) policy() (map[string]any, error) {
+	if n.mode == "" {
+		if len(n.allowDomains) != 0 || len(n.allowCIDRs) != 0 {
+			return nil, errors.New("--allow-domain and --allow-cidr require --network allowlist")
+		}
+		if len(n.denyCIDRs) == 0 {
+			return nil, nil
+		}
+		return nil, errors.New("--deny-cidr requires --network (allow-all, deny-all, or allowlist)")
+	}
+	switch n.mode {
+	case "allow-all", "deny-all", "allowlist":
+	default:
+		return nil, fmt.Errorf("--network must be allow-all, deny-all, or allowlist, not %q", n.mode)
+	}
+	if n.mode != "allowlist" && (len(n.allowDomains) != 0 || len(n.allowCIDRs) != 0) {
+		return nil, errors.New("--allow-domain and --allow-cidr require --network allowlist")
+	}
+	policy := map[string]any{"mode": n.mode}
+	if len(n.allowDomains) != 0 {
+		policy["allowDomains"] = []string(n.allowDomains)
+	}
+	if len(n.allowCIDRs) != 0 {
+		policy["allowCidrs"] = []string(n.allowCIDRs)
+	}
+	if len(n.denyCIDRs) != 0 {
+		policy["denyCidrs"] = []string(n.denyCIDRs)
+	}
+	return policy, nil
 }
 
 // parseTagFlags turns repeated KEY=VALUE flags into a tag map.

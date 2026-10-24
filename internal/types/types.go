@@ -81,6 +81,7 @@ type Box struct {
 	ExpiresAt          *time.Time        `json:"expiresAt,omitempty"`
 	FromSnapshot       string            `json:"fromSnapshot,omitempty"`
 	Tags               map[string]string `json:"tags,omitempty"`
+	NetworkPolicy      *NetworkPolicy    `json:"networkPolicy,omitempty"`
 	ErrorCode          string            `json:"errorCode,omitempty"`
 	Error              string            `json:"error,omitempty"`
 	CreatedAt          time.Time         `json:"createdAt"`

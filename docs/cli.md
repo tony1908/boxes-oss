@@ -71,9 +71,9 @@ Common forms:
 ```sh
 boxes new [--type SIZE] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
           [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env] \
-          [--tag KEY=VALUE]...
+          [--tag KEY=VALUE]... [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
 boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
-boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags]
+boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
 boxes info <id|current>
 boxes current
 boxes exec <id|current> [--detach] [--status PID] -- <command> [arguments]
@@ -134,6 +134,22 @@ into the existing ones, and `--clear-tags` removes them all (the two cannot be
 combined). `boxes list --tag KEY=VALUE` keeps boxes with that exact value, and
 `--tag KEY` keeps boxes that have the key; repeated filters must all match. Tags
 appear in the `tags` field of `boxes info` and `boxes get` output.
+
+### Outbound network policy
+
+`boxes new` and `boxes update <id|current>` take the same network flags:
+
+- `--network allow-all|deny-all|allowlist` sets the mode (`allow-all` is the default for new boxes).
+- `--allow-domain HOST` (repeatable) allows a hostname or `*.example.com`; `--allow-cidr CIDR` (repeatable) allows an IPv4 range. Both require `--network allowlist`.
+- `--deny-cidr CIDR` (repeatable) blocks an IPv4 range in every mode and wins over allows. `169.254.169.254/32` is always blocked.
+
+```sh
+boxes new --network allowlist --allow-domain api.github.com --allow-domain '*.npmjs.org' --deny-cidr 10.0.0.0/8
+boxes update current --network deny-all
+```
+
+`update` applies to a running box at once and to a stopped box on its next start.
+Allowlists are DNS-based and IPv4 only; see the limits in the API reference.
 
 ### Desktop, browser, and forwarding
 

@@ -63,3 +63,14 @@ test('sends sandbox tags on create, update, and list filters', async t => {
   assert.deepEqual(JSON.parse(seen[1].body),{tags:{}});
   assert.equal(seen[2].url,'/api/v1/sandboxes?tag=team%3Dagents&tag=owner');
 });
+
+test('sends network policy on create and update as networkPolicy', async t => {
+  const seen=[]; const server=createServer((req,res)=>{let body=''; req.on('data',c=>body+=c); req.on('end',()=>{seen.push({method:req.method,body});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:'bx_n',sandbox:{id:'bx_n'}}));});});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close()); const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});
+  const policy={mode:'allowlist',allowDomains:['api.github.com'],allowCidrs:['10.0.0.0/8'],denyCidrs:['10.1.0.0/16']};
+  await c.sandboxes.create({type:'small',networkPolicy:policy});
+  await c.sandboxes.update('bx_n',{networkPolicy:null});
+  assert.deepEqual(JSON.parse(seen[0].body).networkPolicy,policy);
+  assert.equal(seen[1].method,'PATCH');
+  assert.deepEqual(JSON.parse(seen[1].body),{networkPolicy:null});
+});
