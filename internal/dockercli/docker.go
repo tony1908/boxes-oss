@@ -424,8 +424,39 @@ func (d *Docker) Exec(ctx context.Context, name, user, cwd string, env map[strin
 	}
 	command = append(command, name)
 	command = append(command, argv...)
-	_, code, err := d.runMode(ctx, command, stdin, stdout, stderr, envCredentials(env), false)
-	return code, err
+	// Output goes straight to the caller: runMode would keep a full copy, which grows without bound for long-running commands.
+	var stderrHead boundedBuffer
+	stderrHead.limit = 64 << 10
+	var errOut io.Writer = &stderrHead
+	if stderr != nil {
+		errOut = io.MultiWriter(&stderrHead, stderr)
+	}
+	out := stdout
+	if out == nil {
+		out = io.Discard
+	}
+	code, runErr := d.executor.Run(ctx, command, stdin, out, errOut)
+	if runErr != nil {
+		return code, &CommandError{ExitCode: code, Stderr: redact(stderrHead.String(), envCredentials(env))}
+	}
+	return code, nil
+}
+
+// boundedBuffer keeps the first limit bytes, enough for error messages without growing with output.
+type boundedBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if room := b.limit - b.Len(); room > 0 {
+		if len(p) > room {
+			p = p[:room]
+		}
+		_, _ = b.Buffer.Write(p)
+	}
+	return n, nil
 }
 
 // Diff returns Docker's added, changed, and deleted paths for a container.

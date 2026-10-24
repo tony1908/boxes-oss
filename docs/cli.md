@@ -60,7 +60,7 @@ run without a config file:
 Run `boxes --help` for the command list. The full set of top-level commands is:
 
 ```
-login logout whoami new list get info status current exec ssh proxy scp
+login logout whoami new list get info status current exec ps logs kill ssh proxy scp
 push pull prompt events steer interrupt conversations snapshots snapshot usage
 limits desktop browser host stop resume extend fork delete dashboard forward
 skill env
@@ -78,6 +78,9 @@ boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--network MODE] [
 boxes info <id|current>
 boxes current
 boxes exec <id|current> [--detach] [--status PID] -- <command> [arguments]
+boxes ps <id|current>                               # detached commands for a box
+boxes logs <id|current> <processId> [-f]             # output; -f follows and exits with the command status
+boxes kill <id|current> <processId> [--signal TERM]  # signal a detached command
 boxes prompt [id|current] "text" [--provider claude|codex|opencode|pi|prime|kimi] [--model M] [--new | --conversation ID] [--stop-when-done]
 boxes steer <id> <message> [--conversation ID]
 boxes interrupt <id> [--conversation ID]
@@ -187,6 +190,9 @@ boxes new --type small --ttl 3600        # creates a box and makes it "current"
 boxes exec current -- uname -a            # run a command
 boxes push current ./project --to /config/project
 boxes exec current -- sh -c 'cd /config/project && ls'
+boxes exec current --detach -- sleep 600   # prints a processId
+boxes logs current <processId> -f        # stream output until it exits
+boxes kill current <processId>            # SIGTERM the command
 boxes desktop current                     # open the desktop session
 boxes prompt current "summarize the repo" --provider claude --stop-when-done
 boxes stop current                        # captures a snapshot, then stops

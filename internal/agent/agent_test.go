@@ -1386,3 +1386,304 @@ func TestParseCommandRunsStringsThroughShell(t *testing.T) {
 		t.Fatal("blank cmd was accepted")
 	}
 }
+
+// detachedRecorder is a mutex-guarded docker argv log for tests that drive detached commands over HTTP.
+type detachedRecorder struct {
+	mu   sync.Mutex
+	argv [][]string
+}
+
+func (r *detachedRecorder) add(argv []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.argv = append(r.argv, append([]string(nil), argv...))
+}
+
+func (r *detachedRecorder) find(match func([]string) bool) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, argv := range r.argv {
+		if match(argv) {
+			return argv
+		}
+	}
+	return nil
+}
+
+func isDetachedExec(argv []string) bool {
+	return len(argv) > 1 && argv[1] == "exec" && containsArg(argv, "setsid")
+}
+
+func waitForProcessExit(t *testing.T, handler http.Handler, boxID, processID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/boxes/"+boxID+"/exec/"+processID, nil))
+		if strings.Contains(response.Body.String(), `"running":false`) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("detached process did not finish")
+}
+
+func startDetached(t *testing.T, handler http.Handler, boxID, body string) string {
+	t.Helper()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/boxes/"+boxID+"/exec", strings.NewReader(body)))
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("detached start = %d %s", response.Code, response.Body.String())
+	}
+	var started struct {
+		ProcessID string `json:"processId"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &started); err != nil || started.ProcessID == "" {
+		t.Fatalf("processId missing from %s: %v", response.Body.String(), err)
+	}
+	return started.ProcessID
+}
+
+func TestOutputBufferKeepsTailAndOffsets(t *testing.T) {
+	var buffer outputBuffer
+	chunk := bytes.Repeat([]byte("a"), 256<<10)
+	for i := 0; i < 12; i++ { // 3 MiB total
+		_, _ = buffer.Write(chunk)
+	}
+	data, next, truncated := buffer.readFrom(0)
+	if !truncated || len(data) != maxDetachedOutputBytes || next != 3<<20 {
+		t.Fatalf("readFrom(0) = len %d next %d truncated %v; want 1 MiB tail, next 3 MiB, truncated", len(data), next, truncated)
+	}
+	data, next, truncated = buffer.readFrom(3<<20 - 5)
+	if truncated || string(data) != "aaaaa" || next != 3<<20 {
+		t.Fatalf("readFrom(end-5) = %q next %d truncated %v", data, next, truncated)
+	}
+	if _, _, truncated = buffer.readFrom(1); !truncated {
+		t.Fatal("offset before the retained window was not reported as truncated")
+	}
+}
+
+func TestDetachedLogsReturnDataAfterOffsetAndFollowEndsWithExit(t *testing.T) {
+	release := make(chan struct{})
+	var rec detachedRecorder
+	executor := testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
+		if !isDetachedExec(argv) {
+			return 0, nil
+		}
+		rec.add(argv)
+		_, _ = io.WriteString(stdout, "one\n")
+		<-release
+		_, _ = io.WriteString(stdout, "two\n")
+		return 0, nil
+	}}
+	agent := New(Config{NodeID: "nd_test", Runtime: "runc", TraefikDir: t.TempDir()}, dockercli.New(executor), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	server := httptest.NewServer(agent.Handler())
+	defer server.Close()
+	boxID := "bx_abcdefgh2345"
+	processID := startDetached(t, agent.Handler(), boxID, `{"cmd":["printf","x"],"detached":true}`)
+
+	// Live output: the first chunk is visible while the process is still running.
+	var follow *http.Response
+	done := make(chan string, 1)
+	go func() {
+		response, err := http.Get(server.URL + "/v1/boxes/" + boxID + "/exec/" + processID + "/logs?follow=1")
+		if err != nil {
+			done <- "error: " + err.Error()
+			return
+		}
+		follow = response
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		done <- string(body)
+	}()
+	close(release)
+	body := <-done
+	if follow == nil || !strings.Contains(body, `"data":"one\ntwo\n","offset":8,"stream":"stdout"`) {
+		t.Fatalf("follow body = %q", body)
+	}
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	if last := lines[len(lines)-1]; last != `{"exit":true,"exitCode":0}` {
+		t.Fatalf("last follow line = %q", last)
+	}
+
+	// Non-follow after offset 4 returns only the bytes after it and no exit line.
+	response := httptest.NewRecorder()
+	agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/boxes/"+boxID+"/exec/"+processID+"/logs?stdoutOffset=4", nil))
+	if response.Code != http.StatusOK || response.Body.String() != "{\"data\":\"two\\n\",\"offset\":8,\"stream\":\"stdout\"}\n" {
+		t.Fatalf("non-follow after offset = %d %q", response.Code, response.Body.String())
+	}
+	if response := httptest.NewRecorder(); true {
+		agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/boxes/"+boxID+"/exec/"+processID+"/logs?stdoutOffset=x", nil))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid offset = %d", response.Code)
+		}
+	}
+}
+
+func TestDetachedKillSignalsProcessGroupFromPidFile(t *testing.T) {
+	release := make(chan struct{})
+	var rec detachedRecorder
+	executor := testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
+		if isDetachedExec(argv) {
+			<-release
+			return 0, nil
+		}
+		rec.add(argv)
+		if containsArg(argv, "cat") {
+			_, _ = io.WriteString(stdout, "4321\n")
+		}
+		return 0, nil
+	}}
+	agent := New(Config{NodeID: "nd_test", Runtime: "runc", TraefikDir: t.TempDir()}, dockercli.New(executor), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	boxID := "bx_abcdefgh2345"
+	processID := startDetached(t, agent.Handler(), boxID, `{"cmd":["sleep","100"],"detached":true}`)
+	kill := func(body string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/boxes/"+boxID+"/exec/"+processID+"/kill", strings.NewReader(body)))
+		return response
+	}
+	if response := kill(`{"signal":"STOP"}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported signal = %d", response.Code)
+	}
+	if response := kill(`{"signal":"HUP"}`); response.Code != http.StatusOK {
+		t.Fatalf("kill HUP = %d %s", response.Code, response.Body.String())
+	}
+	want := []string{"docker", "exec", "--user", "root", "box-" + boxID, "kill", "-s", "HUP", "--", "-4321"}
+	if got := rec.find(func(argv []string) bool { return containsArg(argv, "kill") }); !reflect.DeepEqual(got, want) {
+		t.Fatalf("kill argv = %#v, want %#v", got, want)
+	}
+	close(release)
+	waitForProcessExit(t, agent.Handler(), boxID, processID)
+	if response := kill(`{}`); response.Code != http.StatusConflict {
+		t.Fatalf("kill after exit = %d", response.Code)
+	}
+}
+
+func TestDetachedArgvRecordsPidAndKeepsArgumentsLiteral(t *testing.T) {
+	got := detachedArgv("abc_-1", []string{"printf", "%s", "a b;c"})
+	want := []string{"setsid", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/abc_-1.pid", "printf", "%s", "a b;c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("detachedArgv = %#v, want %#v", got, want)
+	}
+}
+
+func TestDetachedStdinWriteCloseAndConflicts(t *testing.T) {
+	var rec detachedRecorder
+	executor := testExecutor{command: func(argv []string, input []byte, stdout, _ io.Writer) (int, error) {
+		if isDetachedExec(argv) {
+			_, _ = stdout.Write(input) // testExecutor reads stdin until it is closed, then calls this
+			return 0, nil
+		}
+		rec.add(argv)
+		return 0, nil
+	}}
+	agent := New(Config{NodeID: "nd_test", Runtime: "runc", TraefikDir: t.TempDir()}, dockercli.New(executor), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	boxID := "bx_abcdefgh2345"
+	stdinPost := func(processID, query, body string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/boxes/"+boxID+"/exec/"+processID+"/stdin"+query, strings.NewReader(body)))
+		return response
+	}
+	if response := httptest.NewRecorder(); true {
+		agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/boxes/"+boxID+"/exec", strings.NewReader(`{"cmd":["cat"],"stdin":true}`)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("sync stdin = %d", response.Code)
+		}
+	}
+	noStdin := startDetached(t, agent.Handler(), boxID, `{"cmd":["true"],"detached":true}`)
+	if response := stdinPost(noStdin, "", "x"); response.Code != http.StatusConflict {
+		t.Fatalf("stdin without stdin flag = %d", response.Code)
+	}
+	processID := startDetached(t, agent.Handler(), boxID, `{"cmd":["cat"],"detached":true,"stdin":true}`)
+	if response := stdinPost(processID, "", "hello "); response.Code != http.StatusOK {
+		t.Fatalf("stdin write = %d %s", response.Code, response.Body.String())
+	}
+	if response := stdinPost(processID, "?close=1", "world"); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"closed":true`) {
+		t.Fatalf("stdin close = %d %s", response.Code, response.Body.String())
+	}
+	waitForProcessExit(t, agent.Handler(), boxID, processID)
+	if response := stdinPost(processID, "", "late"); response.Code != http.StatusConflict {
+		t.Fatalf("write after close = %d", response.Code)
+	}
+	if response := stdinPost(processID, "", strings.Repeat("x", maxStdinWriteBytes+1)); response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized stdin = %d", response.Code)
+	}
+	response := httptest.NewRecorder()
+	agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/boxes/"+boxID+"/exec/"+processID, nil))
+	if !strings.Contains(response.Body.String(), `"stdout":"hello world"`) {
+		t.Fatalf("process output = %s", response.Body.String())
+	}
+}
+
+func TestDetachedTimeoutBounds(t *testing.T) {
+	executor := testExecutor{command: func([]string, []byte, io.Writer, io.Writer) (int, error) { return 0, nil }}
+	agent := New(Config{NodeID: "nd_test", Runtime: "runc", TraefikDir: t.TempDir()}, dockercli.New(executor), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	boxID := "bx_abcdefgh2345"
+	post := func(body string) int {
+		response := httptest.NewRecorder()
+		agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/boxes/"+boxID+"/exec", strings.NewReader(body)))
+		return response.Code
+	}
+	if code := post(`{"cmd":["true"],"timeoutSeconds":601}`); code != http.StatusBadRequest {
+		t.Fatalf("sync 601s = %d", code)
+	}
+	if code := post(`{"cmd":["true"],"detached":true,"timeoutSeconds":86401}`); code != http.StatusBadRequest {
+		t.Fatalf("detached 86401s = %d", code)
+	}
+	if code := post(`{"cmd":["true"],"detached":true,"timeoutSeconds":86400}`); code != http.StatusAccepted {
+		t.Fatalf("detached 86400s = %d", code)
+	}
+	id := startDetached(t, agent.Handler(), boxID, `{"cmd":["true"],"detached":true}`)
+	process := agent.findProcess(boxID, id)
+	if remaining := time.Until(process.Deadline); remaining < 59*time.Minute || remaining > time.Hour+time.Minute {
+		t.Fatalf("default detached deadline is %s away, want about 1h", remaining)
+	}
+}
+
+func TestListPruningKeepsRunningAndRecentAndCapsBox(t *testing.T) {
+	agent := New(Config{NodeID: "nd_test"}, dockercli.New(testExecutor{}), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	now := time.Now().UTC()
+	finished := func(boxID string, age time.Duration) *execProcess {
+		process := newExecProcess(boxID, []string{"true"}, time.Minute)
+		process.finish(0)
+		process.finishedAt = now.Add(-age)
+		return process
+	}
+	running := newExecProcess("bx_a", []string{"sleep"}, time.Minute)
+	agent.processes["running"] = running
+	agent.processes["old"] = finished("bx_a", 2*time.Hour)
+	agent.processes["recent"] = finished("bx_a", 30*time.Minute)
+	for i := 0; i < 105; i++ {
+		agent.processes[fmt.Sprintf("bulk-%03d", i)] = finished("bx_a", time.Duration(i+1)*time.Second)
+	}
+	agent.processes["other"] = finished("bx_b", 2*time.Hour)
+
+	agent.mu.Lock()
+	agent.pruneProcessesLocked("bx_a", now)
+	agent.mu.Unlock()
+
+	if _, ok := agent.processes["old"]; ok {
+		t.Fatal("finished process older than one hour was kept")
+	}
+	if _, ok := agent.processes["running"]; !ok {
+		t.Fatal("running process was dropped")
+	}
+	if _, ok := agent.processes["other"]; !ok {
+		t.Fatal("another box's process was pruned")
+	}
+	count := 0
+	for _, process := range agent.processes {
+		if process.BoxID == "bx_a" {
+			count++
+		}
+	}
+	if count != maxProcessesPerBox {
+		t.Fatalf("box has %d processes, want %d", count, maxProcessesPerBox)
+	}
+	if _, ok := agent.processes["bulk-000"]; !ok {
+		t.Fatal("newest finished process was dropped")
+	}
+	if _, ok := agent.processes["bulk-104"]; ok {
+		t.Fatal("oldest finished process was kept over the cap")
+	}
+}

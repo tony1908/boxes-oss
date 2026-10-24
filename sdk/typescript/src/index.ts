@@ -9,12 +9,71 @@ export interface Snapshot { id: string; boxId: string; resticId: string; sizeByt
 export interface Operation { id: string; status: 'pending' | 'done' | 'failed'; error?: string }
 export interface CommandResult { processId?: string; running?: boolean; exitCode?: number | null; [key: string]: unknown }
 export interface ActivityItem { id: string; time: string; actorType: string; actorLabel: string; category: string; action: string; detail: Record<string, unknown>; durationMs?: number; outcome?: string }
+/** One NDJSON record from a detached command's logs: output chunk, or the final exit record when follow is set. */
+export interface CommandLogLine { stream?: 'stdout' | 'stderr'; data?: string; offset?: number; truncated?: boolean; exit?: boolean; exitCode?: number }
 export interface BoxesOptions { baseUrl: string; apiKey: string; fetch?: typeof fetch; pollIntervalMs?: number }
 export class BoxesError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); this.name = 'BoxesError'; }
 }
 type Query = Record<string, string | number | boolean | undefined | null>;
 type Row = Record<string, any>;
+
+/** Requests a Command makes through its owning client. */
+interface CommandTransport {
+  request<T>(method: string, path: string, body?: unknown): Promise<T>;
+  open(path: string, method: string, body?: unknown): Promise<Response>;
+  pollMs: number;
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** A detached command started with exec.detached. Output, signals, and stdin go through its sandbox. */
+export class Command {
+  constructor(private readonly transport: CommandTransport, readonly sandboxId: string, readonly processId: string) {}
+
+  private get path(): string { return `/sandboxes/${encodeURIComponent(this.sandboxId)}/commands/${encodeURIComponent(this.processId)}`; }
+  /** Current output, exit state, and offsets. */
+  status = () => this.transport.request<CommandResult>('GET', this.path);
+  /** Streams NDJSON log records. With follow, the stream ends after the exit record; without it, after the available output. */
+  async *logs(options: { follow?: boolean; stdoutOffset?: number; stderrOffset?: number } = {}): AsyncGenerator<CommandLogLine> {
+    const params = new URLSearchParams();
+    if (options.stdoutOffset) params.set('stdoutOffset', String(options.stdoutOffset));
+    if (options.stderrOffset) params.set('stderrOffset', String(options.stderrOffset));
+    if (options.follow) params.set('follow', '1');
+    const query = params.toString() ? `?${params}` : '';
+    const response = await this.transport.open(`${this.path}/logs${query}`, 'GET');
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      let newline: number;
+      while ((newline = buffered.indexOf('\n')) >= 0) {
+        const line = buffered.slice(0, newline).trim();
+        buffered = buffered.slice(newline + 1);
+        if (line) yield JSON.parse(line) as CommandLogLine;
+      }
+    }
+    const rest = (buffered + decoder.decode()).trim();
+    if (rest) yield JSON.parse(rest) as CommandLogLine;
+  }
+  /** Polls until the command exits and returns its final status. */
+  async wait(): Promise<CommandResult> {
+    for (;;) {
+      const result = await this.status();
+      if (!result.running) return result;
+      await sleep(this.transport.pollMs);
+    }
+  }
+  /** Sends a signal to the command's process group: TERM (default), KILL, INT, HUP, QUIT, USR1, or USR2. */
+  kill = (signal = 'TERM') => this.transport.request<Row>('POST', `${this.path}/kill`, { signal });
+  /** Writes to stdin. The command must have been started with stdin: true. */
+  writeStdin = (data: string | Uint8Array) => this.transport.open(`${this.path}/stdin`, 'POST', data).then(() => undefined);
+  closeStdin = () => this.transport.open(`${this.path}/stdin?close=1`, 'POST').then(() => undefined);
+}
 
 export class Boxes {
   private readonly base: string;
@@ -27,9 +86,23 @@ export class Boxes {
     this.key = options.apiKey;
     this.fetcher = options.fetch ?? fetch;
     this.pollMs = options.pollIntervalMs ?? 500;
+    this.transport = { request: (method, path, body) => this.request(method, path, body), open: (path, method, body) => this.open(path, method, body), pollMs: this.pollMs };
   }
 
+  private readonly transport: CommandTransport;
+
   private id(value: string): string { return encodeURIComponent(value); }
+  private async open(path: string, method: string, body?: unknown): Promise<Response> {
+    const headers = new Headers({ Authorization: `Bearer ${this.key}` });
+    const payload = body === undefined ? undefined : (typeof body === 'string' || body instanceof Uint8Array ? body as BodyInit : JSON.stringify(body));
+    const response = await this.fetcher(this.base + path, { method, headers, body: payload });
+    if (!response.ok) {
+      let error: Row = {};
+      try { error = await response.json() as Row; } catch { /* empty or non-JSON response */ }
+      throw new BoxesError(response.status, error?.error?.code ?? 'http_error', error?.error?.message ?? response.statusText);
+    }
+    return response;
+  }
   private query(query?: Query, repeated: Record<string, string[]> = {}): string {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query ?? {})) if (value !== undefined && value !== null) params.set(key, String(value));
@@ -73,6 +146,8 @@ export class Boxes {
     // tags: "key=value" (exact match) or "key" (has key); all must match. Create/update take `tags` in their input.
     list: async (filter?: string, tags?: string[]) => (await this.request<{ sandboxes: Sandbox[] }>('GET', `/sandboxes${this.query({ filter }, { tag: tags ?? [] })}`)).sandboxes,
     get: async (id: string) => (await this.request<{ sandbox: Sandbox }>('GET', `/sandboxes/${this.id(id)}`)).sandbox,
+    /** Detached commands the agent still remembers for the sandbox, oldest first. Lost on agent restart. */
+    listCommands: async (id: string) => (await this.request<{ commands: CommandResult[] }>('GET', `/sandboxes/${this.id(id)}/commands`)).commands,
     // networkPolicy: a policy replaces the current one; null clears it. Applied live when the box is running.
     update: async (id: string, input: Record<string, unknown> & { networkPolicy?: NetworkPolicy | null }) => (await this.request<{ sandbox: Sandbox }>('PATCH', `/sandboxes/${this.id(id)}`, input)).sandbox,
     stop: (id: string) => this.request<Row>('POST', `/sandboxes/${this.id(id)}/stop`, {}),
@@ -88,7 +163,11 @@ export class Boxes {
   };
   exec = {
     run: (id: string, cmd: string | string[], options: Record<string, unknown> = {}) => this.request<CommandResult>('POST', `/sandboxes/${this.id(id)}/commands`, { cmd, ...options }),
-    detached: (id: string, cmd: string | string[], options: Record<string, unknown> = {}) => this.request<CommandResult>('POST', `/sandboxes/${this.id(id)}/commands`, { cmd, ...options, detached: true }),
+    /** Starts a detached command (timeoutSeconds up to 86400). Pass stdin: true to use writeStdin/closeStdin. */
+    detached: async (id: string, cmd: string | string[], options: Record<string, unknown> = {}): Promise<Command> => {
+      const started = await this.request<{ processId: string }>('POST', `/sandboxes/${this.id(id)}/commands`, { cmd, ...options, detached: true });
+      return new Command(this.transport, id, started.processId);
+    },
     getCommand: (id: string, pid: string) => this.request<CommandResult>('GET', `/sandboxes/${this.id(id)}/commands/${this.id(pid)}`),
   };
   files = {

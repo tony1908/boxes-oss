@@ -118,15 +118,7 @@ type execRequest struct {
 	Env            map[string]string `json:"env"`
 	TimeoutSeconds int               `json:"timeoutSeconds"`
 	Detached       bool              `json:"detached"`
-}
-
-type execProcess struct {
-	BoxID    string    `json:"-"`
-	Running  bool      `json:"running"`
-	ExitCode *int      `json:"exitCode,omitempty"`
-	Stdout   string    `json:"stdout"`
-	Stderr   string    `json:"stderr"`
-	Updated  time.Time `json:"-"`
+	Stdin          bool              `json:"stdin"`
 }
 
 type cappedBuffer struct {
@@ -191,7 +183,11 @@ func (a *Agent) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/boxes/{id}/start", validateBoxID(a.startBox))
 	mux.HandleFunc("DELETE /v1/boxes/{id}", validateBoxID(a.deleteBox))
 	mux.HandleFunc("POST /v1/boxes/{id}/exec", validateBoxID(a.execBox))
+	mux.HandleFunc("GET /v1/boxes/{id}/exec", validateBoxID(a.listExec))
 	mux.HandleFunc("GET /v1/boxes/{id}/exec/{processId}", validateBoxID(a.getExec))
+	mux.HandleFunc("GET /v1/boxes/{id}/exec/{processId}/logs", validateBoxID(a.execLogs))
+	mux.HandleFunc("POST /v1/boxes/{id}/exec/{processId}/kill", validateBoxID(a.killExec))
+	mux.HandleFunc("POST /v1/boxes/{id}/exec/{processId}/stdin", validateBoxID(a.execStdin))
 	mux.HandleFunc("GET /v1/boxes/{id}/files", validateBoxID(a.getFile))
 	mux.HandleFunc("PUT /v1/boxes/{id}/files", validateBoxID(a.putFile))
 	mux.HandleFunc("PUT /v1/boxes/{id}/archive", validateBoxID(a.putArchive))
@@ -277,7 +273,10 @@ func (a *Agent) putStorage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_storage", "RESTIC_PASSWORD is required")
 		return
 	}
+	// The engine is swapped under snapshotExclusiveMu below, so read its fields under the same lock.
+	a.snapshotExclusiveMu.RLock()
 	engine := snapshot.New(a.snapshots.Docker, a.snapshots.Restic, update.Repository, password)
+	a.snapshotExclusiveMu.RUnlock()
 	engine.Env = awsEnvironment(update.Env)
 	initLock := a.storageInitLock(update.Repository)
 	initLock.Lock()
@@ -710,8 +709,16 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_command", "cmd must be a non-empty argv or command string")
 		return
 	}
-	if request.TimeoutSeconds < 0 || request.TimeoutSeconds > 600 {
-		writeError(w, http.StatusBadRequest, "invalid_timeout", "timeoutSeconds must be between 0 and 600")
+	maxTimeout, defaultTimeout := 600, 5*time.Minute
+	if request.Detached {
+		maxTimeout, defaultTimeout = maxDetachedTimeoutSeconds, defaultDetachedTimeout
+	}
+	if request.TimeoutSeconds < 0 || request.TimeoutSeconds > maxTimeout {
+		writeError(w, http.StatusBadRequest, "invalid_timeout", fmt.Sprintf("timeoutSeconds must be between 0 and %d", maxTimeout))
+		return
+	}
+	if request.Stdin && !request.Detached {
+		writeError(w, http.StatusBadRequest, "invalid_request", "stdin requires a detached command")
 		return
 	}
 	if request.User == "" {
@@ -722,15 +729,27 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 	}
 	timeout := time.Duration(request.TimeoutSeconds) * time.Second
 	if timeout == 0 {
-		timeout = 5 * time.Minute
+		timeout = defaultTimeout
 	}
 	if request.Detached {
+		boxID := r.PathValue("id")
 		processID := randomProcessID()
-		process := &execProcess{BoxID: r.PathValue("id"), Running: true, Stdout: "", Stderr: "", Updated: time.Now().UTC()}
+		process := newExecProcess(boxID, argv, timeout)
+		var stdinReader *os.File
+		if request.Stdin {
+			// An *os.File stdin is passed straight to the child, so Wait does not block on a copy goroutine.
+			reader, writer, err := os.Pipe()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "exec_failed", "stdin pipe could not be created")
+				return
+			}
+			stdinReader, process.stdin = reader, writer
+		}
 		a.mu.Lock()
+		a.pruneProcessesLocked(boxID, time.Now().UTC())
 		a.processes[processID] = process
 		a.mu.Unlock()
-		go a.runDetached(boxName(r.PathValue("id")), request, argv, timeout, processID, process)
+		go a.runDetached(boxName(boxID), request, argv, timeout, processID, process, stdinReader)
 		writeJSON(w, http.StatusAccepted, map[string]string{"processId": processID})
 		return
 	}
@@ -743,37 +762,6 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"exitCode": code, "stdout": stdout.String(), "stderr": stderr.String()})
-}
-
-func (a *Agent) runDetached(container string, request execRequest, argv []string, timeout time.Duration, processID string, process *execProcess) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	stdout, stderr := &cappedBuffer{limit: maxExecOutput}, &cappedBuffer{limit: maxExecOutput}
-	code, err := a.docker.Exec(ctx, container, request.User, request.Cwd, request.Env, argv, nil, stdout, stderr)
-	updated := execProcess{BoxID: process.BoxID, Running: false, Stdout: stdout.String(), Stderr: stderr.String(), Updated: time.Now().UTC()}
-	if err != nil {
-		updated.ExitCode = intPointer(1)
-	} else {
-		updated.ExitCode = intPointer(code)
-	}
-	a.mu.Lock()
-	*process = updated
-	a.mu.Unlock()
-}
-
-func (a *Agent) getExec(w http.ResponseWriter, r *http.Request) {
-	a.mu.RLock()
-	process := a.processes[r.PathValue("processId")]
-	var copy execProcess
-	if process != nil {
-		copy = *process
-	}
-	a.mu.RUnlock()
-	if process == nil || process.BoxID != r.PathValue("id") {
-		writeError(w, http.StatusNotFound, "process_not_found", "exec process not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, copy)
 }
 
 func (a *Agent) getFile(w http.ResponseWriter, r *http.Request) {

@@ -32,8 +32,12 @@ func (s *Server) commands(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "cmd is required")
 		return
 	}
-	if input.TimeoutSeconds < 0 || input.TimeoutSeconds > 600 {
-		writeError(w, http.StatusBadRequest, "invalid_timeout", "timeoutSeconds must be between 0 and 600")
+	maxTimeout := 600
+	if input.Detached {
+		maxTimeout = 86400
+	}
+	if input.TimeoutSeconds < 0 || input.TimeoutSeconds > maxTimeout {
+		writeError(w, http.StatusBadRequest, "invalid_timeout", fmt.Sprintf("timeoutSeconds must be between 0 and %d", maxTimeout))
 		return
 	}
 	command := safeActivityText(commandString(input.Cmd), 200)
@@ -163,6 +167,134 @@ func (s *Server) commandResult(w http.ResponseWriter, r *http.Request) {
 	if json.Unmarshal(body, &result) == nil && !result.Running && result.ExitCode != nil {
 		_ = s.store.UpdateCommandActivityResult(r.Context(), boxID, processID, *result.ExitCode, time.Now().UTC())
 	}
+}
+
+// listCommands returns the detached commands the agent still remembers for the box.
+func (s *Server) listCommands(w http.ResponseWriter, r *http.Request) {
+	boxID := pathID(r)
+	_, client, err := s.loadBoxAgent(r.Context(), boxID)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	var commands json.RawMessage
+	if err := client.json(r.Context(), http.MethodGet, agentPath("v1", "boxes", boxID, "exec"), nil, &commands); err != nil {
+		s.apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]json.RawMessage{"commands": commands})
+}
+
+// commandLogs streams the agent's NDJSON log lines without buffering, flushing each chunk.
+func (s *Server) commandLogs(w http.ResponseWriter, r *http.Request) {
+	boxID, processID := pathID(r), r.PathValue("pid")
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_query", "invalid query parameters")
+		return
+	}
+	_, client, err := s.loadBoxAgent(r.Context(), boxID)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	endpoint := agentPath("v1", "boxes", boxID, "exec", processID, "logs") + "?" + query.Encode()
+	response, err := client.raw(r.Context(), http.MethodGet, endpoint, nil, "")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
+		return
+	}
+	defer response.Body.Close()
+	copyResponseHeaders(w, response)
+	w.WriteHeader(response.StatusCode)
+	controller := http.NewResponseController(w)
+	_ = controller.Flush()
+	buffer := make([]byte, 32<<10)
+	for {
+		n, readErr := response.Body.Read(buffer)
+		if n > 0 {
+			if _, writeErr := w.Write(buffer[:n]); writeErr != nil {
+				return
+			}
+			_ = controller.Flush()
+		}
+		if readErr != nil {
+			return
+		}
+	}
+}
+
+// killCommand relays a signal to a running detached command's process group.
+func (s *Server) killCommand(w http.ResponseWriter, r *http.Request) {
+	boxID, processID := pathID(r), r.PathValue("pid")
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "could not read kill request")
+		return
+	}
+	var input struct {
+		Signal string `json:"signal"`
+	}
+	_ = json.Unmarshal(body, &input)
+	signal := input.Signal
+	if signal == "" {
+		signal = "TERM"
+	}
+	_, client, err := s.loadBoxAgent(r.Context(), boxID)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	response, err := client.raw(r.Context(), http.MethodPost, agentPath("v1", "boxes", boxID, "exec", processID, "kill"), strings.NewReader(string(body)), "application/json")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
+		return
+	}
+	defer response.Body.Close()
+	copyResponseHeaders(w, response)
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.Copy(w, response.Body)
+	outcome := "ok"
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		outcome = "error"
+	}
+	s.recordActivity(r.Context(), boxID, "command", "kill", map[string]any{"processId": processID, "signal": safeActivityText(signal, 16)}, outcome)
+}
+
+// commandStdin streams the raw request body to a detached command's stdin. Stdin contents are never recorded.
+func (s *Server) commandStdin(w http.ResponseWriter, r *http.Request) {
+	boxID, processID := pathID(r), r.PathValue("pid")
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_query", "invalid query parameters")
+		return
+	}
+	_, client, err := s.loadBoxAgent(r.Context(), boxID)
+	if err != nil {
+		s.apiError(w, err)
+		return
+	}
+	const maxStdin = 1 << 20
+	body := &byteCounter{reader: http.MaxBytesReader(w, r.Body, maxStdin)}
+	endpoint := agentPath("v1", "boxes", boxID, "exec", processID, "stdin") + "?" + query.Encode()
+	response, err := client.raw(r.Context(), http.MethodPost, endpoint, body, r.Header.Get("Content-Type"))
+	if err != nil {
+		if body.count >= maxStdin {
+			writeError(w, http.StatusRequestEntityTooLarge, "stdin_too_large", "stdin write exceeds 1 MiB")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
+		return
+	}
+	defer response.Body.Close()
+	copyResponseHeaders(w, response)
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.Copy(w, response.Body)
+	outcome := "ok"
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		outcome = "error"
+	}
+	s.recordActivity(r.Context(), boxID, "command", "stdin", map[string]any{"processId": processID, "sizeBytes": body.count, "close": query.Get("close") == "1"}, outcome)
 }
 
 func (s *Server) getFile(w http.ResponseWriter, r *http.Request) {

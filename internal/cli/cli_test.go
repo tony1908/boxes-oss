@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -665,5 +666,69 @@ func TestDefaultConfigPathUsesDocumentedConfigDirectory(t *testing.T) {
 	app.defaults()
 	if want := filepath.Join(home, ".config", "boxes", "config.json"); app.ConfigPath != want {
 		t.Fatalf("ConfigPath = %q, want %q", app.ConfigPath, want)
+	}
+}
+
+func TestProcessCommandsUseDetachedEndpoints(t *testing.T) {
+	var killBody map[string]string
+	var logsQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		base := "/api/v1/sandboxes/bx_abcdefghijkl/commands"
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == base:
+			_, _ = io.WriteString(w, `{"commands":[{"processId":"p1","cmd":"sleep 1","running":true,"exitCode":null,"startedAt":"2026-01-01T00:00:00Z"}]}`)
+		case r.Method == http.MethodGet && r.URL.Path == base+"/p1/logs":
+			logsQuery = r.URL.RawQuery
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = io.WriteString(w, "{\"stream\":\"stdout\",\"data\":\"hi\\n\",\"offset\":3}\n{\"stream\":\"stderr\",\"data\":\"oops\\n\",\"offset\":5}\n{\"exit\":true,\"exitCode\":3}\n")
+		case r.Method == http.MethodPost && r.URL.Path == base+"/p1/kill":
+			if err := json.NewDecoder(r.Body).Decode(&killBody); err != nil {
+				t.Errorf("decode kill: %v", err)
+			}
+			_, _ = io.WriteString(w, `{"processId":"p1","signal":"KILL"}`)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	newApp := func(out, errOut *bytes.Buffer) *CLI {
+		return &CLI{Out: out, Err: errOut, ConfigPath: filepath.Join(t.TempDir(), "config.json"), HTTPClient: server.Client(), BaseURL: server.URL, Token: "api-token"}
+	}
+
+	var out, errOut bytes.Buffer
+	app := newApp(&out, &errOut)
+	if err := app.Run(context.Background(), []string{"ps", "bx_abcdefghijkl"}); err != nil {
+		t.Fatalf("ps: %v", err)
+	}
+	if !strings.HasPrefix(out.String(), "p1\trunning\t2026-01-01T00:00:00Z\tsleep 1") {
+		t.Fatalf("ps output = %q", out.String())
+	}
+
+	out.Reset()
+	errOut.Reset()
+	app = newApp(&out, &errOut)
+	err := app.Run(context.Background(), []string{"logs", "bx_abcdefghijkl", "p1", "-f"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 3 {
+		t.Fatalf("logs -f error = %v, want ExitError 3", err)
+	}
+	if logsQuery != "follow=1" || out.String() != "hi\n" || errOut.String() != "oops\n" {
+		t.Fatalf("logs query %q stdout %q stderr %q", logsQuery, out.String(), errOut.String())
+	}
+
+	out.Reset()
+	app = newApp(&out, &errOut)
+	if err := app.Run(context.Background(), []string{"kill", "bx_abcdefghijkl", "p1", "--signal", "KILL"}); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if killBody["signal"] != "KILL" {
+		t.Fatalf("kill body = %#v", killBody)
+	}
+
+	for _, args := range [][]string{{"kill", "bx_abcdefghijkl"}, {"logs", "bx_abcdefghijkl", "p1", "--bogus"}, {"ps"}} {
+		if err := newApp(&out, &errOut).Run(context.Background(), args); err == nil {
+			t.Fatalf("Run(%v) succeeded, want usage error", args)
+		}
 	}
 }

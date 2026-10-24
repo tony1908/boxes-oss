@@ -1,6 +1,7 @@
 """Small synchronous, dependency-light client for the boxes-oss public API."""
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Dict, Iterator, Optional
 from urllib.parse import quote
@@ -24,6 +25,14 @@ def _wire(value: Any) -> Any:
     if isinstance(value, list):
         return [_wire(item) for item in value]
     return value
+
+
+def _error(response: httpx.Response) -> BoxesError:
+    try:
+        error = response.json().get("error", {})
+    except (ValueError, AttributeError):
+        error = {}
+    return BoxesError(response.status_code, error.get("code", "http_error"), error.get("message", response.text or response.reason_phrase))
 
 
 class _Namespace:
@@ -56,16 +65,20 @@ class Boxes:
     def _request(self, method: str, path: str, *, json: Any = None, content: Any = None, headers: Optional[dict] = None, params: Optional[dict] = None) -> Any:
         response = self._http.request(method, self.base_url + path, json=_wire(json) if json is not None else None, content=content, headers=headers, params=params)
         if not response.is_success:
-            try:
-                error = response.json().get("error", {})
-            except (ValueError, AttributeError):
-                error = {}
-            raise BoxesError(response.status_code, error.get("code", "http_error"), error.get("message", response.text or response.reason_phrase))
+            raise _error(response)
         if response.status_code == 204:
             return None
         if "json" in response.headers.get("content-type", ""):
             return response.json()
         return response.content
+
+    def _stream_lines(self, method: str, path: str, params: Optional[dict] = None) -> Iterator[str]:
+        """Yield response lines as they arrive, raising BoxesError for error responses."""
+        with self._http.stream(method, self.base_url + path, params=params) as response:
+            if not response.is_success:
+                response.read()
+                raise _error(response)
+            yield from response.iter_lines()
 
     def machine(self) -> Any:
         """Return the local VM capacity and health record."""
@@ -110,6 +123,10 @@ class _Sandboxes(_Namespace):
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._c._request("POST", "/sandboxes", json=options, headers=headers)
 
+    def list_commands(self, sandbox_id: str) -> Any:
+        """Detached commands the agent still remembers for the sandbox, oldest first. Lost on agent restart."""
+        return self._c._request("GET", f"/sandboxes/{self._id(sandbox_id)}/commands")["commands"]
+
     def list(self, filter: Optional[str] = None, tags: Optional[list] = None) -> Any:
         """tags: "key=value" (exact match) or "key" (has key); all must match."""
         params: dict = {"filter": filter}
@@ -144,12 +161,55 @@ class _Sandboxes(_Namespace):
             raise BoxesError(500, "operation_failed", operation.get("error", "Operation failed"))
 
 
+class Command:
+    """A detached command started with exec.detached. Output, signals, and stdin go through its sandbox."""
+
+    def __init__(self, client: "Boxes", sandbox_id: str, process_id: str):
+        self._c, self.sandbox_id, self.process_id = client, sandbox_id, process_id
+
+    @property
+    def _path(self) -> str:
+        return f"/sandboxes/{quote(self.sandbox_id, safe='')}/commands/{quote(self.process_id, safe='')}"
+
+    def status(self) -> Any:
+        return self._c._request("GET", self._path)
+
+    def logs(self, *, follow: bool = False, stdout_offset: int = 0, stderr_offset: int = 0) -> Iterator[dict]:
+        """Yield NDJSON records. With follow, the last record is {"exit": True, "exitCode": N}."""
+        params = {key: value for key, value in {"stdoutOffset": stdout_offset, "stderrOffset": stderr_offset, "follow": "1" if follow else None}.items() if value}
+        for line in self._c._stream_lines("GET", f"{self._path}/logs", params or None):
+            if line:
+                yield json.loads(line)
+
+    def wait(self) -> Any:
+        """Poll until the command exits and return its final status."""
+        while True:
+            result = self.status()
+            if not result.get("running"):
+                return result
+            time.sleep(self._c.poll_interval)
+
+    def kill(self, signal: str = "TERM") -> Any:
+        """Send TERM (default), KILL, INT, HUP, QUIT, USR1, or USR2 to the command's process group."""
+        return self._c._request("POST", f"{self._path}/kill", json={"signal": signal})
+
+    def write_stdin(self, data: Any) -> Any:
+        """Write str or bytes to stdin. The command must have been started with stdin=True."""
+        content = data.encode() if isinstance(data, str) else data
+        return self._c._request("POST", f"{self._path}/stdin", content=content, headers={"Content-Type": "application/octet-stream"})
+
+    def close_stdin(self) -> Any:
+        return self._c._request("POST", f"{self._path}/stdin", params={"close": "1"}, content=b"")
+
+
 class _Exec(_Namespace):
     def run(self, sandbox_id: str, cmd: Any, **options: Any) -> Any:
         return self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/commands", json={"cmd": cmd, **options})
 
-    def detached(self, sandbox_id: str, cmd: Any, **options: Any) -> Any:
-        return self.run(sandbox_id, cmd, detached=True, **options)
+    def detached(self, sandbox_id: str, cmd: Any, **options: Any) -> "Command":
+        """Start a detached command (timeout_seconds up to 86400). Pass stdin=True to use write_stdin/close_stdin."""
+        started = self.run(sandbox_id, cmd, detached=True, **options)
+        return Command(self._c, sandbox_id, started["processId"])
 
     def get_command(self, sandbox_id: str, pid: str) -> Any:
         return self._c._request("GET", f"/sandboxes/{self._id(sandbox_id)}/commands/{self._id(pid)}")

@@ -82,3 +82,41 @@ def test_network_policy_nested_keys_are_camel_cased_on_the_wire():
         c.sandboxes.update("bx_n",network_policy=None)
     assert json.loads(requests[0].read())=={"networkPolicy":{"mode":"allowlist","allowDomains":["api.github.com"],"allowCidrs":["10.0.0.0/8"],"denyCidrs":["10.1.0.0/16"]}}
     assert json.loads(requests[1].read())=={"networkPolicy":None}
+
+def test_detached_command_streams_logs_and_controls_process():
+    import json as jsonlib
+    seen = []
+    def handler(request):
+        path = request.url.path
+        seen.append((request.method, path, request.url.params.get("close"), request.content))
+        if request.method == "POST" and path.endswith("/commands"):
+            return httpx.Response(202, json={"processId": "p1"})
+        if path.endswith("/p1/logs") and request.url.params.get("follow") == "1":
+            body = b'{"stream":"stdout","data":"hi\\n","offset":3}\n{"exit":true,"exitCode":4}\n'
+            return httpx.Response(200, content=body, headers={"content-type": "application/x-ndjson"})
+        if path.endswith("/p1/kill"):
+            return httpx.Response(200, json={"processId": "p1", "signal": "KILL"})
+        if path.endswith("/p1/stdin"):
+            return httpx.Response(200, json={"bytes": len(request.content)})
+        if request.method == "GET" and path.endswith("/commands"):
+            return httpx.Response(200, json={"commands": [{"processId": "p1", "running": False, "exitCode": 4}]})
+        if path.endswith("/p1"):
+            return httpx.Response(200, json={"running": False, "exitCode": 4})
+        return httpx.Response(404, json={"error": {"code": "process_not_found", "message": "exec process not found"}})
+    c = Boxes("https://example.test", "secret", transport=httpx.MockTransport(handler), poll_interval=0)
+    command = c.exec.detached("bx_3", "cat", stdin=True)
+    assert command.process_id == "p1"
+    assert list(command.logs(follow=True)) == [{"stream": "stdout", "data": "hi\n", "offset": 3}, {"exit": True, "exitCode": 4}]
+    assert command.wait()["exitCode"] == 4
+    command.kill("KILL")
+    command.write_stdin("abc")
+    command.close_stdin()
+    assert c.sandboxes.list_commands("bx_3") == [{"processId": "p1", "running": False, "exitCode": 4}]
+    kill = next(entry for entry in seen if entry[1].endswith("/p1/kill"))
+    assert jsonlib.loads(kill[3]) == {"signal": "KILL"}
+    assert ("POST", "/api/v1/sandboxes/bx_3/commands/p1/stdin", None, b"abc") in seen
+    assert ("POST", "/api/v1/sandboxes/bx_3/commands/p1/stdin", "1", b"") in seen
+    with pytest.raises(BoxesError) as error:
+        list(command.logs())
+    assert (error.value.status, error.value.code) == (404, "process_not_found")
+    c.close()

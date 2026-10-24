@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -14,6 +15,10 @@ func main() {
 	app := cli.CLI{Interactive: isatty.IsTerminal(os.Stdin.Fd())}
 	if err := app.Run(context.Background(), args); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "boxes:", err)
+		var exitErr *cli.ExitError
+		if errors.As(err, &exitErr) && exitErr.Code > 0 && exitErr.Code < 256 {
+			os.Exit(exitErr.Code)
+		}
 		os.Exit(1)
 	}
 }

@@ -124,6 +124,12 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.status(ctx, args[1:])
 	case "exec":
 		return c.exec(ctx, args[1:])
+	case "ps":
+		return c.ps(ctx, args[1:])
+	case "logs":
+		return c.logs(ctx, args[1:])
+	case "kill":
+		return c.kill(ctx, args[1:])
 	case "ssh":
 		return c.ssh(ctx, args[1:])
 	case "proxy":
@@ -1079,6 +1085,155 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 		return fmt.Errorf("remote command exited with status %d", commandResult.ExitCode)
 	}
 	return nil
+}
+
+// ExitError reports a remote command's exit status. The boxes binary exits with Code.
+type ExitError struct{ Code int }
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("remote command exited with status %d", e.Code)
+}
+
+// ps lists the detached commands the agent still remembers for a box.
+func (c *CLI) ps(ctx context.Context, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: boxes ps <id|current>")
+	}
+	id, err := c.boxID(args[0])
+	if err != nil {
+		return err
+	}
+	result, err := c.client.doJSON(ctx, http.MethodGet, "/sandboxes/"+url.PathEscape(id)+"/commands", nil, nil)
+	if err != nil {
+		return err
+	}
+	if c.jsonOutput {
+		return c.printValue(result)
+	}
+	var listing struct {
+		Commands []struct {
+			ProcessID string    `json:"processId"`
+			Cmd       string    `json:"cmd"`
+			Running   bool      `json:"running"`
+			ExitCode  *int      `json:"exitCode"`
+			StartedAt time.Time `json:"startedAt"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal(result, &listing); err != nil {
+		return fmt.Errorf("decode command list: %w", err)
+	}
+	for _, command := range listing.Commands {
+		state := "running"
+		if !command.Running && command.ExitCode != nil {
+			state = "exited " + strconv.Itoa(*command.ExitCode)
+		} else if !command.Running {
+			state = "exited"
+		}
+		if _, err := fmt.Fprintf(c.Out, "%s\t%s\t%s\t%s\n", command.ProcessID, state, command.StartedAt.Format(time.RFC3339), command.Cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// logs prints a detached command's output. With -f it follows until the command exits and returns its status.
+func (c *CLI) logs(ctx context.Context, args []string) error {
+	usage := errors.New("usage: boxes logs <id|current> <processId> [-f]")
+	if len(args) < 2 {
+		return usage
+	}
+	id, err := c.boxID(args[0])
+	if err != nil {
+		return err
+	}
+	fs := c.flagSet("logs")
+	follow := fs.Bool("f", false, "follow output until the command exits")
+	if err := fs.Parse(flagsBeforePositionals(fs, args[2:])); err != nil || fs.NArg() != 0 {
+		return usage
+	}
+	endpoint := "/sandboxes/" + url.PathEscape(id) + "/commands/" + url.PathEscape(args[1]) + "/logs"
+	if *follow {
+		endpoint += "?follow=1"
+	}
+	lines := &logLines{out: c.Out, errOut: c.Err}
+	if err := c.client.Download(ctx, endpoint, lines, nil); err != nil {
+		return err
+	}
+	if lines.exited && lines.exitCode != 0 {
+		return &ExitError{Code: lines.exitCode}
+	}
+	return nil
+}
+
+// logLines decodes NDJSON log records as they arrive and writes their data to the matching stream.
+type logLines struct {
+	out, errOut io.Writer
+	pending     []byte
+	exited      bool
+	exitCode    int
+}
+
+func (l *logLines) Write(p []byte) (int, error) {
+	l.pending = append(l.pending, p...)
+	for {
+		end := bytes.IndexByte(l.pending, '\n')
+		if end < 0 {
+			return len(p), nil
+		}
+		line := l.pending[:end]
+		l.pending = l.pending[end+1:]
+		if err := l.handle(line); err != nil {
+			return 0, err
+		}
+	}
+}
+
+func (l *logLines) handle(line []byte) error {
+	if len(bytes.TrimSpace(line)) == 0 {
+		return nil
+	}
+	var record struct {
+		Stream   string `json:"stream"`
+		Data     string `json:"data"`
+		Exit     bool   `json:"exit"`
+		ExitCode int    `json:"exitCode"`
+	}
+	if err := json.Unmarshal(line, &record); err != nil {
+		return fmt.Errorf("decode log line: %w", err)
+	}
+	if record.Exit {
+		l.exited, l.exitCode = true, record.ExitCode
+		return nil
+	}
+	out := l.out
+	if record.Stream == "stderr" {
+		out = l.errOut
+	}
+	_, err := io.WriteString(out, record.Data)
+	return err
+}
+
+// kill sends a signal to a detached command's process group.
+func (c *CLI) kill(ctx context.Context, args []string) error {
+	usage := errors.New("usage: boxes kill <id|current> <processId> [--signal TERM]")
+	if len(args) < 2 {
+		return usage
+	}
+	id, err := c.boxID(args[0])
+	if err != nil {
+		return err
+	}
+	fs := c.flagSet("kill")
+	signal := fs.String("signal", "TERM", "signal to send: TERM, KILL, INT, HUP, QUIT, USR1, USR2")
+	if err := fs.Parse(flagsBeforePositionals(fs, args[2:])); err != nil || fs.NArg() != 0 {
+		return usage
+	}
+	endpoint := "/sandboxes/" + url.PathEscape(id) + "/commands/" + url.PathEscape(args[1]) + "/kill"
+	result, err := c.client.doJSON(ctx, http.MethodPost, endpoint, map[string]any{"signal": *signal}, nil)
+	if err != nil {
+		return err
+	}
+	return c.printValue(result)
 }
 
 func (c *CLI) ssh(ctx context.Context, args []string) error {
@@ -2240,7 +2395,7 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }

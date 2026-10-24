@@ -677,9 +677,35 @@ paths:
                   processId: {type: string}
         "400":
           $ref: "#/components/responses/InvalidRequest"
+    get:
+      summary: List detached commands for a sandbox
+      description: Lists commands the agent still remembers. Finished commands are kept for one hour, up to 100 per sandbox. The list is lost if the agent restarts.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+      responses:
+        "200":
+          description: Detached commands, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [commands]
+                properties:
+                  commands:
+                    type: array
+                    items:
+                      type: object
+                      required: [processId, cmd, running, startedAt]
+                      properties:
+                        processId: {type: string}
+                        cmd: {type: string}
+                        running: {type: boolean}
+                        exitCode: {type: integer, nullable: true}
+                        startedAt: {type: string, format: date-time}
   /sandboxes/{id}/commands/{pid}:
     get:
       summary: Get a detached command result
+      description: Returns output produced so far, even while the command is running. Stdout and stderr each keep the last 1 MiB; the *Offset fields are total bytes written, and *Truncated is true when earlier output was dropped.
       parameters:
         - $ref: "#/components/parameters/SandboxID"
         - name: pid
@@ -693,13 +719,110 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [running, stdout, stderr]
+                required: [running, stdout, stderr, stdoutOffset, stderrOffset, cmd, startedAt]
                 properties:
                   running: {type: boolean}
                   exitCode: {type: integer}
+                  cmd: {type: string}
+                  startedAt: {type: string, format: date-time}
                   stdout: {type: string}
                   stderr: {type: string}
+                  stdoutOffset: {type: integer, minimum: 0}
+                  stderrOffset: {type: integer, minimum: 0}
+                  stdoutTruncated: {type: boolean}
+                  stderrTruncated: {type: boolean}
         "404": {description: Command process was not found}
+  /sandboxes/{id}/commands/{pid}/logs:
+    get:
+      summary: Stream detached command output as NDJSON
+      description: |
+        Each line is {"stream":"stdout"|"stderr","data":"...","offset":N}, with "truncated":true when output before the retained window was dropped. Pass stdoutOffset/stderrOffset from the last line to resume. With follow=1 the stream stays open until the command exits, then ends with {"exit":true,"exitCode":N}. Follow ends at the command's timeout at the latest. Without follow it returns the available output and ends.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: pid
+          in: path
+          required: true
+          schema: {type: string}
+        - name: stdoutOffset
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: stderrOffset
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: follow
+          in: query
+          schema: {type: string, enum: ["1"]}
+      responses:
+        "200":
+          description: NDJSON log lines
+          content:
+            application/x-ndjson:
+              schema: {type: string}
+        "404": {description: Command process was not found}
+  /sandboxes/{id}/commands/{pid}/kill:
+    post:
+      summary: Send a signal to a running detached command
+      description: Signals the command's process group inside the sandbox.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: pid
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signal: {type: string, enum: [TERM, KILL, INT, HUP, QUIT, USR1, USR2], default: TERM}
+      responses:
+        "200":
+          description: Signal sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  processId: {type: string}
+                  signal: {type: string}
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404": {description: Command process was not found}
+        "409": {description: Command is not running}
+  /sandboxes/{id}/commands/{pid}/stdin:
+    post:
+      summary: Write to a detached command's stdin
+      description: Writes the raw request body (at most 1 MiB) to stdin. Requires stdin:true when the command was started. Write times out after 30 seconds (504). Stdin contents are never recorded in activity.
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - name: pid
+          in: path
+          required: true
+          schema: {type: string}
+        - name: close
+          in: query
+          description: Set to 1 to close stdin after writing.
+          schema: {type: string, enum: ["1"]}
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: Bytes written
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bytes: {type: integer, minimum: 0}
+                  closed: {type: boolean}
+        "409": {description: Stdin was not enabled for this command or is already closed}
+        "413": {description: Body exceeds 1 MiB}
+        "504": {description: Process did not accept stdin within 30 seconds}
   /sandboxes/{id}/boxd/{path}:
     parameters:
       - $ref: "#/components/parameters/SandboxID"
@@ -958,10 +1081,14 @@ components:
         timeoutSeconds:
           type: integer
           minimum: 0
-          maximum: 600
+          maximum: 86400
           default: 0
-          description: Zero uses the agent default timeout.
+          description: "Zero uses the default: 300s for sync commands, 3600s for detached. Sync commands allow at most 600; detached commands allow at most 86400."
         detached: {type: boolean, default: false}
+        stdin:
+          type: boolean
+          default: false
+          description: Detached commands only (400 otherwise). Write to stdin with POST /sandboxes/{id}/commands/{pid}/stdin.
     Snapshot:
       type: object
       required: [id, boxId, resticId, sizeBytes, createdAt]

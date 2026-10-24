@@ -81,3 +81,45 @@ test('sends network policy on create and update as networkPolicy', async t => {
   assert.equal(seen[1].method,'PATCH');
   assert.deepEqual(JSON.parse(seen[1].body),{networkPolicy:null});
 });
+
+test('detached commands stream logs across chunks and expose wait, kill, stdin, and listing', async t => {
+  const seen = [];
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    seen.push(`${req.method} ${req.url} ${body}`);
+    const base = '/api/v1/sandboxes/bx_3/commands';
+    if (req.method === 'POST' && req.url === base) { res.writeHead(202, { 'content-type': 'application/json' }); res.end(JSON.stringify({ processId: 'p1' })); return; }
+    if (req.method === 'GET' && req.url.startsWith(`${base}/p1/logs`)) {
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+      res.write('{"stream":"stdout","data":"hel');
+      await new Promise(r => setTimeout(r, 20));
+      res.end('lo\\n","offset":6,"stream":"stdout"}\n{"exit":true,"exitCode":0}\n');
+      return;
+    }
+    if (req.method === 'GET' && req.url === `${base}/p1`) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ running: false, exitCode: 0, stdout: 'hello\\n', stderr: '' })); return; }
+    if (req.method === 'GET' && req.url === base) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ commands: [{ processId: 'p1', running: false, exitCode: 0 }] })); return; }
+    if (req.method === 'POST' && req.url === `${base}/p1/kill`) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ processId: 'p1', signal: 'HUP' })); return; }
+    if (req.method === 'POST' && req.url.startsWith(`${base}/p1/stdin`)) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ bytes: body.length })); return; }
+    res.writeHead(404); res.end('{}');
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  const addr = server.address();
+  const c = new Boxes({ baseUrl: `http://127.0.0.1:${addr.port}`, apiKey: 'secret', pollIntervalMs: 1 });
+
+  const command = await c.exec.detached('bx_3', 'cat', { stdin: true });
+  assert.equal(command.processId, 'p1');
+  const lines = [];
+  for await (const line of command.logs({ follow: true })) lines.push(line);
+  assert.deepEqual(lines, [{ stream: 'stdout', data: 'hello\n', offset: 6 }, { exit: true, exitCode: 0 }]);
+  assert.equal((await command.wait()).exitCode, 0);
+  await command.kill('HUP');
+  await command.writeStdin('abc');
+  await command.closeStdin();
+  assert.deepEqual(await c.sandboxes.listCommands('bx_3'), [{ processId: 'p1', running: false, exitCode: 0 }]);
+  assert.ok(seen.includes('POST /api/v1/sandboxes/bx_3/commands/p1/kill {"signal":"HUP"}'));
+  assert.ok(seen.includes('POST /api/v1/sandboxes/bx_3/commands/p1/stdin abc'));
+  assert.ok(seen.some(line => line.startsWith('POST /api/v1/sandboxes/bx_3/commands/p1/stdin?close=1')));
+  assert.ok(seen.includes('GET /api/v1/sandboxes/bx_3/commands/p1/logs?follow=1 '));
+});
