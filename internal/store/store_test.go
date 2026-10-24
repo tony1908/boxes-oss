@@ -40,6 +40,52 @@ func TestBoxLifecycleAccountingFieldsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBoxTagsRoundTrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "tags.db"))
+	if err != nil {
+		t.Fatalf("Open(): %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_tags", Name: "node", Status: "healthy"}}); err != nil {
+		t.Fatalf("CreateNode(): %v", err)
+	}
+	tags := map[string]string{"team": "agents", "env.name": "prod"}
+	if err := s.CreateBox(ctx, BoxRecord{Box: types.Box{ID: "bx_tags1234567", NodeID: "nd_tags", Type: "small", State: types.StateReady, CreatedAt: now, Tags: tags}}); err != nil {
+		t.Fatalf("CreateBox(): %v", err)
+	}
+	got, err := s.GetBox(ctx, "bx_tags1234567")
+	if err != nil {
+		t.Fatalf("GetBox(): %v", err)
+	}
+	if !reflect.DeepEqual(got.Box.Tags, tags) {
+		t.Fatalf("created tags = %#v, want %#v", got.Box.Tags, tags)
+	}
+	got.Box.Tags = map[string]string{"owner": "ci"}
+	if err := s.UpdateBox(ctx, got); err != nil {
+		t.Fatalf("UpdateBox(): %v", err)
+	}
+	updated, err := s.GetBox(ctx, "bx_tags1234567")
+	if err != nil {
+		t.Fatalf("GetBox() after update: %v", err)
+	}
+	if !reflect.DeepEqual(updated.Box.Tags, map[string]string{"owner": "ci"}) {
+		t.Fatalf("updated tags = %#v", updated.Box.Tags)
+	}
+	got.Box.Tags = nil
+	if err := s.UpdateBox(ctx, got); err != nil {
+		t.Fatalf("UpdateBox() clear: %v", err)
+	}
+	cleared, err := s.GetBox(ctx, "bx_tags1234567")
+	if err != nil {
+		t.Fatalf("GetBox() after clear: %v", err)
+	}
+	if cleared.Box.Tags != nil {
+		t.Fatalf("cleared tags = %#v, want nil", cleared.Box.Tags)
+	}
+}
+
 func TestIdleActivityAndOpenProxyTracking(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "idle.db"))
 	if err != nil {

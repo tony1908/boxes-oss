@@ -160,6 +160,8 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.delete(ctx, args[1:])
 	case "extend":
 		return c.extend(ctx, args[1:])
+	case "update":
+		return c.update(ctx, args[1:])
 	case "conversations":
 		return c.boxSubresource(ctx, args[1:], "conversations")
 	case "snapshots":
@@ -614,11 +616,13 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	noEnv := fs.Bool("no-env", false, "disable the default environment")
 	from := fs.String("from", "", "named snapshot to restore")
 	setupFile := fs.String("setup-file", "", "setup script file")
+	var tagFlags stringList
+	fs.Var(&tagFlags, "tag", "tag KEY=VALUE (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--from NAME] [--environment NAME] [--no-env]")
+		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]...")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
@@ -663,6 +667,13 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	if *from != "" {
 		body["from"] = *from
 	}
+	tags, err := parseTagFlags(tagFlags)
+	if err != nil {
+		return err
+	}
+	if len(tags) != 0 {
+		body["tags"] = tags
+	}
 	if *setupFile != "" {
 		script, err := os.ReadFile(*setupFile)
 		if err != nil {
@@ -700,14 +711,19 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 	jsonOutput := fs.Bool("json", false, "print JSON output")
 	filter := fs.String("filter", "r", "state filter letters: r (running), s (stopped), e (error)")
 	all := fs.Bool("all", false, "show all boxes")
+	var tagFilters stringList
+	fs.Var(&tagFilters, "tag", "only boxes with tag KEY=VALUE, or KEY alone for any value (repeatable; all must match)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes list [--filter r|s|e...] [--all] [--json]")
+		return errors.New("usage: boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE]... [--json]")
 	}
 	c.jsonOutput = c.jsonOutput || *jsonOutput
 	query := url.Values{}
+	for _, tag := range tagFilters {
+		query.Add("tag", tag)
+	}
 	if !*all {
 		if *filter == "" || strings.Trim(*filter, "rse") != "" {
 			return errors.New("--filter must contain only r, s, and e")
@@ -737,6 +753,76 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 		}
 	}
 	return nil
+}
+
+// update changes sandbox tags: --tag merges into the existing tags and
+// --clear-tags removes them all.
+func (c *CLI) update(ctx context.Context, args []string) error {
+	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags]")
+	if len(args) == 0 {
+		return usage
+	}
+	id, err := c.boxID(args[0])
+	if err != nil {
+		return err
+	}
+	fs := c.flagSet("update")
+	var tagFlags stringList
+	fs.Var(&tagFlags, "tag", "tag KEY=VALUE to set, merged into existing tags (repeatable)")
+	clearTags := fs.Bool("clear-tags", false, "remove all tags")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return usage
+	}
+	if *clearTags && len(tagFlags) != 0 {
+		return errors.New("--tag and --clear-tags are mutually exclusive")
+	}
+	if !*clearTags && len(tagFlags) == 0 {
+		return errors.New("choose --tag KEY=VALUE or --clear-tags")
+	}
+	tags := map[string]string{}
+	if !*clearTags {
+		parsed, err := parseTagFlags(tagFlags)
+		if err != nil {
+			return err
+		}
+		current, err := c.client.doJSON(ctx, http.MethodGet, "/sandboxes/"+url.PathEscape(id), nil, nil)
+		if err != nil {
+			return err
+		}
+		var box struct {
+			Tags map[string]string `json:"tags"`
+		}
+		if err := json.Unmarshal(unwrap(current, "sandbox"), &box); err != nil {
+			return fmt.Errorf("decode sandbox tags: %w", err)
+		}
+		for key, value := range box.Tags {
+			tags[key] = value
+		}
+		for key, value := range parsed {
+			tags[key] = value
+		}
+	}
+	result, err := c.client.doJSON(ctx, http.MethodPatch, "/sandboxes/"+url.PathEscape(id), map[string]any{"tags": tags}, nil)
+	if err != nil {
+		return err
+	}
+	return c.printValue(unwrap(result, "sandbox"))
+}
+
+// parseTagFlags turns repeated KEY=VALUE flags into a tag map.
+func parseTagFlags(values []string) (map[string]string, error) {
+	tags := make(map[string]string, len(values))
+	for _, entry := range values {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			return nil, fmt.Errorf("tag %q must be KEY=VALUE", entry)
+		}
+		tags[key] = value
+	}
+	return tags, nil
 }
 
 func (c *CLI) get(ctx context.Context, args []string) error {
@@ -2027,7 +2113,7 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend fork snapshot delete dashboard forward skill env")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ssh proxy scp push pull prompt events steer interrupt conversations snapshots usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }

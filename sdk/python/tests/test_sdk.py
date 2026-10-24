@@ -47,3 +47,18 @@ def test_machine_returns_local_vm_record():
         return httpx.Response(200, json={"machine": machine})
     with Boxes("https://example.test", "secret", transport=httpx.MockTransport(handler)) as c:
         assert c.machine() == machine
+
+def test_sandbox_tags_are_sent_verbatim_and_filterable():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200,json={"sandboxes":[]})
+        return httpx.Response(200,json={"sandbox":{"id":"bx_t","tags":{"env_name":"prod"}}})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        c.sandboxes.create(tags={"env_name":"prod"})
+        c.sandboxes.update("bx_t",tags={})
+        assert c.sandboxes.list(tags=["team=agents","owner"])==[]
+    assert json.loads(requests[0].read())=={"tags":{"env_name":"prod"}}
+    assert json.loads(requests[1].read())=={"tags":{}}
+    assert requests[2].url.params.get_list("tag")==["team=agents","owner"]

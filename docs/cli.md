@@ -70,8 +70,10 @@ Common forms:
 
 ```sh
 boxes new [--type SIZE] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
-          [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env]
-boxes list [--filter r|s|e...] [--all]
+          [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env] \
+          [--tag KEY=VALUE]...
+boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
+boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags]
 boxes info <id|current>
 boxes current
 boxes exec <id|current> [--detach] [--status PID] -- <command> [arguments]
@@ -122,6 +124,16 @@ seconds and `--no-auto-stop` disables the timer; the two are mutually exclusive.
 `prompt --stop-when-done` asks the server to stop and snapshot the box once the
 run reaches a terminal state. `delete` requires `--yes` when stdin is not a
 terminal.
+
+### Tags
+
+`--tag KEY=VALUE` (repeatable) attaches tags to a new box. Keys match
+`^[a-z0-9][a-z0-9_.-]{0,62}$`, values are at most 255 characters, and a box can
+hold 10 tags. `boxes update <id|current> --tag KEY=VALUE` merges the given tags
+into the existing ones, and `--clear-tags` removes them all (the two cannot be
+combined). `boxes list --tag KEY=VALUE` keeps boxes with that exact value, and
+`--tag KEY` keeps boxes that have the key; repeated filters must all match. Tags
+appear in the `tags` field of `boxes info` and `boxes get` output.
 
 ### Desktop, browser, and forwarding
 

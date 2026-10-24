@@ -82,3 +82,45 @@ func TestAPIError(t *testing.T) {
 		t.Fatalf("Error() = %q, want %q", err.Error(), "box not found")
 	}
 }
+
+func TestValidateTags(t *testing.T) {
+	tooMany := map[string]string{}
+	for i := 0; i <= MaxTags; i++ {
+		tooMany[string(rune('a'+i))] = "v"
+	}
+	tests := []struct {
+		name    string
+		tags    map[string]string
+		wantErr bool
+	}{
+		{"nil ok", nil, false},
+		{"valid", map[string]string{"env.name-1_x": "prod", "empty": ""}, false},
+		{"ten entries ok", map[string]string{"a": "1", "b": "2", "c": "3", "d": "4", "e": "5", "f": "6", "g": "7", "h": "8", "i": "9", "j": "10"}, false},
+		{"eleven entries", tooMany, true},
+		{"uppercase key", map[string]string{"Env": "x"}, true},
+		{"leading dash key", map[string]string{"-env": "x"}, true},
+		{"space in key", map[string]string{"a b": "x"}, true},
+		{"key 63 chars ok", map[string]string{strRepeat('a', 63): "x"}, false},
+		{"key 64 chars", map[string]string{strRepeat('a', 64): "x"}, true},
+		{"value too long", map[string]string{"k": strRepeat('v', 256)}, true},
+		{"value 255 ok", map[string]string{"k": strRepeat('v', 255)}, false},
+		{"newline in value", map[string]string{"k": "a\nb"}, true},
+		{"tab in value", map[string]string{"k": "a\tb"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTags(tt.tags)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateTags() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func strRepeat(c byte, n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = c
+	}
+	return string(b)
+}

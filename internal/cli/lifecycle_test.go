@@ -537,3 +537,63 @@ func TestParseIdleStopFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestTagFlagsOnNewListAndUpdate(t *testing.T) {
+	var methods, queries []string
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method+" "+r.URL.Path)
+		queries = append(queries, r.URL.RawQuery)
+		var body map[string]any
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+		}
+		bodies = append(bodies, body)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_tagged","tags":{"team":"agents","tier":"old"}}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_tagged","state":"ready"}}`)
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"server":"`+server.URL+`","token":"test","current":"bx_tagged"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: configPath, HTTPClient: server.Client()}
+	for _, args := range [][]string{
+		{"new", "--tag", "team=agents", "--tag", "tier=gold"},
+		{"list", "--tag", "team=agents", "--tag", "owner"},
+		{"update", "current", "--tag", "tier=gold", "--tag", "owner=ci"},
+		{"update", "current", "--clear-tags"},
+	} {
+		if err := app.Run(context.Background(), args); err != nil {
+			t.Fatalf("Run %v: %v", args, err)
+		}
+	}
+	if bodies[0]["tags"].(map[string]any)["tier"] != "gold" {
+		t.Errorf("new tags body = %#v", bodies[0])
+	}
+	if queries[1] != "filter=r&tag=team%3Dagents&tag=owner" {
+		t.Errorf("list query = %q", queries[1])
+	}
+	// update --tag: GET current tags, then PATCH the merged map.
+	if methods[2] != "GET /api/v1/sandboxes/bx_tagged" || methods[3] != "PATCH /api/v1/sandboxes/bx_tagged" {
+		t.Fatalf("update requests = %v", methods[2:4])
+	}
+	merged := bodies[3]["tags"].(map[string]any)
+	if merged["team"] != "agents" || merged["tier"] != "gold" || merged["owner"] != "ci" || len(merged) != 3 {
+		t.Errorf("merged tags = %#v", merged)
+	}
+	if clear := bodies[4]["tags"].(map[string]any); len(clear) != 0 {
+		t.Errorf("clear-tags body = %#v, want empty map", bodies[4])
+	}
+	if err := app.Run(context.Background(), []string{"new", "--tag", "=bad"}); err == nil {
+		t.Error("new accepted a tag without a key")
+	}
+	if err := app.Run(context.Background(), []string{"update", "current", "--tag", "a=b", "--clear-tags"}); err == nil {
+		t.Error("update accepted --tag with --clear-tags")
+	}
+}

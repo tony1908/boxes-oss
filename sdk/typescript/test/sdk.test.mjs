@@ -52,3 +52,14 @@ test('reads the authenticated single-machine record', async t => {
   const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});
   assert.deepEqual(await c.machine(),machine); assert.equal(auth,'Bearer secret');
 });
+
+test('sends sandbox tags on create, update, and list filters', async t => {
+  const seen=[]; const server=createServer((req,res)=>{let body=''; req.on('data',c=>body+=c); req.on('end',()=>{seen.push({method:req.method,url:req.url,body});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:'bx_t',sandbox:{id:'bx_t',tags:{team:'agents'}},sandboxes:[]}));});});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close()); const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});
+  await c.sandboxes.create({type:'small',tags:{team:'agents'}});
+  await c.sandboxes.update('bx_t',{tags:{}});
+  await c.sandboxes.list(undefined,['team=agents','owner']);
+  assert.deepEqual(JSON.parse(seen[0].body).tags,{team:'agents'});
+  assert.deepEqual(JSON.parse(seen[1].body),{tags:{}});
+  assert.equal(seen[2].url,'/api/v1/sandboxes?tag=team%3Dagents&tag=owner');
+});

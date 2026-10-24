@@ -19,7 +19,8 @@ class BoxesError(Exception):
 def _wire(value: Any) -> Any:
     """Convert Python snake_case keys to the API's camelCase JSON keys."""
     if isinstance(value, dict):
-        return {("".join(part.title() if i else part for i, part in enumerate(key.split("_")))): _wire(item) for key, item in value.items()}
+        # Tag keys are user-defined (e.g. "env_name"), so the "tags" map is sent verbatim.
+        return {("".join(part.title() if i else part for i, part in enumerate(key.split("_")))): (item if key == "tags" else _wire(item)) for key, item in value.items()}
     if isinstance(value, list):
         return [_wire(item) for item in value]
     return value
@@ -109,8 +110,12 @@ class _Sandboxes(_Namespace):
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._c._request("POST", "/sandboxes", json=options, headers=headers)
 
-    def list(self, filter: Optional[str] = None) -> Any:
-        return self._c._request("GET", "/sandboxes", params={"filter": filter})["sandboxes"]
+    def list(self, filter: Optional[str] = None, tags: Optional[list] = None) -> Any:
+        """tags: "key=value" (exact match) or "key" (has key); all must match."""
+        params: dict = {"filter": filter}
+        if tags:
+            params["tag"] = list(tags)
+        return self._c._request("GET", "/sandboxes", params=params)["sandboxes"]
 
     def get(self, sandbox_id: str) -> Any:
         return self._c._request("GET", f"/sandboxes/{self._id(sandbox_id)}")["sandbox"]

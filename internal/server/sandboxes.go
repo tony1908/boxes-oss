@@ -25,6 +25,7 @@ type createSandboxRequest struct {
 	NoSecrets       bool              `json:"noSecrets"`
 	FromSnapshot    string            `json:"fromSnapshot"`
 	From            string            `json:"from"`
+	Tags            map[string]string `json:"tags"`
 	Fork            bool              `json:"-"`
 }
 
@@ -32,6 +33,10 @@ func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
 	var input createSandboxRequest
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid sandbox request")
+		return
+	}
+	if err := types.ValidateTags(input.Tags); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
 		return
 	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -215,7 +220,7 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	}
 	now := time.Now().UTC()
 	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: s.defaultImages().Box,
-		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot}
+		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags}
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
 		box.ExpiresAt = &expires
@@ -305,6 +310,11 @@ func (s *Server) listSandboxes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	tagFilters, err := parseTagFilters(r.URL.Query()["tag"])
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
+		return
+	}
 	boxes, err := s.store.ListBoxes(r.Context(), "")
 	if err != nil {
 		s.apiError(w, err)
@@ -312,7 +322,7 @@ func (s *Server) listSandboxes(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]sandboxResponse, 0, len(boxes))
 	for _, box := range boxes {
-		if !matchingSandboxFilter(box.Box.State, filter) {
+		if !matchingSandboxFilter(box.Box.State, filter) || !matchingTagFilters(box.Box.Tags, tagFilters) {
 			continue
 		}
 		view, err := s.sandboxView(r.Context(), box)
@@ -323,6 +333,36 @@ func (s *Server) listSandboxes(w http.ResponseWriter, r *http.Request) {
 		items = append(items, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sandboxes": items})
+}
+
+// tagFilter matches boxes whose tag Key exists and, when HasValue is set, equals Value.
+type tagFilter struct {
+	Key      string
+	Value    string
+	HasValue bool
+}
+
+// parseTagFilters parses repeated ?tag=key=value (or ?tag=key) query values.
+func parseTagFilters(values []string) ([]tagFilter, error) {
+	filters := make([]tagFilter, 0, len(values))
+	for _, value := range values {
+		key, val, hasValue := strings.Cut(value, "=")
+		if key == "" {
+			return nil, fmt.Errorf("tag filter %q must be key=value or key", value)
+		}
+		filters = append(filters, tagFilter{Key: key, Value: val, HasValue: hasValue})
+	}
+	return filters, nil
+}
+
+func matchingTagFilters(tags map[string]string, filters []tagFilter) bool {
+	for _, filter := range filters {
+		value, ok := tags[filter.Key]
+		if !ok || (filter.HasValue && value != filter.Value) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) getSandbox(w http.ResponseWriter, r *http.Request) {
@@ -429,11 +469,16 @@ func (s *Server) sandboxUsage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		TTLSeconds      json.RawMessage `json:"ttlSeconds"`
-		IdleStopSeconds json.RawMessage `json:"idleStopSeconds"`
+		TTLSeconds      json.RawMessage   `json:"ttlSeconds"`
+		IdleStopSeconds json.RawMessage   `json:"idleStopSeconds"`
+		Tags            map[string]string `json:"tags"`
 	}
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid sandbox update")
+		return
+	}
+	if err := types.ValidateTags(input.Tags); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
 		return
 	}
 	box, err := s.store.GetBox(r.Context(), pathID(r))
@@ -465,6 +510,10 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		box.Box.IdleStopSeconds = seconds
+	}
+	if input.Tags != nil {
+		// Replaces the whole map; an empty object clears all tags.
+		box.Box.Tags = input.Tags
 	}
 	if err := s.store.UpdateBox(r.Context(), box); err != nil {
 		s.apiError(w, err)
@@ -757,6 +806,10 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := types.ValidateTags(input.Tags); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tags", err.Error())
+		return
+	}
 	source, client, err := s.loadBoxAgent(r.Context(), pathID(r))
 	if err != nil {
 		s.apiError(w, err)
@@ -798,6 +851,9 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(input.IdleStopSeconds) == 0 {
 		input.IdleStopSeconds, _ = json.Marshal(source.Box.IdleStopSeconds)
+	}
+	if input.Tags == nil {
+		input.Tags = source.Box.Tags
 	}
 	input.Fork = true
 	fork, err := s.provisionSandbox(r.Context(), input, captured.SnapshotID, "")

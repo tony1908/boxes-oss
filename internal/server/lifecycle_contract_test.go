@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -281,5 +282,89 @@ func TestSetupStatusEventsUpdatePublicSandboxState(t *testing.T) {
 	stored, err := srv.store.GetBox(context.Background(), boxID)
 	if err != nil || stored.SetupStatus != "succeeded" {
 		t.Fatalf("stored setup status = %q, err %v", stored.SetupStatus, err)
+	}
+}
+
+func TestSandboxTagsValidateOnCreateAndPatch(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+	const nodeID, boxID = "nd_tagpatch", "bx_tagpatch1234"
+	seedPlatformBox(t, srv, nodeID, boxID, "tagpatch-token", "", "")
+	token := addPlatformSession(t, srv)
+	invalid := map[string]string{"Bad Key": "x"}
+
+	var created map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/sandboxes", token,
+		map[string]any{"tags": invalid}, http.StatusBadRequest, &created)
+	if code := created["error"].(map[string]any)["code"]; code != "invalid_tags" {
+		t.Fatalf("create error code = %v, want invalid_tags", code)
+	}
+
+	var patched map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodPatch, httpServer.URL+"/api/v1/sandboxes/"+boxID, token,
+		map[string]any{"tags": invalid}, http.StatusBadRequest, &patched)
+	if code := patched["error"].(map[string]any)["code"]; code != "invalid_tags" {
+		t.Fatalf("patch error code = %v, want invalid_tags", code)
+	}
+
+	var replaced map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodPatch, httpServer.URL+"/api/v1/sandboxes/"+boxID, token,
+		map[string]any{"tags": map[string]string{"team": "agents", "tier": "gold"}}, http.StatusOK, &replaced)
+	if tags := replaced["sandbox"].(map[string]any)["tags"]; !reflect.DeepEqual(tags, map[string]any{"team": "agents", "tier": "gold"}) {
+		t.Fatalf("patched tags = %#v", tags)
+	}
+	var omitted map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodPatch, httpServer.URL+"/api/v1/sandboxes/"+boxID, token,
+		map[string]any{"ttlSeconds": nil}, http.StatusOK, &omitted)
+	if tags := omitted["sandbox"].(map[string]any)["tags"]; !reflect.DeepEqual(tags, map[string]any{"team": "agents", "tier": "gold"}) {
+		t.Fatalf("omitted tags should be unchanged, got %#v", tags)
+	}
+	var cleared map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodPatch, httpServer.URL+"/api/v1/sandboxes/"+boxID, token,
+		map[string]any{"tags": map[string]string{}}, http.StatusOK, &cleared)
+	if tags := cleared["sandbox"].(map[string]any)["tags"]; tags != nil {
+		t.Fatalf("cleared tags = %#v, want omitted", tags)
+	}
+}
+
+func TestSandboxListFiltersByTags(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+	const nodeID = "nd_tagfilter"
+	seedPlatformBox(t, srv, nodeID, "bx_tagfilter000", "tagfilter-token", "", "")
+	for id, tags := range map[string]map[string]string{
+		"bx_tagfilterA0001": {"team": "agents", "tier": "gold"},
+		"bx_tagfilterB0001": {"team": "agents"},
+		"bx_tagfilterC0001": {"team": "infra", "tier": "gold"},
+	} {
+		if err := srv.store.CreateBox(context.Background(), store.BoxRecord{Box: types.Box{ID: id, NodeID: nodeID, Type: "small", State: types.StateReady, CreatedAt: time.Now().UTC(), Tags: tags}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token := addPlatformSession(t, srv)
+	for query, want := range map[string][]string{
+		"tag=team=agents":               {"bx_tagfilterA0001", "bx_tagfilterB0001"},
+		"tag=team=agents&tag=tier=gold": {"bx_tagfilterA0001"},
+		"tag=tier":                      {"bx_tagfilterA0001", "bx_tagfilterC0001"},
+		"tag=team=missing":              {},
+	} {
+		var response map[string]any
+		requestJSON(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/sandboxes?"+query, token, nil, http.StatusOK, &response)
+		got := map[string]bool{}
+		for _, item := range response["sandboxes"].([]any) {
+			got[item.(map[string]any)["id"].(string)] = true
+		}
+		if len(got) != len(want) {
+			t.Errorf("query %q returned %v, want %v", query, got, want)
+		}
+		for _, id := range want {
+			if !got[id] {
+				t.Errorf("query %q missing %s, got %v", query, id, got)
+			}
+		}
 	}
 }

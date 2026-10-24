@@ -71,7 +71,18 @@ paths:
           schema:
             type: string
             pattern: "^[rse]*$"
+        - name: tag
+          in: query
+          required: false
+          description: "Repeatable tag filter; all given tags must match (AND). tag=key=value matches an exact value, tag=key matches any box that has the key."
+          schema:
+            type: array
+            items:
+              type: string
+              maxLength: 320
       responses:
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
         "200":
           description: Matching sandboxes
           content:
@@ -133,8 +144,8 @@ paths:
                   sandbox:
                     $ref: "#/components/schemas/Sandbox"
     patch:
-      summary: Change auto-stop or idle-stop settings
-      description: TTL and idle-stop settings are independent. idleStopSeconds accepts null or zero to disable; values must be 300 to 2592000 seconds. Hosted service requests are not counted as activity.
+      summary: Change auto-stop, idle-stop, or tag settings
+      description: TTL and idle-stop settings are independent. idleStopSeconds accepts null or zero to disable; values must be 300 to 2592000 seconds. Hosted service requests are not counted as activity. tags replaces the whole tag map; {} clears all tags; omitting tags leaves them unchanged.
       requestBody:
         required: true
         content:
@@ -146,7 +157,11 @@ paths:
                   $ref: "#/components/schemas/TTLSeconds"
                 idleStopSeconds:
                   $ref: "#/components/schemas/IdleStopSeconds"
+                tags:
+                  $ref: "#/components/schemas/SandboxTags"
       responses:
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
         "200":
           description: Updated sandbox
           content:
@@ -286,6 +301,8 @@ paths:
                   $ref: "#/components/schemas/TTLSeconds"
                 idleStopSeconds:
                   $ref: "#/components/schemas/IdleStopSeconds"
+                tags:
+                  $ref: "#/components/schemas/SandboxTags"
       responses:
         "201":
           description: Forked sandbox
@@ -1062,10 +1079,23 @@ components:
           type: string
         noEnv:
           type: boolean
+        tags:
+          $ref: "#/components/schemas/SandboxTags"
+    SandboxTags:
+      type: object
+      description: Up to 10 key/value tags. Keys match ^[a-z0-9][a-z0-9_.-]{0,62}$; values are at most 255 characters with no control characters. Forks copy the source sandbox tags unless tags are given.
+      maxProperties: 10
+      propertyNames:
+        pattern: "^[a-z0-9][a-z0-9_.-]{0,62}$"
+      additionalProperties:
+        type: string
+        maxLength: 255
     Sandbox:
       type: object
       required: [id, state, autoStop, ttlSeconds, idleStopSeconds, expiresAt, ttlRemainingSeconds, lastSnapshotAt, desktopAvailable, runningSeconds, setupStatus]
       properties:
+        tags:
+          $ref: "#/components/schemas/SandboxTags"
         id:
           type: string
         nodeId:

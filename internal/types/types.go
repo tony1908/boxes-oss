@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"fmt"
+	"regexp"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const gibibyte = int64(1 << 30)
@@ -66,21 +69,48 @@ func NewID(prefix string) string {
 
 // Box describes a managed box.
 type Box struct {
-	ID                 string     `json:"id"`
-	NodeID             string     `json:"nodeId"`
-	Type               string     `json:"type"`
-	State              BoxState   `json:"state"`
-	Image              string     `json:"image"`
-	EnvironmentID      string     `json:"environmentId,omitempty"`
-	EnvironmentVersion int        `json:"environmentVersion,omitempty"`
-	TTLSeconds         int64      `json:"ttlSeconds,omitempty"`
-	IdleStopSeconds    int64      `json:"idleStopSeconds,omitempty"`
-	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
-	FromSnapshot       string     `json:"fromSnapshot,omitempty"`
-	ErrorCode          string     `json:"errorCode,omitempty"`
-	Error              string     `json:"error,omitempty"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	StoppedAt          *time.Time `json:"stoppedAt,omitempty"`
+	ID                 string            `json:"id"`
+	NodeID             string            `json:"nodeId"`
+	Type               string            `json:"type"`
+	State              BoxState          `json:"state"`
+	Image              string            `json:"image"`
+	EnvironmentID      string            `json:"environmentId,omitempty"`
+	EnvironmentVersion int               `json:"environmentVersion,omitempty"`
+	TTLSeconds         int64             `json:"ttlSeconds,omitempty"`
+	IdleStopSeconds    int64             `json:"idleStopSeconds,omitempty"`
+	ExpiresAt          *time.Time        `json:"expiresAt,omitempty"`
+	FromSnapshot       string            `json:"fromSnapshot,omitempty"`
+	Tags               map[string]string `json:"tags,omitempty"`
+	ErrorCode          string            `json:"errorCode,omitempty"`
+	Error              string            `json:"error,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	StoppedAt          *time.Time        `json:"stoppedAt,omitempty"`
+}
+
+// MaxTags is the maximum number of tags a box may carry.
+const MaxTags = 10
+
+var tagKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
+
+// ValidateTags checks tag count, key format, and value length and characters.
+func ValidateTags(tags map[string]string) error {
+	if len(tags) > MaxTags {
+		return fmt.Errorf("tags must not exceed %d entries", MaxTags)
+	}
+	for key, value := range tags {
+		if !tagKeyPattern.MatchString(key) {
+			return fmt.Errorf("tag key %q must match %s", key, tagKeyPattern.String())
+		}
+		if utf8.RuneCountInString(value) > 255 {
+			return fmt.Errorf("tag %q value must not exceed 255 characters", key)
+		}
+		for _, r := range value {
+			if unicode.IsControl(r) {
+				return fmt.Errorf("tag %q value must not contain control characters", key)
+			}
+		}
+	}
+	return nil
 }
 
 // Node describes a machine running a boxes agent.

@@ -1,5 +1,5 @@
 export type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
-export interface Sandbox { id: string; type?: string; state: string; autoStop?: boolean; ttlSeconds?: number | null; idleStopSeconds?: number | null; expiresAt?: string | null; ttlRemainingSeconds?: number | null; lastSnapshotAt?: string | null; desktopAvailable?: boolean; runningSeconds?: number; setupStatus?: string; [key: string]: unknown }
+export interface Sandbox { id: string; type?: string; state: string; tags?: Record<string, string>; autoStop?: boolean; ttlSeconds?: number | null; idleStopSeconds?: number | null; expiresAt?: string | null; ttlRemainingSeconds?: number | null; lastSnapshotAt?: string | null; desktopAvailable?: boolean; runningSeconds?: number; setupStatus?: string; [key: string]: unknown }
 export interface Machine { cpus: number; memoryBytes: number; memAvailableBytes: number; diskFreeBytes: number; swapFreeBytes: number; memoryPressureSomeAvg10: number; status: 'healthy' | 'unhealthy'; runningBoxes: number; lastSeen: string }
 export interface Snapshot { id: string; boxId: string; resticId: string; sizeBytes: number; createdAt: string; [key: string]: unknown }
 export interface Operation { id: string; status: 'pending' | 'done' | 'failed'; error?: string }
@@ -26,9 +26,10 @@ export class Boxes {
   }
 
   private id(value: string): string { return encodeURIComponent(value); }
-  private query(query?: Query): string {
+  private query(query?: Query, repeated: Record<string, string[]> = {}): string {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query ?? {})) if (value !== undefined && value !== null) params.set(key, String(value));
+    for (const [key, values] of Object.entries(repeated)) for (const value of values) params.append(key, value);
     const encoded = params.toString(); return encoded ? `?${encoded}` : '';
   }
   private async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
@@ -65,7 +66,8 @@ export class Boxes {
   machine = async () => (await this.request<{ machine: Machine }>('GET', '/machine')).machine;
   sandboxes = {
     create: (input: Record<string, unknown> = {}, idempotencyKey?: string) => this.request<Sandbox>('POST', '/sandboxes', input, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
-    list: async (filter?: string) => (await this.request<{ sandboxes: Sandbox[] }>('GET', `/sandboxes${this.query({ filter })}`)).sandboxes,
+    // tags: "key=value" (exact match) or "key" (has key); all must match. Create/update take `tags` in their input.
+    list: async (filter?: string, tags?: string[]) => (await this.request<{ sandboxes: Sandbox[] }>('GET', `/sandboxes${this.query({ filter }, { tag: tags ?? [] })}`)).sandboxes,
     get: async (id: string) => (await this.request<{ sandbox: Sandbox }>('GET', `/sandboxes/${this.id(id)}`)).sandbox,
     update: async (id: string, input: Record<string, unknown>) => (await this.request<{ sandbox: Sandbox }>('PATCH', `/sandboxes/${this.id(id)}`, input)).sandbox,
     stop: (id: string) => this.request<Row>('POST', `/sandboxes/${this.id(id)}/stop`, {}),

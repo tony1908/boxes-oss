@@ -447,12 +447,12 @@ func (s *Store) CreateBox(ctx context.Context, record BoxRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO boxes(id, node_id, type, state, image, env_id, env_version,
 		ttl_seconds, idle_stop_seconds, expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
+		running_seconds, running_since, setup_status, error_code, error, tags)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
 		string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds, box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt),
 		nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc), idempotencyKey,
 		box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags))
 	if err != nil {
 		return fmt.Errorf("create box: %w", err)
 	}
@@ -506,11 +506,11 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), box.ID)
 	return checkUpdated(result, err, "update box")
 }
 
@@ -521,20 +521,26 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error, tags FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
 	var state string
 	var envID, idempotencyKey, expires, stopped, runningSince sql.NullString
-	var created string
+	var created, tags string
 	err := row.Scan(&record.Box.ID, &record.Box.NodeID, &record.Box.Type, &state, &record.Box.Image,
 		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
-		&record.Box.ErrorCode, &record.Box.Error)
+		&record.Box.ErrorCode, &record.Box.Error, &tags)
 	if err != nil {
 		return BoxRecord{}, err
+	}
+	if err := json.Unmarshal([]byte(tags), &record.Box.Tags); err != nil {
+		return BoxRecord{}, fmt.Errorf("decode box tags: %w", err)
+	}
+	if len(record.Box.Tags) == 0 {
+		record.Box.Tags = nil
 	}
 	record.Box.State = types.BoxState(state)
 	if envID.Valid {
@@ -572,6 +578,18 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		record.SetupStatus = "none"
 	}
 	return record, nil
+}
+
+// tagsJSON encodes tags as a JSON object; nil and empty maps both store "{}".
+func tagsJSON(tags map[string]string) string {
+	if len(tags) == 0 {
+		return "{}"
+	}
+	data, err := json.Marshal(tags)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 func setupStatus(value string) string {
