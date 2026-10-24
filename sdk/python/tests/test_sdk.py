@@ -134,3 +134,17 @@ def test_detached_command_streams_logs_and_controls_process():
         list(command.logs())
     assert (error.value.status, error.value.code) == (404, "process_not_found")
     c.close()
+
+def test_image_on_create_and_usage_totals_are_returned():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/usage"):
+            return httpx.Response(200,json={"runningSeconds":5,"totals":{"cpuSeconds":2.5,"rxBytes":10,"txBytes":20},"live":{"cpuSeconds":1,"rxBytes":4,"txBytes":6}})
+        return httpx.Response(201,json={"id":"bx_i","image":"ghcr.io/example/custom-box:1","state":"ready"})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        box=c.sandboxes.create(type="small",image="ghcr.io/example/custom-box:1")
+        usage=c.usage("bx_i")
+    assert box["image"]=="ghcr.io/example/custom-box:1"
+    assert json.loads(requests[0].read())=={"type":"small","image":"ghcr.io/example/custom-box:1"}
+    assert usage["totals"]=={"cpuSeconds":2.5,"rxBytes":10,"txBytes":20}

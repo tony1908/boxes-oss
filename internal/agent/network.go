@@ -372,3 +372,26 @@ func (a *Agent) putNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// EnsureMetadataBlock installs one DOCKER-USER rule that drops traffic from the boxes-net subnet to the
+// cloud metadata address, so every box is blocked, not only boxes with a network policy. Idempotent.
+func (a *Agent) EnsureMetadataBlock(ctx context.Context) error {
+	subnet, err := a.docker.NetworkSubnet(ctx, "boxes-net")
+	if err != nil {
+		return fmt.Errorf("read boxes-net subnet: %w", err)
+	}
+	a.networkMu.Lock()
+	defer a.networkMu.Unlock()
+	rule := []string{"DOCKER-USER", "-s", subnet, "-d", types.MetadataCIDR, "-j", "DROP"}
+	if _, code, err := a.runIptables(ctx, iptablesArgv(append([]string{"-C"}, rule...)...)); err == nil && code == 0 {
+		return nil
+	}
+	_, code, err := a.runIptables(ctx, iptablesArgv(append([]string{"-I"}, rule...)...))
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("iptables -I DOCKER-USER failed with exit code %d", code)
+	}
+	return nil
+}

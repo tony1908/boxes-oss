@@ -44,9 +44,19 @@ func (s *Server) defaultImages() defaultImageConfig {
 	return s.images
 }
 
+// validateImageReference checks a container image reference; default and per-box images share this rule.
+func validateImageReference(images ...string) error {
+	for _, image := range images {
+		if !imageReferencePattern.MatchString(image) {
+			return errors.New("image must be a valid container image reference")
+		}
+	}
+	return nil
+}
+
 func (s *Server) saveDefaultImages(ctx context.Context, images defaultImageConfig) error {
-	if !imageReferencePattern.MatchString(images.Box) || !imageReferencePattern.MatchString(images.Tools) {
-		return errors.New("box and tools images must be valid container image references")
+	if err := validateImageReference(images.Box, images.Tools); err != nil {
+		return err
 	}
 	data, err := json.Marshal(images)
 	if err != nil {

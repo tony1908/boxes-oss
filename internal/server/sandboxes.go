@@ -19,6 +19,7 @@ import (
 
 type createSandboxRequest struct {
 	Type            string               `json:"type"`
+	Image           string               `json:"image"`
 	TTLSeconds      json.RawMessage      `json:"ttlSeconds"`
 	IdleStopSeconds json.RawMessage      `json:"idleStopSeconds"`
 	Env             map[string]string    `json:"env"`
@@ -110,6 +111,12 @@ func (s *Server) createSandbox(w http.ResponseWriter, r *http.Request) {
 	if input.NetworkPolicy != nil {
 		if err := types.ValidateNetworkPolicy(*input.NetworkPolicy); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_network_policy", err.Error())
+			return
+		}
+	}
+	if input.Image != "" {
+		if err := validateImageReference(input.Image); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_image", err.Error())
 			return
 		}
 	}
@@ -305,7 +312,11 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 		return types.Box{}, err
 	}
 	now := time.Now().UTC()
-	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: s.defaultImages().Box,
+	image := input.Image
+	if image == "" {
+		image = s.defaultImages().Box
+	}
+	box := types.Box{ID: boxID, NodeID: node.Node.ID, Type: boxType, State: types.StateProvisioning, Image: image,
 		TTLSeconds: ttl, IdleStopSeconds: idleStop, CreatedAt: now, FromSnapshot: fromSnapshot, Tags: input.Tags, NetworkPolicy: input.NetworkPolicy, KeepSnapshots: input.KeepSnapshots}
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
@@ -547,6 +558,13 @@ func (s *Server) sandboxUsage(w http.ResponseWriter, r *http.Request) {
 		usage["snapshotsBytes"] = snapshots[len(snapshots)-1].SizeBytes
 		usage["lastSnapshotAt"] = snapshots[len(snapshots)-1].CreatedAt
 	}
+	// totals = accumulated at each stop + the running container's live counters (when the agent answers).
+	totals := boxCounters{CPUSeconds: box.TotalCPUSeconds, RxBytes: box.TotalRxBytes, TxBytes: box.TotalTxBytes}
+	if live, ok := s.liveCounters(r.Context(), box); ok {
+		usage["live"] = live
+		totals = totals.plus(live)
+	}
+	usage["totals"] = totals
 	pricing := s.pricing(r.Context())
 	rate, configured := pricing.HourlyBySize[box.Box.Type]
 	if !configured {
@@ -682,6 +700,9 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.endSnapshot(box.Box.ID)
 	s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "stop requested", nil, "ok")
+	// Read usage before the container stops; a failed read only leaves this session out of the totals.
+	// ponytail: a crash between stops loses that session's usage numbers.
+	sessionUsage, hasUsage := s.liveCounters(r.Context(), box)
 	var response struct {
 		Snapshot struct {
 			SnapshotID string    `json:"snapshotId"`
@@ -702,6 +723,11 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 		s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "error", map[string]any{"reason": "agent returned no stop snapshot"}, "error")
 		writeError(w, http.StatusBadGateway, "snapshot_failed", "agent returned no snapshot identifier; sandbox remains running")
 		return
+	}
+	if hasUsage {
+		box.TotalCPUSeconds += sessionUsage.CPUSeconds
+		box.TotalRxBytes += sessionUsage.RxBytes
+		box.TotalTxBytes += sessionUsage.TxBytes
 	}
 	now := time.Now().UTC()
 	box.Box.State = types.StateStopped
@@ -1085,6 +1111,7 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	if input.Type == "" {
 		input.Type = source.Box.Type
 	}
+	input.Image = source.Box.Image // a fork always runs the source's image
 	if len(input.IdleStopSeconds) == 0 {
 		input.IdleStopSeconds, _ = json.Marshal(source.Box.IdleStopSeconds)
 	}

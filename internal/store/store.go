@@ -42,6 +42,10 @@ type BoxRecord struct {
 	SetupStatus        string
 	// RestoreSnapshotID is the snapshot the next resume restores from; resume clears it.
 	RestoreSnapshotID string
+	// Usage totals accumulate at each stop (see server stopSandbox); they are not part of the public box JSON.
+	TotalCPUSeconds float64
+	TotalRxBytes    int64
+	TotalTxBytes    int64
 }
 
 // NodeRecord includes the node authentication hash, which must never be returned
@@ -508,11 +512,11 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=?, total_cpu_seconds=?, total_rx_bytes=?, total_tx_bytes=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, record.TotalCPUSeconds, record.TotalRxBytes, record.TotalTxBytes, box.ID)
 	return checkUpdated(result, err, "update box")
 }
 
@@ -523,7 +527,7 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, total_cpu_seconds, total_rx_bytes, total_tx_bytes FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
@@ -535,7 +539,8 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
-		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy, &source, &record.Box.KeepSnapshots, &record.RestoreSnapshotID)
+		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy, &source, &record.Box.KeepSnapshots, &record.RestoreSnapshotID,
+		&record.TotalCPUSeconds, &record.TotalRxBytes, &record.TotalTxBytes)
 	if err != nil {
 		return BoxRecord{}, err
 	}

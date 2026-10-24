@@ -614,6 +614,7 @@ func (c *CLI) bridgeForward(ctx context.Context, local net.Conn, id string, port
 func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	fs := c.flagSet("new")
 	boxType := fs.String("type", "default", "box size")
+	image := fs.String("image", "", "container image for the box (must be built FROM ghcr.io/tony1908/boxes-box)")
 	ttl := fs.Int64("ttl", 3600, "time to live in seconds")
 	idleStop := fs.String("idle-stop", "", "stop after inactivity (Go duration, e.g. 30m; off disables)")
 	noAutoStop := fs.Bool("no-auto-stop", false, "disable the auto-stop timer")
@@ -639,12 +640,15 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--type SIZE] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+		return errors.New("usage: boxes new [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
 	}
 	body := map[string]any{"type": *boxType}
+	if *image != "" {
+		body["image"] = *image
+	}
 	if flagWasSet(fs, "keep-snapshots") {
 		body["keepSnapshots"] = *keepSnapshots
 	}

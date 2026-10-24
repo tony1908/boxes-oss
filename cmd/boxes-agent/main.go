@@ -63,6 +63,9 @@ func main() {
 	}
 
 	service := agent.New(agent.Config{NodeID: *nodeID, Runtime: *runtimeName, TraefikDir: *traefikDir, NetworkDir: *networkDir, ForwardAuthURL: forwardAuthURL, StoragePath: *storagePath}, docker, engine)
+	if err := service.EnsureMetadataBlock(ctx); err != nil {
+		log.Printf("block cloud metadata for boxes: %v", err) // keep the agent running; boxes stay up without this rule
+	}
 	service.RestoreNetworkPolicies(ctx)
 	go service.RunNetworkRefresh(ctx)
 	forwardAuth := &http.Server{Addr: forwardAuthAddr, Handler: service.ForwardAuthHandler(), ReadHeaderTimeout: 5 * time.Second}

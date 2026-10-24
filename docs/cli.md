@@ -69,7 +69,7 @@ skill env
 Common forms:
 
 ```sh
-boxes new [--type SIZE] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
+boxes new [--type SIZE] [--image REF] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
           [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env] \
           [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]... \
           [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]]
@@ -141,6 +141,10 @@ combined). `boxes list --tag KEY=VALUE` keeps boxes with that exact value, and
 appear in the `tags` field of `boxes info` and `boxes get` output.
 
 ### Outbound network policy
+
+`boxes new --image REF` runs the box in a specific container image. The image must be built `FROM ghcr.io/tony1908/boxes-box` so boxd is present; otherwise the box never becomes ready (`box_not_ready`). Without the flag the server default image is used.
+
+`boxes usage <id|current>` prints the usage JSON from `GET /sandboxes/{id}/usage`, including `totals` (`cpuSeconds`, `rxBytes`, `txBytes`) and `live` while the box runs. See [api.md](api.md#usage-and-cost).
 
 `boxes new` and `boxes update <id|current>` take the same network flags:
 

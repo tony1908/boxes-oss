@@ -194,6 +194,19 @@ func (d *Docker) EnsureNetwork(ctx context.Context) error {
 	return err
 }
 
+// NetworkSubnet returns the first IPAM subnet of a Docker network.
+func (d *Docker) NetworkSubnet(ctx context.Context, name string) (string, error) {
+	stdout, _, err := d.run(ctx, []string{"docker", "network", "inspect", name, "--format", "{{(index .IPAM.Config 0).Subnet}}"}, nil, nil, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	subnet := strings.TrimSpace(stdout)
+	if subnet == "" {
+		return "", fmt.Errorf("network %s has no subnet", name)
+	}
+	return subnet, nil
+}
+
 // EnsureImage pulls image only when it is not already present locally.
 func (d *Docker) EnsureImage(ctx context.Context, image string) error {
 	if image == "" {
@@ -316,6 +329,23 @@ func (d *Docker) CPUPercent(ctx context.Context, name string) (float64, error) {
 		return 0, fmt.Errorf("decode docker stats output: %w", err)
 	}
 	return strconv.ParseFloat(strings.TrimSuffix(stats.CPU, "%"), 64)
+}
+
+// ContainerIDAndPID returns the full container ID and the PID of its init process on the host.
+func (d *Docker) ContainerIDAndPID(ctx context.Context, name string) (string, int, error) {
+	stdout, _, err := d.run(ctx, []string{"docker", "inspect", "--format", "{{.Id}} {{.State.Pid}}", name}, nil, nil, nil, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	id, pidText, ok := strings.Cut(strings.TrimSpace(stdout), " ")
+	if !ok {
+		return "", 0, fmt.Errorf("decode docker inspect id and pid output %q", stdout)
+	}
+	pid, err := strconv.Atoi(pidText)
+	if err != nil || pid <= 0 || id == "" {
+		return "", 0, fmt.Errorf("decode docker inspect pid %q", pidText)
+	}
+	return id, pid, nil
 }
 
 // DesktopConnections returns the number of established connections to the

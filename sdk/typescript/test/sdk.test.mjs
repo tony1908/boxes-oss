@@ -84,6 +84,17 @@ test('sends keepSnapshots on create and update and restores from a snapshot', as
   assert.deepEqual(JSON.parse(seen[2].body),{snapshotId:'sn_1'});
 });
 
+test('sends image on create and reads usage totals', async t => {
+  const seen=[]; const server=createServer((req,res)=>{let body=''; req.on('data',c=>body+=c); req.on('end',()=>{seen.push({method:req.method,url:req.url,body});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(req.url.endsWith('/usage')?{runningSeconds:5,totals:{cpuSeconds:2.5,rxBytes:10,txBytes:20},live:{cpuSeconds:1,rxBytes:4,txBytes:6}}:{id:'bx_i',image:'ghcr.io/example/custom-box:1',sandbox:{id:'bx_i',state:'ready'}}));});});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close()); const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});
+  assert.equal((await c.sandboxes.create({type:'small',image:'ghcr.io/example/custom-box:1'})).image,'ghcr.io/example/custom-box:1');
+  const usage=await c.usage('bx_i');
+  assert.deepEqual(JSON.parse(seen[0].body),{type:'small',image:'ghcr.io/example/custom-box:1'});
+  assert.equal(seen[1].url,'/api/v1/sandboxes/bx_i/usage');
+  assert.deepEqual(usage.totals,{cpuSeconds:2.5,rxBytes:10,txBytes:20});
+  assert.deepEqual(usage.live,{cpuSeconds:1,rxBytes:4,txBytes:6});
+});
+
 test('sends network policy on create and update as networkPolicy', async t => {
   const seen=[]; const server=createServer((req,res)=>{let body=''; req.on('data',c=>body+=c); req.on('end',()=>{seen.push({method:req.method,body});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:'bx_n',sandbox:{id:'bx_n'}}));});});
   await new Promise(r=>server.listen(0,'127.0.0.1',r)); t.after(()=>server.close()); const addr=server.address(); const c=new Boxes({baseUrl:`http://127.0.0.1:${addr.port}`,apiKey:'secret'});

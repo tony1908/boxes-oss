@@ -81,6 +81,7 @@ type Agent struct {
 	toolsWarning         sync.Once
 	networkMu            sync.Mutex
 	firewall             dockercli.Executor
+	readFile             func(string) ([]byte, error) // host file reads for box usage; faked in tests
 }
 
 type authCredential struct {
@@ -168,7 +169,7 @@ func New(config Config, docker *dockercli.Docker, snapshots *snapshot.Engine) *A
 		config: config, docker: docker, snapshots: snapshots,
 		boxdTokens: make(map[string]string), desktopPasswords: make(map[string]string), forwardAuth: make(map[string]authCredential),
 		processes: make(map[string]*execProcess), snapshotFingerprints: make(map[string]string), storageInitLocks: make(map[string]*sync.Mutex),
-		firewall: ExecExecutor{},
+		firewall: ExecExecutor{}, readFile: os.ReadFile,
 	}
 }
 
@@ -244,7 +245,14 @@ func (a *Agent) boxStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "stats_failed", "container desktop stats are unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"cpuPercent": value, "desktopConnections": desktopConnections})
+	response := map[string]any{"cpuPercent": value, "desktopConnections": desktopConnections}
+	// Usage counters are best effort: a host without the expected cgroup layout must not break the CPU reading.
+	if usage, err := a.readBoxUsage(r.Context(), boxName(r.PathValue("id"))); err != nil {
+		log.Printf("box usage box=%s error=%q", r.PathValue("id"), err)
+	} else {
+		response["cpuSeconds"], response["rxBytes"], response["txBytes"] = usage.CPUSeconds, usage.RxBytes, usage.TxBytes
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 type storageUpdate struct {

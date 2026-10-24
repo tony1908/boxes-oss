@@ -56,12 +56,20 @@ curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
 curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bearer $KEY"
 ```
 
+## Box image
+
+`image` on `POST /sandboxes` picks the container image for one box. Omitted uses the server's default box image (`GET`/`PUT /settings/images`). A reference that fails validation returns `400 invalid_image`.
+
+Custom images must be built `FROM ghcr.io/tony1908/boxes-box`, which carries `boxd`. An image without it never becomes ready and the create call returns `503 box_not_ready`.
+
+`POST /sandboxes/{id}/fork` always runs the source box's image; an `image` in the fork body is ignored. Resume and migrate also keep the box's own image.
+
 ## Outbound network policy
 
 `networkPolicy` controls where a box can send traffic. It is accepted by `POST /sandboxes` (and copied by `POST /sandboxes/{id}/fork` unless the body sets its own). Invalid policies return `400 invalid_network_policy`.
 
 - `mode`: `allow-all` (the default), `deny-all` (no new outbound connections; existing ones may finish), or `allowlist` (only `allowDomains` and `allowCidrs`).
-- `denyCidrs` win over every other rule in every mode. `169.254.169.254/32` (cloud metadata) is always blocked.
+- `denyCidrs` win over every other rule in every mode. `169.254.169.254/32` (cloud metadata) is blocked for every box, with or without a `networkPolicy`: the agent installs one host firewall rule per `boxes-net` subnet when it starts, and a policy change never removes it.
 - `POST /sandboxes/{id}/restore` with `{"snapshotId": "..."}` rolls the sandbox back to one of its own snapshots (`404 snapshot_not_found` otherwise). A running sandbox is stopped, which captures a final snapshot so the rollback can be undone, and then resumed from the chosen snapshot. A stopped sandbox records the snapshot for its next resume. Busy states (`provisioning`, `stopping`, `resuming`, `deleting`) return `409 sandbox_busy`.
 - `keepSnapshots` on `POST /sandboxes` and `PATCH /sandboxes/{id}` sets how many automatic snapshots are kept, from 1 to 50; `0` or omitted uses the default of 5. Values outside that range return `400 invalid_keep_snapshots`. Forks copy the source value unless one is given. Named snapshots are never pruned.
 - `PATCH /sandboxes/{id}` with `networkPolicy` replaces the policy; `null` clears it. A running box is updated immediately; a stopped box stores the policy and applies it when it next starts or resumes. If the node cannot apply a running box's policy, the request returns `502 network_policy_failed`, the stored policy stays unchanged, and the box is stopped so it is never left unfiltered.
@@ -107,7 +115,7 @@ curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
 
 ## Usage and cost
 
-`GET /api/v1/sandboxes/{id}/usage` returns `runningSeconds`, `runningSecondsThisMonth`, `perDay` (30 UTC dates), `commandsCount`, `agentRunsCount`, `desktopSessionsCount`, `snapshotsCount`, and `since`. It includes `snapshotsBytes` and `lastSnapshotAt` when a snapshot exists, using the most recent snapshot's size. When an hourly rate is configured for the box size (falling back to the `default` rate), it also returns `estimatedCost`:
+`GET /api/v1/sandboxes/{id}/usage` returns `runningSeconds`, `runningSecondsThisMonth`, `perDay` (30 UTC dates), `commandsCount`, `agentRunsCount`, `desktopSessionsCount`, `snapshotsCount`, and `since`. It also returns `totals` (`cpuSeconds`, `rxBytes`, `txBytes`): the container's CPU time and network bytes accumulated at each stop, plus `live` when the box is running. `live` has the same three counters for the current container and is omitted when the box is stopped or its agent cannot answer. Network bytes are summed over every interface except loopback. The counters are host-side and reset when a container is recreated (resume or migrate), which is why they are accumulated at each stop; a crash between stops loses that session's numbers. Box JSON does not include these counters. It includes `snapshotsBytes` and `lastSnapshotAt` when a snapshot exists, using the most recent snapshot's size. When an hourly rate is configured for the box size (falling back to the `default` rate), it also returns `estimatedCost`:
 
 ```json
 {
@@ -120,6 +128,8 @@ curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
   "snapshotsCount": 3,
   "snapshotsBytes": 123456,
   "since": null,
+  "live": {"cpuSeconds": 42.5, "rxBytes": 90112, "txBytes": 20480},
+  "totals": {"cpuSeconds": 310.2, "rxBytes": 1048576, "txBytes": 524288},
   "estimatedCost": {"currency": "USD", "amount": 0.25, "hourlyRate": 0.5}
 }
 ```

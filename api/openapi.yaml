@@ -1157,10 +1157,23 @@ components:
         detail: {type: object, additionalProperties: true}
         durationMs: {type: integer, minimum: 0}
         outcome: {type: string, enum: [ok, error]}
+    UsageCounters:
+      type: object
+      required: [cpuSeconds, rxBytes, txBytes]
+      properties:
+        cpuSeconds: {type: number, minimum: 0, description: Cumulative container CPU time in seconds}
+        rxBytes: {type: integer, minimum: 0, description: Cumulative received bytes on the box network, excluding loopback}
+        txBytes: {type: integer, minimum: 0, description: Cumulative transmitted bytes on the box network, excluding loopback}
     SandboxUsage:
       type: object
-      required: [runningSeconds, runningSecondsThisMonth, perDay, commandsCount, agentRunsCount, desktopSessionsCount, snapshotsCount]
+      required: [runningSeconds, runningSecondsThisMonth, perDay, commandsCount, agentRunsCount, desktopSessionsCount, snapshotsCount, totals]
       properties:
+        live:
+          $ref: "#/components/schemas/UsageCounters"
+          description: Counters of the running container. Present only while the box is running and its agent answers.
+        totals:
+          $ref: "#/components/schemas/UsageCounters"
+          description: Counters accumulated at each stop, plus live when present. Counters reset when a container is recreated, so a crash between stops loses that session.
         runningSeconds: {type: integer, minimum: 0}
         runningSecondsThisMonth: {type: integer, minimum: 0}
         perDay:
@@ -1231,6 +1244,10 @@ components:
         type:
           $ref: "#/components/schemas/BoxSize"
           default: default
+        image:
+          type: string
+          maxLength: 255
+          description: Container image for this box, a reference like ghcr.io/you/box:tag. Must be built FROM ghcr.io/tony1908/boxes-box so boxd is present; otherwise the box never becomes ready (box_not_ready). Omitted uses the server default box image. Invalid references return 400 invalid_image. Forks always use the source box image.
         ttlSeconds:
           allOf:
             - $ref: "#/components/schemas/TTLSeconds"
@@ -1331,6 +1348,9 @@ components:
       type: object
       required: [id, state, autoStop, ttlSeconds, idleStopSeconds, expiresAt, ttlRemainingSeconds, lastSnapshotAt, desktopAvailable, runningSeconds, setupStatus]
       properties:
+        image:
+          type: string
+          description: Container image the box runs.
         keepSnapshots:
           $ref: "#/components/schemas/KeepSnapshots"
         tags:
