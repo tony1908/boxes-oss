@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/types"
+	"github.com/tony1908/boxes-oss/internal/types"
 )
 
 func TestBoxLifecycleAccountingFieldsRoundTrip(t *testing.T) {

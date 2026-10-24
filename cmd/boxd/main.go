@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/boxd"
-	"github.com/boxes-oss/boxes/internal/computer"
+	"github.com/tony1908/boxes-oss/internal/boxd"
+	"github.com/tony1908/boxes-oss/internal/computer"
 )
 
 func main() {

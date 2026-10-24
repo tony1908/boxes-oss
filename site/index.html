@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boxes OSS: sandboxes for AI agents, on your own server</title>
+  <meta name="description" content="Boxes OSS is a free, self-hosted way to run Linux desktop sandboxes for AI agents on a single VM you control.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header shell">
+    <a class="brand" href="#top" aria-label="Boxes OSS home">
+      <span class="brand-mark" aria-hidden="true"><i></i></span>
+      <span>Boxes OSS</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/tony1908/boxes-oss/tree/main/docs">Docs</a>
+      <a href="https://github.com/tony1908/boxes-oss">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" id="top" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Open source · self-hosted</p>
+        <h1 id="hero-title">Sandboxes for AI agents, on your own server.</h1>
+        <p class="lede">
+          Create Ubuntu boxes with a desktop, Docker, and SSH access, drive them
+          from the CLI, HTTP API, or SDKs, and keep their state in snapshots.
+          Everything runs on one VM you control.
+        </p>
+        <div class="actions">
+          <a class="button" href="#install">Install on a VM</a>
+          <a class="button secondary" href="https://github.com/tony1908/boxes-oss">View on GitHub</a>
+        </div>
+      </div>
+
+      <figure class="terminal" aria-label="Terminal showing boxes CLI commands to create a box, run tests, open its desktop, and snapshot it">
+        <figcaption class="terminal-head">
+          <span class="window-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>boxes · current box</span>
+        </figcaption>
+        <pre><code><span class="comment"># Create a box that auto-stops after an hour</span>
+<span class="prompt">$</span> boxes new --type small --ttl 3600
+<span class="comment"># Run a command inside it</span>
+<span class="prompt">$</span> boxes exec current -- bash -lc 'npm test'
+<span class="comment"># Open its Linux desktop in your browser</span>
+<span class="prompt">$</span> boxes desktop current
+<span class="comment"># Snapshot and stop it; resume later with state intact</span>
+<span class="prompt">$</span> boxes stop current</code></pre>
+      </figure>
+    </section>
+
+    <section class="section shell" id="features" aria-labelledby="features-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">What you get</p>
+          <h2 id="features-title">A full machine for every task.</h2>
+        </div>
+        <p>Each box is an isolated Ubuntu machine. Choose its size, its lifetime, and what state to keep.</p>
+      </div>
+
+      <ul class="feature-grid">
+        <li class="feature">
+          <h3>A real Linux desktop</h3>
+          <p>Ubuntu with XFCE, served through a browser. Open it with <code>boxes desktop</code>, or share a public URL.</p>
+        </li>
+        <li class="feature">
+          <h3>Docker inside boxes</h3>
+          <p>Boxes run on Sysbox, so agents can build and run containers inside an isolated box.</p>
+        </li>
+        <li class="feature">
+          <h3>Snapshots, stop, resume, fork</h3>
+          <p><code>boxes stop</code> snapshots a box. <code>boxes resume</code> brings it back and <code>boxes fork</code> copies it for parallel work.</p>
+        </li>
+        <li class="feature">
+          <h3>Timers and limits</h3>
+          <p>Set a time to live with <code>--ttl</code>, an inactivity stop with <code>--idle-stop</code>, or extend a box with <code>boxes extend</code>.</p>
+        </li>
+        <li class="feature">
+          <h3>Agent harnesses</h3>
+          <p>Run prompts through Claude Code, Codex, OpenCode, Pi, Prime, or Kimi Code with <code>boxes prompt</code>.</p>
+        </li>
+        <li class="feature">
+          <h3>Computer-use tools</h3>
+          <p>An MCP server gives agents screenshots, mouse and keyboard input, windows, and app launching on the desktop.</p>
+        </li>
+        <li class="feature">
+          <h3>SSH, scp, and ports</h3>
+          <p><code>boxes ssh</code>, <code>boxes scp</code>, and <code>boxes forward</code> reach a box. <code>boxes host</code> exposes a port at its own URL, public or private.</p>
+        </li>
+        <li class="feature">
+          <h3>Dashboard, API, and SDKs</h3>
+          <p>Use the web dashboard, the <code>/api/v1</code> HTTP API, or the TypeScript and Python SDKs.</p>
+        </li>
+      </ul>
+
+      <p class="feature-extras">
+        Save reusable setup as environments with <code>boxes env</code>, receive
+        box events through webhooks, and manage access with API keys.
+      </p>
+      <p class="harness-note"><span>Agent harnesses</span> Claude Code · Codex · OpenCode · Pi · Prime · Kimi Code</p>
+    </section>
+
+    <section class="section shell" id="install" aria-labelledby="install-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Self-hosted install</p>
+          <h2 id="install-title">Install on one VM.</h2>
+        </div>
+        <p>One script installs Docker, Sysbox, the box image, and the Boxes server behind HTTPS.</p>
+      </div>
+
+      <div class="install-grid">
+        <div>
+          <h3>Requirements</h3>
+          <ul class="requirements">
+            <li>Ubuntu or Debian, on amd64 or arm64</li>
+            <li>Root access, for example through <code>sudo</code></li>
+            <li>A domain pointing at the VM, with ports 80 and 443 reachable for Let's Encrypt</li>
+            <li>A contact email for the certificate</li>
+          </ul>
+          <p class="note">Optional flags: <code>--host-base</code> sets the host for box URLs, and <code>--s3-endpoint</code> with <code>--s3-bucket</code> stores snapshots in S3-compatible storage.</p>
+        </div>
+
+        <div class="install-steps">
+          <h3>1. Run the installer on the VM</h3>
+          <div class="command">
+            <pre><code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com</code></pre>
+            <button type="button" class="copy" data-copy="#install-cmd">Copy</button>
+          </div>
+          <p class="status" role="status" id="copy-status"></p>
+
+          <h3>2. Install the CLI on your laptop</h3>
+          <div class="command">
+            <pre><code id="cli-cmd">curl -fsSL https://&lt;your-server&gt;/install/cli.sh | sh</code></pre>
+            <button type="button" class="copy" data-copy="#cli-cmd">Copy</button>
+          </div>
+          <p class="note">Then run <code>boxes login</code> against your server to create boxes.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="how-it-works" aria-labelledby="how-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">How it works</p>
+          <h2 id="how-title">Three steps from VM to agent.</h2>
+        </div>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <span class="step-num" aria-hidden="true">1</span>
+          <h3>Install on one VM</h3>
+          <p>Run the installer once. The server, agent, and box image are set up on that machine.</p>
+        </li>
+        <li>
+          <span class="step-num" aria-hidden="true">2</span>
+          <h3>Create boxes</h3>
+          <p>Start boxes from the dashboard, with <code>boxes new</code>, or through the HTTP API.</p>
+        </li>
+        <li>
+          <span class="step-num" aria-hidden="true">3</span>
+          <h3>Work in isolated desktops</h3>
+          <p>Agents run in their own desktops. State is saved in snapshots when you stop a box and on a regular interval.</p>
+        </li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <p>MIT License. Boxes OSS is free to use and self-host.</p>
+      <nav aria-label="Footer">
+        <a href="https://github.com/tony1908/boxes-oss">GitHub</a>
+        <a href="https://github.com/tony1908/boxes-oss/tree/main/docs">Docs</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var text = document.querySelector(btn.dataset.copy).textContent.trim();
+        var status = document.getElementById('copy-status');
+        if (!navigator.clipboard) { status.textContent = 'Copy is unavailable here; select the command and copy it.'; return; }
+        navigator.clipboard.writeText(text).then(
+          function () { status.textContent = 'Copied to clipboard.'; },
+          function () { status.textContent = 'Copy failed; select the command and copy it.'; }
+        );
+      });
+    });
+  </script>
+</body>
+</html>

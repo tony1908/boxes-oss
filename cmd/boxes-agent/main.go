@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/agent"
-	"github.com/boxes-oss/boxes/internal/dockercli"
-	"github.com/boxes-oss/boxes/internal/snapshot"
-	"github.com/boxes-oss/boxes/internal/tunnel"
+	"github.com/tony1908/boxes-oss/internal/agent"
+	"github.com/tony1908/boxes-oss/internal/dockercli"
+	"github.com/tony1908/boxes-oss/internal/snapshot"
+	"github.com/tony1908/boxes-oss/internal/tunnel"
 )
 
 func main() {

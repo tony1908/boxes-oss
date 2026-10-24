@@ -28,11 +28,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/diagnostics"
-	"github.com/boxes-oss/boxes/internal/dockercli"
-	"github.com/boxes-oss/boxes/internal/snapshot"
-	boxtypes "github.com/boxes-oss/boxes/internal/types"
 	"github.com/coder/websocket"
+	"github.com/tony1908/boxes-oss/internal/diagnostics"
+	"github.com/tony1908/boxes-oss/internal/dockercli"
+	"github.com/tony1908/boxes-oss/internal/snapshot"
+	boxtypes "github.com/tony1908/boxes-oss/internal/types"
 )
 
 const (

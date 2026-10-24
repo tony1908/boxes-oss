@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/server"
-	"github.com/boxes-oss/boxes/internal/store"
+	"github.com/tony1908/boxes-oss/internal/server"
+	"github.com/tony1908/boxes-oss/internal/store"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	dataDir := flag.String("data-dir", "/var/lib/boxes", "server data directory")
 	publicURL := flag.String("public-url", "http://localhost:8080", "public server URL")
-	image := flag.String("image", "boxes/box:latest", "default box image")
+	image := flag.String("image", "ghcr.io/tony1908/boxes-box:latest", "default box image")
 	snapshotInterval := flag.Duration("snapshot-interval", envDuration("BOXES_SNAPSHOT_INTERVAL", time.Minute), "periodic snapshot interval")
 	desktopSessionTTL := flag.Duration("desktop-session-ttl", envDuration("BOXES_DESKTOP_SESSION_TTL", 8*time.Hour), "desktop session lifetime")
 	snapshotBusyInterval := flag.Duration("snapshot-busy-interval", envDuration("BOXES_SNAPSHOT_BUSY_INTERVAL", 5*time.Minute), "minimum interval after repeated changed snapshots")

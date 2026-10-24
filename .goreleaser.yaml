@@ -2,6 +2,10 @@ version: 2
 
 project_name: boxes
 
+before:
+  hooks:
+    - make web
+
 builds:
   - id: boxes-server
     main: ./cmd/boxes-server

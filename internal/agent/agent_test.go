@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/dockercli"
-	"github.com/boxes-oss/boxes/internal/snapshot"
+	"github.com/tony1908/boxes-oss/internal/dockercli"
+	"github.com/tony1908/boxes-oss/internal/snapshot"
 	"gopkg.in/yaml.v3"
 )
 

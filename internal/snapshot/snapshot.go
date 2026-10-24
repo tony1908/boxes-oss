@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/diagnostics"
-	boxtypes "github.com/boxes-oss/boxes/internal/types"
+	"github.com/tony1908/boxes-oss/internal/diagnostics"
+	boxtypes "github.com/tony1908/boxes-oss/internal/types"
 )
 
 const (

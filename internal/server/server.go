@@ -18,12 +18,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/boxes-oss/boxes/install"
-	"github.com/boxes-oss/boxes/internal/diagnostics"
-	"github.com/boxes-oss/boxes/internal/store"
-	"github.com/boxes-oss/boxes/internal/tunnel"
-	"github.com/boxes-oss/boxes/internal/types"
-	"github.com/boxes-oss/boxes/internal/webui"
+	"github.com/tony1908/boxes-oss/install"
+	"github.com/tony1908/boxes-oss/internal/diagnostics"
+	"github.com/tony1908/boxes-oss/internal/store"
+	"github.com/tony1908/boxes-oss/internal/tunnel"
+	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/boxes-oss/internal/webui"
 )
 
 // Config contains the persistent and public-facing server settings.
@@ -51,49 +51,49 @@ type Config struct {
 
 // Server owns the API handlers and the agent tunnel hub.
 type Server struct {
-	store           *store.Store
-	hub             *tunnel.Hub
-	secrets         *secretBox
-	adminToken      string
-	storageMu       sync.RWMutex
-	storage         storageConfig
-	imageMu         sync.RWMutex
-	images          defaultImageConfig
-	cfg             Config
-	api             http.Handler
-	agent           http.Handler
-	platformMu      sync.Mutex
-	desktopRoutes   map[string]desktopRouteState
-	desktopSessions map[string]desktopSession
-	eventPumps      map[string]eventPump
-	eventCursors    map[string]int64
-	eventPumpLogAt  map[string]time.Time
-	webhookQueue    chan webhookEventDelivery
-	webhookCancel   context.CancelFunc
-	lifecycleCtx    context.Context
-	lifecycleCancel context.CancelFunc
-	eventWG         sync.WaitGroup
-	snapshotMu      sync.Mutex
-	snapshotBusy    map[string]chan struct{}
-	snapshotRefs    sync.Mutex
-	pruneMu         sync.Mutex
-	pruneRetryAt    map[string]time.Time
-	pruneLastAt     map[string]time.Time // In-memory throttle resets when the server restarts.
-	closed          bool
-	now             func() time.Time
-	snapshotChanged map[string]int
-	snapshotNextAt  map[string]time.Time
-	orphanLogMu     sync.Mutex
-	orphanLogAt     map[string]time.Time
-	operationMu     sync.RWMutex
-	operations      map[string]operationStatus
-	apiUsageMu      sync.Mutex
-	apiUsagePending map[string]int64
-	healthMu        sync.RWMutex
-	healthSnapshots map[string]healthSnapshot
-	idleCPUMu       sync.Mutex
-	idleCPUSamples  map[string][]idleCPUSample
-	reconcileGetBox func(context.Context, string) (store.BoxRecord, error)
+	store                *store.Store
+	hub                  *tunnel.Hub
+	secrets              *secretBox
+	adminToken           string
+	storageMu            sync.RWMutex
+	storage              storageConfig
+	imageMu              sync.RWMutex
+	images               defaultImageConfig
+	cfg                  Config
+	api                  http.Handler
+	agent                http.Handler
+	platformMu           sync.Mutex
+	desktopRoutes        map[string]desktopRouteState
+	desktopSessions      map[string]desktopSession
+	eventPumps           map[string]eventPump
+	eventCursors         map[string]int64
+	eventPumpLogAt       map[string]time.Time
+	webhookQueue         chan webhookEventDelivery
+	webhookCancel        context.CancelFunc
+	lifecycleCtx         context.Context
+	lifecycleCancel      context.CancelFunc
+	eventWG              sync.WaitGroup
+	snapshotMu           sync.Mutex
+	snapshotBusy         map[string]chan struct{}
+	snapshotRefs         sync.Mutex
+	pruneMu              sync.Mutex
+	pruneRetryAt         map[string]time.Time
+	pruneLastAt          map[string]time.Time // In-memory throttle resets when the server restarts.
+	closed               bool
+	now                  func() time.Time
+	snapshotChanged      map[string]int
+	snapshotNextAt       map[string]time.Time
+	orphanLogMu          sync.Mutex
+	orphanLogAt          map[string]time.Time
+	operationMu          sync.RWMutex
+	operations           map[string]operationStatus
+	apiUsageMu           sync.Mutex
+	apiUsagePending      map[string]int64
+	healthMu             sync.RWMutex
+	healthSnapshots      map[string]healthSnapshot
+	idleCPUMu            sync.Mutex
+	idleCPUSamples       map[string][]idleCPUSample
+	reconcileGetBox      func(context.Context, string) (store.BoxRecord, error)
 	authLimitMu          sync.Mutex
 	authIPAttempts       map[string][]time.Time
 	authEmailFails       map[string][]time.Time
@@ -124,13 +124,13 @@ func New(cfg Config) (*Server, error) {
 		cfg.PublicURL = "http://localhost:8080"
 	}
 	if cfg.Image == "" {
-		cfg.Image = "boxes/box:latest"
+		cfg.Image = "ghcr.io/tony1908/boxes-box:latest"
 	}
 	if cfg.ToolsImage == "" {
-		cfg.ToolsImage = "boxes/tools:latest"
+		cfg.ToolsImage = "ghcr.io/tony1908/boxes-tools:latest"
 	}
 	if cfg.ToolsImage == "" {
-		cfg.ToolsImage = "boxes/tools:latest"
+		cfg.ToolsImage = "ghcr.io/tony1908/boxes-tools:latest"
 	}
 	if cfg.DesktopSessionTTL <= 0 {
 		cfg.DesktopSessionTTL = 8 * time.Hour

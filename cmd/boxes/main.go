@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/boxes-oss/boxes/internal/cli"
 	"github.com/mattn/go-isatty"
+	"github.com/tony1908/boxes-oss/internal/cli"
 )
 
 func main() {

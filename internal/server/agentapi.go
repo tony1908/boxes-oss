@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/types"
 	"github.com/coder/websocket"
+	"github.com/tony1908/boxes-oss/internal/types"
 )
 
 // providerModels is a static catalog; refresh it when harness model catalogs change.

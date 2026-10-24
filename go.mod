@@ -1,4 +1,4 @@
-module github.com/boxes-oss/boxes
+module github.com/tony1908/boxes-oss
 
 go 1.26.0
 

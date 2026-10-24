@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/types"
+	"github.com/tony1908/boxes-oss/internal/types"
 )
 
 func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) {

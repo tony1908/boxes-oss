@@ -1,19 +1,171 @@
 # boxes-oss
 
-Self-hosted sandboxes for AI agents on a single VM.
+Boxes is a self-hosted sandbox service for AI agents. It runs on a single Ubuntu
+or Debian VM and gives each agent a full Linux box: an XFCE desktop, sudo, Docker
+inside the box (via Sysbox), SSH, and preinstalled coding-agent tooling. Boxes
+can be created, stopped with a snapshot, resumed, forked, and deleted through a
+web UI, a CLI, or the HTTP API.
+
+## Features
+
+- Full Ubuntu boxes with a web desktop, SSH access, and Docker-in-box (Sysbox).
+- Box sizes from `xsmall` (1 CPU, 2 GiB) to `xlarge` (16 CPU, 32 GiB).
+- Auto-stop timers (`--ttl`, `--no-auto-stop`) and idle stop (`--idle-stop`).
+- Filesystem snapshots taken periodically and on stop, with `resume` and `fork`.
+- Named snapshots, snapshot download, and a local or S3-compatible restic repository.
+- Agent prompts (`boxes prompt`) for claude, codex, opencode, pi, prime, and kimi,
+  with steering, interrupt, event streaming, and optional stop-when-done.
+- Desktop sessions, public or private host ports (`boxes host`), and local port
+  forwarding (`boxes forward`).
+- File push/pull, command execution, and detached processes.
+- Versioned environments (named documents applied at box creation), webhooks, and API keys.
+- Activity log, per-box usage, and optional cost estimates from hourly pricing.
+- Owner and user accounts, with owners creating later accounts.
+
+## Requirements
+
+- Ubuntu or Debian VM, `amd64` or `arm64`, with root access.
+- Ports **80** and **443** open to the internet (Traefik serves HTTPS and the
+  Let's Encrypt HTTP-01 challenge on port 80).
+- A DNS name that points at the VM for `--domain`: your own domain, or a sslip.io
+  name such as `boxes.203.0.113.10.sslip.io`.
+- CPU and RAM sized for the boxes you run. The installer sets no hard minimum.
+  The server admits a box only with headroom of the larger of 15% of RAM or 1 GiB,
+  and assumes at least 300 MiB per box. If the host has no swap, the installer
+  adds up to 8 GiB.
+
+The installer installs Docker, Sysbox, restic, and Traefik. See
+[docs/self-hosting.md](docs/self-hosting.md#requirements) for details.
+
+## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/boxes-oss/boxes/main/install/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
+  | sudo bash -s -- --domain boxes.example.com --email ops@example.com
 ```
 
-CLI install (sh):
+`--domain` and `--email` are required. When the installer finishes it prints a
+one-time owner setup link:
+
+```
+Owner setup link (one time): https://boxes.example.com/signup/?setup=<token>
+```
+
+Open the link, create the owner account (password of at least 12 characters),
+then sign in at `https://boxes.example.com/login/`. The setup token is also in
+`/var/lib/boxes/admin.token`. Full flags and first-login steps are in
+[docs/self-hosting.md](docs/self-hosting.md#install).
+
+## Install the CLI
+
+The server publishes the CLI installers at `/install/cli.sh` and `/install/cli.ps1`.
+
+macOS and Linux:
 
 ```sh
-curl -fsSL https://<server>/install/cli.sh | sh
+curl -fsSL https://boxes.example.com/install/cli.sh | sh
 ```
 
-CLI install (PowerShell):
+Windows (PowerShell):
 
 ```powershell
-irm https://<server>/install/cli.ps1 | iex
+irm https://boxes.example.com/install/cli.ps1 | iex
 ```
+
+Then log in with the owner account or an API key:
+
+```sh
+boxes login --server https://boxes.example.com --email you@example.com
+boxes login --server https://boxes.example.com --key-stdin   # reads an API key from stdin
+```
+
+## CLI quickstart
+
+```sh
+boxes new --type small --ttl 3600        # create a box (it becomes "current")
+boxes exec current -- uname -a           # run a command
+boxes push current ./project --to /config/project
+boxes desktop current                    # open the desktop session
+boxes prompt current "summarize the repo" --provider claude
+boxes stop current                       # snapshot, then stop
+boxes resume current                     # restore from the latest snapshot
+boxes fork current --ttl 1800            # new box from a fresh snapshot of this one
+boxes delete current --yes
+```
+
+The full command reference is in [docs/cli.md](docs/cli.md).
+
+## Upgrade
+
+On an existing server, refresh the server, agent, and CLI binaries. Your
+`/etc/boxes` settings are kept:
+
+```sh
+sudo bash install/install.sh --upgrade
+```
+
+or, through the installer URL:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
+  | sudo bash -s -- --upgrade
+```
+
+Sysbox version changes restart Docker and need `--allow-runtime-restart`; see
+[docs/self-hosting.md](docs/self-hosting.md#upgrading).
+
+## Development
+
+Build and check the Go code:
+
+```sh
+go build ./...
+go vet ./...
+go test ./...
+```
+
+Build the web UI (it is embedded into the server through `make web`):
+
+```sh
+pnpm --dir web build
+```
+
+Build the box and tools images:
+
+```sh
+docker build -f images/box/Dockerfile -t boxes/box:dev .
+docker build -f images/tools/Dockerfile -t boxes/tools:dev .
+```
+
+Run the end-to-end scripts (they start a local stack with Docker):
+
+- `scripts/e2e-local.sh`: creates a box, runs commands, checks stop, resume,
+  fork, and desktop routing. Requires `docker`, `go`, `jq`, and `curl`.
+- `scripts/e2e-agents.sh`: builds the web UI and runs the agent-facing checks
+  against the local stack.
+- `scripts/e2e-remote.sh`: runs the same checks against a live server. Set
+  `BOXES_URL` (HTTPS), `BOXES_EMAIL`, and `BOXES_PASSWORD` or `BOXES_PASSWORD_FILE`.
+  `BOXES_SSH_HOST=root@<host>` is optional.
+
+Release binaries and the CLI matrix are built with `make cli-binaries` and
+GoReleaser (`.goreleaser.yaml`).
+
+## SDKs
+
+- [TypeScript SDK](sdk/typescript/README.md)
+- [Python SDK](sdk/python/README.md)
+
+## Docs
+
+- [HTTP API](docs/api.md): routes, activity, usage, and pricing.
+- [CLI](docs/cli.md): authentication, commands, and environment overrides.
+- [Desktop sessions](docs/desktop.md): session lifetime, storage, and forward-auth.
+- [Lifecycle](docs/lifecycle.md): states, auto-stop timers, prompts, and CLI installation.
+- [Snapshots](docs/snapshots.md): capture, restore, and repositories.
+- [Self-hosting](docs/self-hosting.md): requirements, install, upgrades, storage, and capacity.
+
+Landing page: [site/index.html](site/index.html).
+
+## License
+
+MIT. See [LICENSE](LICENSE).

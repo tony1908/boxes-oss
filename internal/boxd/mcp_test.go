@@ -8,8 +8,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/boxes-oss/boxes/internal/computer"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/tony1908/boxes-oss/internal/computer"
 )
 
 type computerCommand struct {

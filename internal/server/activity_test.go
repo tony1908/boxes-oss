@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/store"
-	"github.com/boxes-oss/boxes/internal/tunnel"
-	"github.com/boxes-oss/boxes/internal/types"
 	"github.com/coder/websocket"
+	"github.com/tony1908/boxes-oss/internal/store"
+	"github.com/tony1908/boxes-oss/internal/tunnel"
+	"github.com/tony1908/boxes-oss/internal/types"
 	"golang.org/x/crypto/ssh"
 )
 

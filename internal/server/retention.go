@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/boxes-oss/boxes/internal/store"
+	"github.com/tony1908/boxes-oss/internal/store"
 )
 
 const retentionConfirmation = "delete archived sandbox data"

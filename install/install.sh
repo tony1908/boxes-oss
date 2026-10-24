@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${BOXES_GITHUB_REPO:-boxes-oss/boxes}"
+REPO="${BOXES_GITHUB_REPO:-tony1908/boxes-oss}"
 SYSBOX_VERSION="${SYSBOX_VERSION:-0.7.1}"
 DOMAIN=""
 EMAIL=""
 PUBLIC_URL=""
-IMAGE="boxes/box:latest"
+IMAGE="ghcr.io/tony1908/boxes-box:latest"
 IMAGE_CUSTOM=0
 HOST_BASE=""
 MEMORY_OVERCOMMIT="1.0"
@@ -425,8 +425,8 @@ upgrade_install() {
   configure_swap
   install -d -m 0750 /etc/boxes /var/lib/boxes
 
-  image="boxes/box:latest"
-  tools_image="boxes/tools:latest"
+  image="ghcr.io/tony1908/boxes-box:latest"
+  tools_image="ghcr.io/tony1908/boxes-tools:latest"
   env_add_default /etc/boxes/server.env BOXES_IMAGE "$image"
   env_add_default /etc/boxes/server.env BOXES_TOOLS_IMAGE "$tools_image"
   env_add_default /etc/boxes/agent.env BOXES_TOOLS_IMAGE "$tools_image"
@@ -483,8 +483,8 @@ if [[ ! "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ || ! "$EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-
   exit 2
 fi
 PUBLIC_URL="${PUBLIC_URL:-https://${DOMAIN}}"
-IMAGE="${IMAGE:-boxes/box:latest}"
-TOOLS_IMAGE="${TOOLS_IMAGE:-boxes/tools:latest}"
+IMAGE="${IMAGE:-ghcr.io/tony1908/boxes-box:latest}"
+TOOLS_IMAGE="${TOOLS_IMAGE:-ghcr.io/tony1908/boxes-tools:latest}"
 if [[ ! "$PUBLIC_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
   printf 'The public URL must be an https origin (for example, https://boxes.example.com).\n' >&2
   exit 2

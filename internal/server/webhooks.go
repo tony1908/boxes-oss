@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boxes-oss/boxes/internal/types"
+	"github.com/tony1908/boxes-oss/internal/types"
 )
 
 type webhookEventDelivery struct {

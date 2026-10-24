@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/boxes-oss/boxes/internal/types"
+	"github.com/tony1908/boxes-oss/internal/types"
 )
 
 func (s *Server) limits(w http.ResponseWriter, r *http.Request) {
