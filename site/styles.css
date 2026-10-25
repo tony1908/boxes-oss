@@ -257,6 +257,8 @@ li {
 .prompt {
   font-family: var(--font-display);
   font-size: 0.85rem;
+  /* ponytail: shrink only when the 36-char command would not fit the diagram column */
+  font-size: min(0.85rem, 3.8cqi);
   margin: 0 0 1rem;
   max-width: none;
 }
@@ -266,12 +268,12 @@ li {
   overflow: hidden;
   white-space: nowrap;
   vertical-align: bottom;
-  width: 24ch;
+  width: 36ch;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .typed {
-    animation: type 0.9s steps(24, end) both;
+    animation: type 0.9s steps(36, end) both;
   }
 
   .vps-box {
@@ -285,7 +287,7 @@ li {
     width: 0;
   }
   to {
-    width: 24ch;
+    width: 36ch;
   }
 }
 
@@ -338,6 +340,10 @@ li {
 .vps-box p {
   margin: 0;
   max-width: none;
+}
+
+.box-name {
+  font-weight: 700;
 }
 
 .tag {

@@ -44,28 +44,28 @@
       </div>
 
       <div class="diagram">
-        <p class="prompt"><span class="typed">$ boxes new --type small</span></p>
-        <section class="vps" aria-label="your-vps (Ubuntu, 4 vCPU, 8 GB): four boxes">
+        <p class="prompt"><span class="typed">$ boxes new --tag task=fix-login-bug</span></p>
+        <section class="vps" aria-label="your-vps (Ubuntu, 4 vCPU, 8 GB) running four tasks: fix-login-bug with Claude Code, ready; run-tests with Codex, network allowlist; scrape-docs with OpenCode, network denied; nightly-build with Pi, drive /mnt/cache mounted">
           <p class="vps-title">your-vps  (Ubuntu, 4 vCPU, 8 GB)</p>
           <div class="vps-grid">
             <div class="vps-box" style="--d:0">
-              <p>bx_k7m2qfwt4nca</p>
-              <p>agent  claude</p>
+              <p class="box-name">fix-login-bug</p>
+              <p>agent claude</p>
               <p><span class="tag">ready</span></p>
             </div>
             <div class="vps-box" style="--d:1">
-              <p>bx_r3d7ptx2lyv6</p>
-              <p>agent  codex</p>
+              <p class="box-name">run-tests</p>
+              <p>agent codex</p>
               <p>network: allowlist</p>
             </div>
             <div class="vps-box" style="--d:2">
-              <p>bx_w5nhcq4ma7ej</p>
-              <p>agent  opencode</p>
+              <p class="box-name">scrape-docs</p>
+              <p>agent opencode</p>
               <p><span class="deny">network: deny-all</span></p>
             </div>
             <div class="vps-box" style="--d:3">
-              <p>bx_b2jt6kzsf4uq</p>
-              <p>agent  pi</p>
+              <p class="box-name">nightly-build</p>
+              <p>agent pi</p>
               <p>drive: /mnt/cache</p>
             </div>
           </div>
