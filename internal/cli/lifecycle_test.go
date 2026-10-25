@@ -31,7 +31,7 @@ func TestNewLifecycleOptionsSaveCurrentID(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decode body: %v", err)
 		}
-		_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_created","state":"ready"}}`)
+		_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_creatednew22","state":"ready"}}`)
 	}))
 	defer server.Close()
 
@@ -52,7 +52,7 @@ func TestNewLifecycleOptionsSaveCurrentID(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	if config["current"] != "bx_created" {
+	if config["current"] != "bx_creatednew22" {
 		t.Fatalf("current = %v, want created sandbox ID", config["current"])
 	}
 }
@@ -445,7 +445,7 @@ func TestStatusLogoutAndForkTTL(t *testing.T) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
 		if r.Method == http.MethodPost {
 			_ = json.NewDecoder(r.Body).Decode(&forkBody)
-			_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_forked","state":"ready"}}`)
+			_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_forkedbox234","state":"ready"}}`)
 			return
 		}
 		_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_current","state":"ready"}}`)
@@ -470,7 +470,7 @@ func TestStatusLogoutAndForkTTL(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	if config["current"] != "bx_forked" {
+	if config["current"] != "bx_forkedbox234" {
 		t.Fatalf("current after fork = %v", config["current"])
 	}
 	if forkBody["ttlSeconds"] != float64(600) {
@@ -552,14 +552,14 @@ func TestTagFlagsOnNewListAndUpdate(t *testing.T) {
 		}
 		bodies = append(bodies, body)
 		if r.Method == http.MethodGet {
-			_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_tagged","tags":{"team":"agents","tier":"old"}}}`)
+			_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_taggedbox234","tags":{"team":"agents","tier":"old"}}}`)
 			return
 		}
-		_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_tagged","state":"ready"}}`)
+		_, _ = io.WriteString(w, `{"sandbox":{"id":"bx_taggedbox234","state":"ready"}}`)
 	}))
 	defer server.Close()
 	configPath := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"server":"`+server.URL+`","token":"test","current":"bx_tagged"}`), 0600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"server":"`+server.URL+`","token":"test","current":"bx_taggedbox234"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: configPath, HTTPClient: server.Client()}
@@ -580,7 +580,7 @@ func TestTagFlagsOnNewListAndUpdate(t *testing.T) {
 		t.Errorf("list query = %q", queries[1])
 	}
 	// update --tag: GET current tags, then PATCH the merged map.
-	if methods[2] != "GET /api/v1/sandboxes/bx_tagged" || methods[3] != "PATCH /api/v1/sandboxes/bx_tagged" {
+	if methods[2] != "GET /api/v1/sandboxes/bx_taggedbox234" || methods[3] != "PATCH /api/v1/sandboxes/bx_taggedbox234" {
 		t.Fatalf("update requests = %v", methods[2:4])
 	}
 	merged := bodies[3]["tags"].(map[string]any)

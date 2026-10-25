@@ -35,6 +35,15 @@ func (c *CLI) pull(ctx context.Context, args []string) error {
 		}
 		return fmt.Errorf("usage: boxes pull <id> <path> [-o dest]")
 	}
+	if err := c.fetchArtifact(ctx, id, source, dest); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(c.Out, "Downloaded %s to %s\n", source, dest)
+	return err
+}
+
+// fetchArtifact downloads source from the box to dest. A gzip tar response is extracted into dest as a directory.
+func (c *CLI) fetchArtifact(ctx context.Context, id, source, dest string) error {
 	query := url.Values{"path": []string{source}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.client.BaseURL+"/api/v1/sandboxes/"+url.PathEscape(id)+"/artifacts?"+query.Encode(), nil)
 	if err != nil {
@@ -48,7 +57,7 @@ func (c *CLI) pull(ctx context.Context, args []string) error {
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		data, _ := io.ReadAll(response.Body)
-		return fmt.Errorf("server returned %s: %s", response.Status, strings.TrimSpace(string(data)))
+		return &statusError{code: response.StatusCode, status: response.Status, message: strings.TrimSpace(string(data))}
 	}
 	if response.Header.Get("Content-Type") == "application/gzip" {
 		if err := os.MkdirAll(dest, 0o755); err != nil {
@@ -72,8 +81,7 @@ func (c *CLI) pull(ctx context.Context, args []string) error {
 	if _, err = io.Copy(out, response.Body); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(c.Out, "Downloaded %s to %s\n", source, dest)
-	return err
+	return nil
 }
 
 func extractArtifactTar(reader io.Reader, destination string) error {

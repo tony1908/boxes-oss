@@ -89,6 +89,13 @@ machine-readable output; JSON output is automatic when stdout is not a TTY.
 - `boxes kill <id> <processId> [--signal TERM|KILL|INT|HUP|QUIT|USR1|USR2]` signals it.
 - `exec` and `logs -f` exit with the remote command's exit code; other failures exit 1.
 
+## Desktop and GUI apps
+
+- The box runs an XFCE desktop on display `:1`. To launch a GUI app on it: `boxes exec <id> --desktop --detach -- ./my-app`. `--desktop` sets `DISPLAY=:1` and the session's bus and runtime variables; it fails with `desktop_not_running` if the session is down, and it runs as user `abc` only.
+- `boxes screenshot <id> -o shot.png` captures the full desktop to a PNG and downloads it. Without `-o` the file is `screenshot-<id>.png`. Look at it to check GUI state.
+- `boxes desktop <id>` prints a desktop URL and opens it in a browser (`boxes browser <id>` opens the browser mode). Don't paste the URL into files.
+- Every command accepts `--help` (or `-h`) and prints its usage without calling the server; `boxes help <command>` does the same.
+
 ## Snapshots, images, usage
 
 - `boxes new --keep-snapshots N` (or `update`) sets how many automatic snapshots to keep (1 to 50, default 5). `boxes snapshots <id>` lists them; `boxes restore <id> <snapshotId>` rolls the box back to one.

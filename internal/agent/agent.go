@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -126,6 +127,7 @@ type execRequest struct {
 	TimeoutSeconds int               `json:"timeoutSeconds"`
 	Detached       bool              `json:"detached"`
 	Stdin          bool              `json:"stdin"`
+	Desktop        bool              `json:"desktop"`
 }
 
 // defaultExecCWD is the working directory for a command that does not set one: the default user's
@@ -836,6 +838,10 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "stdin requires a detached command")
 		return
 	}
+	if request.Desktop && request.User != "" && request.User != "abc" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "desktop exec runs as the default user abc only")
+		return
+	}
 	if request.User == "" {
 		request.User = "abc"
 	}
@@ -850,6 +856,21 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, "exec_failed", "box user could not be resolved")
 		}
 		return
+	}
+	if request.Desktop {
+		desktop, err := a.desktopEnv(r.Context(), boxName(r.PathValue("id")))
+		if errors.Is(err, errDesktopNotRunning) {
+			writeError(w, http.StatusConflict, "desktop_not_running", "box desktop session is not running")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "exec_failed", "box desktop session could not be inspected")
+			return
+		}
+		// Request env wins over the session env, so --env can still override a variable.
+		env := maps.Clone(desktop)
+		maps.Copy(env, request.Env)
+		request.Env = env
 	}
 	if request.Cwd == "" {
 		request.Cwd = defaultExecCWD(request.User)

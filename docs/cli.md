@@ -57,7 +57,7 @@ run without a config file:
 
 ## Commands
 
-Run `boxes --help` for the command list. The full set of top-level commands is:
+Run `boxes --help` for the command list. Every command accepts `--help` or `-h` anywhere in its arguments (after a `--` separator the arguments belong to the remote command) and prints its usage without calling the server; `boxes help <command>` does the same. The full set of top-level commands is:
 
 ```
 login logout whoami new list get info status current exec ps logs kill ssh proxy scp user group
@@ -89,6 +89,7 @@ boxes conversations <id|current>
 boxes snapshots <id|current>
 boxes usage <id|current>
 boxes desktop <id> [--public] [--profile NAME]
+boxes screenshot <id|current> [-o file.png]  # capture the desktop to a PNG
 boxes browser <id> [--public] [--profile NAME]
 boxes host <id> <port> [--private]
 boxes forward <id|current> <port> [--local-port N]
@@ -186,6 +187,7 @@ Flags may appear before or after the box ID, but must come before `--`:
 - `--user NAME` runs as a box user (default `abc`).
 - `--cwd DIR` sets the working directory inside the box.
 - `--env KEY=VALUE` (repeatable) sets environment variables for the command.
+- `--desktop` runs the command inside the box desktop session (`DISPLAY=:1` plus the session's bus and runtime variables), so GUI apps appear on the desktop. Use it with `--detach` for apps that keep running. It runs as `abc` only and returns `409 desktop_not_running` when no session is up.
 - `--detach` starts the command in the background and prints its processId. `boxes ps <id>` lists detached commands, `boxes exec <id> --status PID` shows one, `boxes logs <id> PID [-f]` prints its output (`-f` follows until it exits), and `boxes kill <id> PID [--signal TERM]` signals it.
 
 `exec` exits with the command's exit code, so `boxes exec` works in shell conditions and CI. `logs -f` does the same once the command has exited. Other CLI failures exit with 1.
@@ -233,6 +235,11 @@ processes only; a process that is already running keeps its old groups.
 are reserved. See the API docs for the isolation model.
 
 ### Desktop, browser, and forwarding
+
+Launch a GUI app on the desktop with `boxes exec <id> --desktop --detach -- ./my-app`.
+`boxes screenshot <id> [-o file.png]` captures the full desktop (display `:1`) to a PNG
+and downloads it; the default file is `screenshot-<id>.png`. The temporary capture in the
+box is removed after the download.
 
 `desktop` opens the box's XFCE desktop session in the browser. `browser` opens
 the same session in browser mode and accepts `--profile`. `--public` creates a

@@ -86,7 +86,7 @@ func (c *Client) Do(ctx context.Context, method, endpoint string, body any, head
 		if message == "" {
 			message = http.StatusText(response.StatusCode)
 		}
-		return nil, fmt.Errorf("server returned %s: %s", response.Status, message)
+		return nil, &statusError{code: response.StatusCode, status: response.Status, message: message}
 	}
 	return data, nil
 }
@@ -129,7 +129,7 @@ func (c *Client) DoReader(ctx context.Context, method, endpoint string, body io.
 		if message == "" {
 			message = http.StatusText(response.StatusCode)
 		}
-		return nil, fmt.Errorf("server returned %s: %s", response.Status, message)
+		return nil, &statusError{code: response.StatusCode, status: response.Status, message: message}
 	}
 	return data, nil
 }
@@ -170,7 +170,7 @@ func (c *Client) Download(ctx context.Context, endpoint string, dst io.Writer, p
 		if message == "" {
 			message = http.StatusText(response.StatusCode)
 		}
-		return fmt.Errorf("server returned %s: %s", response.Status, message)
+		return &statusError{code: response.StatusCode, status: response.Status, message: message}
 	}
 	buffer := make([]byte, 32*1024)
 	var total int64
@@ -218,4 +218,15 @@ func (c *Client) request(ctx context.Context, method, endpoint string, body, res
 func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, headers http.Header) (json.RawMessage, error) {
 	data, err := c.Do(ctx, method, endpoint, body, headers)
 	return json.RawMessage(data), err
+}
+
+// statusError is a non-2xx API response. Its text is unchanged; callers can inspect the code.
+type statusError struct {
+	code    int
+	status  string
+	message string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("server returned %s: %s", e.status, e.message)
 }

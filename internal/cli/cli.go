@@ -56,10 +56,27 @@ type CLI struct {
 	jsonOutput bool
 	client     *Client
 	config     Config
+	boxRef     string // box resolved by boxID during the current Run
 }
 
-// Run executes one boxes command.
+// Run executes one boxes command. The current box is updated only when the command succeeds.
 func (c *CLI) Run(ctx context.Context, args []string) error {
+	c.boxRef = ""
+	err := c.dispatch(ctx, args)
+	if err != nil {
+		var status *statusError
+		if c.boxRef != "" && errors.As(err, &status) && status.code == http.StatusNotFound && strings.Contains(status.message, "resource not found") {
+			return fmt.Errorf("box %s not found", c.boxRef)
+		}
+		return err
+	}
+	if c.boxRef != "" {
+		return c.setCurrent(c.boxRef)
+	}
+	return nil
+}
+
+func (c *CLI) dispatch(ctx context.Context, args []string) error {
 	c.defaults()
 	c.jsonOutput = false
 	if len(args) == 0 {
@@ -72,9 +89,20 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: boxes [--json] <command> [arguments]")
 	}
-	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if args[0] == "-h" || args[0] == "--help" {
 		c.printUsage()
 		return nil
+	}
+	if args[0] == "help" {
+		if len(args) > 1 {
+			return c.printCommandUsage(args[1])
+		}
+		c.printUsage()
+		return nil
+	}
+	// prompt prints its own help with the model catalog.
+	if _, known := commandUsage[args[0]]; known && args[0] != "prompt" && wantsHelp(args[1:]) {
+		return c.printCommandUsage(args[0])
 	}
 	if args[0] == "skill" {
 		return c.skill(ctx, args[1:])
@@ -140,6 +168,8 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.push(ctx, args[1:])
 	case "pull":
 		return c.pull(ctx, args[1:])
+	case "screenshot":
+		return c.screenshot(ctx, args[1:])
 	case "prompt":
 		return c.prompt(ctx, args[1:])
 	case "events":
@@ -1050,6 +1080,7 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	statusPID := fs.String("status", "", "show detached process status")
 	runAs := fs.String("user", "", "run the command as this box user (default abc)")
 	cwd := fs.String("cwd", "", "working directory for the command inside the box")
+	desktop := fs.Bool("desktop", false, "run the command in the box desktop session (DISPLAY=:1); default user abc only")
 	var envVars stringList
 	fs.Var(&envVars, "env", "environment variable KEY=VALUE for the command (repeatable)")
 	// Options may appear before or after the box ID. The box ID is the first positional argument; with
@@ -1116,6 +1147,9 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	}
 	if *cwd != "" {
 		value.(map[string]any)["cwd"] = *cwd
+	}
+	if *desktop {
+		value.(map[string]any)["desktop"] = true
 	}
 	if len(envVars) > 0 {
 		env := make(map[string]string, len(envVars))
@@ -1507,7 +1541,7 @@ func externalCommand(name, goos string) string {
 }
 
 func (c *CLI) prompt(ctx context.Context, args []string) error {
-	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+	if wantsHelp(args) {
 		catalog, err := c.client.Do(ctx, http.MethodGet, "/provider-models", nil, nil)
 		if err != nil {
 			return err
@@ -2546,7 +2580,7 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env drive user group")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull screenshot prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env drive user group")
 	_, _ = fmt.Fprintln(c.Out, "Drives: boxes drive create|list|rm|fork; boxes new --mount DRIVE:PATH[:ro] (PATH under /mnt)")
 	_, _ = fmt.Fprintln(c.Out, "Users: boxes user add|list|rm <box> [name]; boxes group add <box> <group>; boxes group member add|rm <box> <group> <user>; boxes exec --user <name>")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
@@ -2584,6 +2618,7 @@ func requiredID(value string) (string, error) {
 	return value, nil
 }
 
+// boxID resolves a box argument. The current pointer is saved by Run after the command succeeds.
 func (c *CLI) boxID(value string) (string, error) {
 	if value == "current" {
 		value = c.config.Current
@@ -2591,17 +2626,22 @@ func (c *CLI) boxID(value string) (string, error) {
 			return "", errors.New("no current box; create or use a box first")
 		}
 	}
+	if strings.HasPrefix(value, "-") {
+		return "", fmt.Errorf("invalid box ID %q; expected an ID or current (see boxes <command> --help)", value)
+	}
 	id, err := requiredID(value)
 	if err != nil {
 		return "", err
 	}
-	if err := c.setCurrent(id); err != nil {
-		return "", err
-	}
+	c.boxRef = id
 	return id, nil
 }
 
+// setCurrent stores id as the current box. Values that are not box IDs are ignored.
 func (c *CLI) setCurrent(id string) error {
+	if !boxIDPattern.MatchString(id) {
+		return nil
+	}
 	config := c.config
 	config.Current = id
 	return c.saveConfig(config)
