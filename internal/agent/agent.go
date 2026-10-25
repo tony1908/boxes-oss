@@ -124,6 +124,15 @@ type execRequest struct {
 	Stdin          bool              `json:"stdin"`
 }
 
+// defaultExecCWD is the working directory for a command that does not set one: the default user's
+// home is /config, and a user created with the users API starts in its own /home/<user>.
+func defaultExecCWD(user string) string {
+	if user == "" || user == "abc" || user == "root" {
+		return "/config"
+	}
+	return "/home/" + user
+}
+
 type cappedBuffer struct {
 	bytes.Buffer
 	limit int
@@ -747,7 +756,7 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 		request.User = "abc"
 	}
 	if request.Cwd == "" {
-		request.Cwd = "/config"
+		request.Cwd = defaultExecCWD(request.User)
 	}
 	timeout := time.Duration(request.TimeoutSeconds) * time.Second
 	if timeout == 0 {

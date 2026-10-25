@@ -173,3 +173,34 @@ def test_drives_manage_volumes_and_mounts_use_wire_names():
     assert json.loads(requests[0].read()) == {"name":"data"}
     assert json.loads(requests[2].read()) == {"name":"copy"}
     assert json.loads(requests[4].read())["mounts"] == [{"drive":"cache","path":"/mnt/cache","readOnly":True}]
+
+def test_users_and_groups_use_wire_names_and_exec_runs_as_user():
+    requests=[]
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/users") and request.method == "GET":
+            return httpx.Response(200,json={"users":[{"username":"alice","homeDir":"/home/alice","groups":["alice"]}]})
+        if request.url.path.endswith("/users") and request.method == "POST":
+            return httpx.Response(201,json={"username":"alice","homeDir":"/home/alice"})
+        if request.url.path.endswith("/groups") and request.method == "POST":
+            return httpx.Response(201,json={"name":"team","sharedDir":"/shared/team"})
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.url.path.endswith("/commands"):
+            return httpx.Response(200,json={"exitCode":0,"stdout":"alice\n","stderr":""})
+        return httpx.Response(200,json={"username":"alice","group":"team"})
+    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+        assert c.sandboxes.create_user("bx_u","alice")["homeDir"] == "/home/alice"
+        assert c.sandboxes.list_users("bx_u") == [{"username":"alice","homeDir":"/home/alice","groups":["alice"]}]
+        assert c.sandboxes.create_group("bx_u","team")["sharedDir"] == "/shared/team"
+        c.sandboxes.add_user_to_group("bx_u","team","alice")
+        c.sandboxes.remove_user_from_group("bx_u","team","alice")
+        c.sandboxes.delete_user("bx_u","alice")
+        assert c.exec.run("bx_u",["id","-un"],user="alice")["stdout"] == "alice\n"
+    assert [(r.method, r.url.path) for r in requests] == [
+        ("POST","/api/v1/sandboxes/bx_u/users"),("GET","/api/v1/sandboxes/bx_u/users"),("POST","/api/v1/sandboxes/bx_u/groups"),
+        ("PUT","/api/v1/sandboxes/bx_u/groups/team/members/alice"),("DELETE","/api/v1/sandboxes/bx_u/groups/team/members/alice"),
+        ("DELETE","/api/v1/sandboxes/bx_u/users/alice"),("POST","/api/v1/sandboxes/bx_u/commands")]
+    assert json.loads(requests[0].read()) == {"username":"alice"}
+    assert json.loads(requests[2].read()) == {"name":"team"}
+    assert json.loads(requests[6].read()) == {"cmd":["id","-un"],"user":"alice"}

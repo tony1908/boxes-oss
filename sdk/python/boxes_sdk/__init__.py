@@ -165,6 +165,28 @@ class _Sandboxes(_Namespace):
         if operation and operation.get("status") == "failed":
             raise BoxesError(500, "operation_failed", operation.get("error", "Operation failed"))
 
+    # Users and groups are Linux accounts inside the box, persisted with its filesystem. Homes are /home/<name> (mode 770); shared dirs are /shared/<group> (setgid).
+    def create_user(self, sandbox_id: str, name: str) -> Any:
+        """Create an isolated user with a home at /home/<name>. Fails with 409 user_exists."""
+        return self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/users", json={"username": name})
+
+    def list_users(self, sandbox_id: str) -> Any:
+        return self._c._request("GET", f"/sandboxes/{self._id(sandbox_id)}/users")["users"]
+
+    def delete_user(self, sandbox_id: str, name: str) -> Any:
+        return self._c._request("DELETE", f"/sandboxes/{self._id(sandbox_id)}/users/{self._id(name)}")
+
+    def create_group(self, sandbox_id: str, name: str) -> Any:
+        """Create a shared group with a setgid directory at /shared/<name>."""
+        return self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/groups", json={"name": name})
+
+    def add_user_to_group(self, sandbox_id: str, group: str, name: str) -> Any:
+        return self._c._request("PUT", f"/sandboxes/{self._id(sandbox_id)}/groups/{self._id(group)}/members/{self._id(name)}")
+
+    def remove_user_from_group(self, sandbox_id: str, group: str, name: str) -> Any:
+        """Takes effect for the user's new processes only."""
+        return self._c._request("DELETE", f"/sandboxes/{self._id(sandbox_id)}/groups/{self._id(group)}/members/{self._id(name)}")
+
 
 class Command:
     """A detached command started with exec.detached. Output, signals, and stdin go through its sandbox."""
@@ -208,7 +230,10 @@ class Command:
 
 
 class _Exec(_Namespace):
-    def run(self, sandbox_id: str, cmd: Any, **options: Any) -> Any:
+    def run(self, sandbox_id: str, cmd: Any, *, user: Optional[str] = None, **options: Any) -> Any:
+        """user runs the command as a box user (default abc); the working directory defaults to that user's home."""
+        if user is not None:
+            options["user"] = user
         return self._c._request("POST", f"/sandboxes/{self._id(sandbox_id)}/commands", json={"cmd": cmd, **options})
 
     def detached(self, sandbox_id: str, cmd: Any, **options: Any) -> "Command":

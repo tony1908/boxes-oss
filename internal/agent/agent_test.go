@@ -1293,6 +1293,38 @@ func TestExecAPIUsesArgvAndDefaultUserAndWorkingDirectory(t *testing.T) {
 	}
 }
 
+func TestExecDefaultCWDFollowsUser(t *testing.T) {
+	for user, want := range map[string]string{"": "/config", "abc": "/config", "root": "/config", "alice": "/home/alice"} {
+		if got := defaultExecCWD(user); got != want {
+			t.Fatalf("defaultExecCWD(%q) = %q, want %q", user, got, want)
+		}
+	}
+	var dockerCalls []callRecord
+	dockerExec := testExecutor{calls: &dockerCalls, command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
+		if len(argv) > 1 && argv[1] == "inspect" {
+			return 1, nil
+		}
+		return 0, nil
+	}}
+	agent := New(Config{NodeID: "nd_test"}, dockercli.New(dockerExec), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	request := httptest.NewRequest(http.MethodPost, "/v1/boxes/bx_abcdefgh2345/exec", strings.NewReader(`{"cmd":["id"],"user":"alice"}`))
+	response := httptest.NewRecorder()
+	agent.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d/%s", response.Code, response.Body.String())
+	}
+	var execCall []string
+	for _, call := range dockerCalls {
+		if len(call.argv) > 1 && call.argv[1] == "exec" {
+			execCall = call.argv
+		}
+	}
+	want := []string{"docker", "exec", "--user", "alice", "--workdir", "/home/alice", "box-bx_abcdefgh2345", "id"}
+	if !reflect.DeepEqual(execCall, want) {
+		t.Fatalf("docker exec argv = %#v, want %#v", execCall, want)
+	}
+}
+
 func testTar(t *testing.T, name, content string) []byte {
 	t.Helper()
 	var buffer bytes.Buffer

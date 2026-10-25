@@ -187,3 +187,37 @@ test('sends drive mounts on sandbox create', async t => {
   await c.sandboxes.create({ type: 'small', mounts: [{ drive: 'data', path: '/mnt/data' }, { drive: 'cache', path: '/mnt/cache', readOnly: true }] });
   assert.deepEqual(seen[0].mounts, [{ drive: 'data', path: '/mnt/data' }, { drive: 'cache', path: '/mnt/cache', readOnly: true }]);
 });
+
+test('manages users, groups, and runs commands as a user', async t => {
+  const seen = [];
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    seen.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : undefined });
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/v1/sandboxes/bx_u/users' && req.method === 'GET') { res.end(JSON.stringify({ users: [{ username: 'alice', homeDir: '/home/alice', groups: ['alice'] }] })); return; }
+    if (req.url === '/api/v1/sandboxes/bx_u/users' && req.method === 'POST') { res.writeHead(201); res.end(JSON.stringify({ username: 'alice', homeDir: '/home/alice' })); return; }
+    if (req.url === '/api/v1/sandboxes/bx_u/users/alice' && req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    if (req.url === '/api/v1/sandboxes/bx_u/groups' && req.method === 'POST') { res.writeHead(201); res.end(JSON.stringify({ name: 'team', sharedDir: '/shared/team' })); return; }
+    if (req.url === '/api/v1/sandboxes/bx_u/groups/team/members/alice' && req.method === 'PUT') { res.end(JSON.stringify({ group: 'team', username: 'alice' })); return; }
+    if (req.url === '/api/v1/sandboxes/bx_u/groups/team/members/alice' && req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    if (req.url === '/api/v1/sandboxes/bx_u/commands') { res.end(JSON.stringify({ exitCode: 0, stdout: 'alice\n', stderr: '' })); return; }
+    res.writeHead(404); res.end('{}');
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r)); t.after(() => server.close());
+  const c = new Boxes({ baseUrl: `http://127.0.0.1:${server.address().port}`, apiKey: 'secret' });
+  assert.equal((await c.sandboxes.createUser('bx_u', 'alice')).homeDir, '/home/alice');
+  assert.deepEqual(await c.sandboxes.listUsers('bx_u'), [{ username: 'alice', homeDir: '/home/alice', groups: ['alice'] }]);
+  assert.equal((await c.sandboxes.createGroup('bx_u', 'team')).sharedDir, '/shared/team');
+  assert.equal((await c.sandboxes.addUserToGroup('bx_u', 'team', 'alice')).username, 'alice');
+  await c.sandboxes.removeUserFromGroup('bx_u', 'team', 'alice');
+  await c.sandboxes.deleteUser('bx_u', 'alice');
+  assert.equal((await c.exec.run('bx_u', ['id', '-un'], { user: 'alice' })).stdout, 'alice\n');
+  assert.deepEqual(seen.map(s => `${s.method} ${s.url}`), [
+    'POST /api/v1/sandboxes/bx_u/users', 'GET /api/v1/sandboxes/bx_u/users', 'POST /api/v1/sandboxes/bx_u/groups',
+    'PUT /api/v1/sandboxes/bx_u/groups/team/members/alice', 'DELETE /api/v1/sandboxes/bx_u/groups/team/members/alice',
+    'DELETE /api/v1/sandboxes/bx_u/users/alice', 'POST /api/v1/sandboxes/bx_u/commands']);
+  assert.deepEqual(seen[0].body, { username: 'alice' });
+  assert.deepEqual(seen[2].body, { name: 'team' });
+  assert.deepEqual(seen[6].body, { cmd: ['id', '-un'], user: 'alice' });
+});

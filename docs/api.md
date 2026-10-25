@@ -18,6 +18,7 @@ Every route except the public ones below requires authentication.
 | Commands and files | `POST /sandboxes/{id}/commands`, `GET /sandboxes/{id}/commands`, `GET /sandboxes/{id}/commands/{pid}`, `GET /sandboxes/{id}/commands/{pid}/logs`, `POST /sandboxes/{id}/commands/{pid}/kill`, `POST /sandboxes/{id}/commands/{pid}/stdin`, `GET`/`PUT /sandboxes/{id}/files`, `PUT /sandboxes/{id}/archive`, `GET /sandboxes/{id}/artifacts` |
 | Agent prompts | `POST /sandboxes/{id}/prompt`, `POST /sandboxes/{id}/steer`, `POST /sandboxes/{id}/interrupt`, `GET /sandboxes/{id}/conversations`, `GET /sandboxes/{id}/runs/{runId}`, `GET /sandboxes/{id}/events` |
 | Drives | `GET`/`POST /drives`, `DELETE /drives/{name}`, `POST /drives/{name}/fork` |
+| Users and groups | `GET`/`POST /sandboxes/{id}/users`, `DELETE /sandboxes/{id}/users/{username}`, `POST /sandboxes/{id}/groups`, `PUT`/`DELETE /sandboxes/{id}/groups/{name}/members/{username}` |
 | Snapshots | `GET /sandboxes/{id}/snapshots`, `GET /sandboxes/{id}/snapshots/latest`, `DELETE /sandboxes/{id}/snapshots/{snapshotId}`, `GET /snapshots`, `GET /snapshots/{id}/download`, `GET /snapshots/{id}/tree`, `GET /snapshots/{id}/file`, `GET`/`POST /named-snapshots`, `GET`/`DELETE /named-snapshots/{name}` |
 | Access | `POST /sandboxes/{id}/desktop`, `GET /sandboxes/{id}/desktop`, `GET`/`POST /sandboxes/{id}/hosts`, `DELETE /sandboxes/{id}/hosts/{port}`, `POST /sandboxes/{id}/ssh-key`, `GET /sandboxes/{id}/tcp/{port}` (WebSocket), `/sandboxes/{id}/boxd/{path...}` |
 | Usage and activity | `GET /sandboxes/{id}/usage`, `GET /sandboxes/{id}/activity`, `GET`/`PUT /settings/pricing`, `GET`/`PUT /settings/retention` |
@@ -81,6 +82,20 @@ A drive is a named persistent volume. Sandboxes mount drives with `mounts` on `P
 - `POST /drives/{name}/fork` with `{"name": target}` copies the data into a new drive (`201`). It returns `409 drive_busy` while a running sandbox mounts the source read-write.
 - Forks keep only the source's read-only mounts; read-write drives are not copied.
 - Drive data persists until the drive is deleted and is not included in snapshots. There is no size quota.
+
+## Users and groups
+
+Users and groups are Linux accounts inside the box. Each change runs as root through the agent's exec endpoint, one argv per step (no shell), so names are never interpreted by a shell. Every route requires a running box (`ready` or `idle`); otherwise it returns `409 sandbox_not_running`.
+
+- `POST /sandboxes/{id}/users` with `{"username"}` runs `useradd -m -s /bin/bash`, `chmod 770 /home/<name>`, and `usermod -aG <name> abc`. It returns `201 {"username", "homeDir": "/home/<name>"}`. An existing name returns `409 user_exists`.
+- `GET /sandboxes/{id}/users` returns `{"users": [{username, homeDir, groups}]}` for accounts whose home is under `/home/`.
+- `DELETE /sandboxes/{id}/users/{username}` runs `userdel -r` (the home is removed). It returns `204`, or `404 user_not_found` when the user does not exist.
+- `POST /sandboxes/{id}/groups` with `{"name"}` runs `groupadd`, creates `/shared/<name>`, sets its group to `<name>` and mode `2770`, and adds `abc` to the group. It returns `201 {"name", "sharedDir": "/shared/<name>"}`. An existing name returns `409 group_exists`.
+- `PUT /sandboxes/{id}/groups/{name}/members/{username}` runs `usermod -aG` and returns `200 {"group", "username"}`. `DELETE` on the same path runs `gpasswd -d` and returns `204`. A missing user or group returns `404 not_found`.
+- Names match `^[a-z_][a-z0-9_-]{0,31}$`. `root` and `abc` are reserved. Invalid names return `400 invalid_user`, `invalid_group`, or `invalid_membership`.
+- Run a command as a user with `user` on `POST /sandboxes/{id}/commands`. When `cwd` is omitted, a non-default user starts in `/home/<name>`; `abc` and `root` start in `/config`.
+
+Isolation model: a home is `/home/<name>`, mode `770`, owned by the user and that user's primary group. `abc` joins the group so it can read the home. Two users cannot read each other's homes, and shared data goes in `/shared/<group>`. Setgid `2770` keeps files created there owned by the group. Membership changes apply to new processes only. A process that is already running (including `abc`'s processes) keeps its old groups until it restarts. Users, groups, and their files live in the box filesystem, so they persist across stop and resume like other system changes, and they are not part of drive data.
 
 ## Outbound network policy
 

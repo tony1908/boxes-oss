@@ -167,11 +167,22 @@ export class Boxes {
       return result.sandbox;
     },
     delete: async (id: string) => { const result = await this.request<{ operation?: Operation } | undefined>('DELETE', `/sandboxes/${this.id(id)}`); if (result?.operation) await this.pollOperation(result.operation); },
+    // Users and groups are Linux accounts inside the box, persisted with its filesystem. Homes are /home/<name> (mode 770); shared dirs are /shared/<group> (setgid).
+    /** Creates an isolated user with a home at /home/<name>. Fails with 409 user_exists. */
+    createUser: (id: string, name: string) => this.request<Row>('POST', `/sandboxes/${this.id(id)}/users`, { username: name }),
+    listUsers: async (id: string) => (await this.request<{ users: Row[] }>('GET', `/sandboxes/${this.id(id)}/users`)).users,
+    deleteUser: (id: string, name: string) => this.request<void>('DELETE', `/sandboxes/${this.id(id)}/users/${this.id(name)}`),
+    /** Creates a shared group with a setgid directory at /shared/<name>. */
+    createGroup: (id: string, name: string) => this.request<Row>('POST', `/sandboxes/${this.id(id)}/groups`, { name }),
+    addUserToGroup: (id: string, group: string, name: string) => this.request<Row>('PUT', `/sandboxes/${this.id(id)}/groups/${this.id(group)}/members/${this.id(name)}`),
+    /** Takes effect for the user's new processes only. */
+    removeUserFromGroup: (id: string, group: string, name: string) => this.request<void>('DELETE', `/sandboxes/${this.id(id)}/groups/${this.id(group)}/members/${this.id(name)}`),
   };
   exec = {
-    run: (id: string, cmd: string | string[], options: Record<string, unknown> = {}) => this.request<CommandResult>('POST', `/sandboxes/${this.id(id)}/commands`, { cmd, ...options }),
+    /** options.user runs the command as a box user (default abc); the working directory defaults to that user's home. */
+    run: (id: string, cmd: string | string[], options: Record<string, unknown> & { user?: string } = {}) => this.request<CommandResult>('POST', `/sandboxes/${this.id(id)}/commands`, { cmd, ...options }),
     /** Starts a detached command (timeoutSeconds up to 86400). Pass stdin: true to use writeStdin/closeStdin. */
-    detached: async (id: string, cmd: string | string[], options: Record<string, unknown> = {}): Promise<Command> => {
+    detached: async (id: string, cmd: string | string[], options: Record<string, unknown> & { user?: string } = {}): Promise<Command> => {
       const started = await this.request<{ processId: string }>('POST', `/sandboxes/${this.id(id)}/commands`, { cmd, ...options, detached: true });
       return new Command(this.transport, id, started.processId);
     },

@@ -60,7 +60,7 @@ run without a config file:
 Run `boxes --help` for the command list. The full set of top-level commands is:
 
 ```
-login logout whoami new list get info status current exec ps logs kill ssh proxy scp
+login logout whoami new list get info status current exec ps logs kill ssh proxy scp user group
 push pull prompt events steer interrupt conversations snapshots snapshot usage
 limits desktop browser host stop resume restore extend fork delete dashboard forward
 skill env drive
@@ -77,7 +77,7 @@ boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
 boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
 boxes info <id|current>
 boxes current
-boxes exec <id|current> [--detach] [--status PID] -- <command> [arguments]
+boxes exec <id|current> [--user NAME] [--detach] [--status PID] -- <command> [arguments]
 boxes ps <id|current>                               # detached commands for a box
 boxes logs <id|current> <processId> [-f]             # output; -f follows and exits with the command status
 boxes kill <id|current> <processId> [--signal TERM]  # signal a detached command
@@ -185,6 +185,29 @@ A drive can be mounted read-write by one box at a time; read-only mounts see
 live data from the writer. `drive rm` fails while any box mounts the drive.
 `drive fork` copies the data and fails while a running box mounts the source
 read-write. Forks keep only read-only mounts. There is no size quota.
+
+### Users and groups
+
+Each box can hold isolated Linux users and shared groups. Users run commands
+with `exec --user`; their homes are `/home/<name>` (mode 770), and `abc` can
+read them through group membership. Shared groups get `/shared/<group>`
+(setgid 2770).
+
+```
+boxes user add <box> alice
+boxes user list <box>
+boxes user rm <box> alice
+boxes group add <box> team
+boxes group member add <box> team alice
+boxes group member rm <box> team alice
+boxes exec <box> --user alice -- id -un
+```
+
+Accounts live in the box filesystem and persist across stop and resume.
+`user rm` deletes the home directory. Membership changes apply to new
+processes only; a process that is already running keeps its old groups.
+`user add` and `group add` fail with 409 if the name is taken; `root` and `abc`
+are reserved. See the API docs for the isolation model.
 
 ### Desktop, browser, and forwarding
 

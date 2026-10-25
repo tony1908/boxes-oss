@@ -185,6 +185,10 @@ func (c *CLI) Run(ctx context.Context, args []string) error {
 		return c.environment(ctx, args[1:])
 	case "drive":
 		return c.drive(ctx, args[1:])
+	case "user":
+		return c.user(ctx, args[1:])
+	case "group":
+		return c.group(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q; run boxes --help", args[0])
 	}
@@ -1041,7 +1045,7 @@ func (c *CLI) info(ctx context.Context, args []string) error {
 
 func (c *CLI) exec(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return errors.New("usage: boxes exec <id|current> [--detach] [--status PID] -- <command> [arguments]")
+		return errors.New("usage: boxes exec <id|current> [--user NAME] [--detach] [--status PID] -- <command> [arguments]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1050,6 +1054,7 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	fs := c.flagSet("exec")
 	detach := fs.Bool("detach", false, "run command in the background")
 	statusPID := fs.String("status", "", "show detached process status")
+	runAs := fs.String("user", "", "run the command as this box user (default abc)")
 	remaining := args[1:]
 	var command []string
 	if separator := indexOf(remaining, "--"); separator >= 0 {
@@ -1060,7 +1065,7 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 			return errors.New("exec options must appear before --")
 		}
 		command = remaining[separator+1:]
-	} else if len(remaining) > 0 && (remaining[0] == "--detach" || remaining[0] == "--status" || strings.HasPrefix(remaining[0], "--status=")) {
+	} else if len(remaining) > 0 && (remaining[0] == "--detach" || remaining[0] == "--status" || strings.HasPrefix(remaining[0], "--status=") || remaining[0] == "--user" || strings.HasPrefix(remaining[0], "--user=")) {
 		if err := fs.Parse(remaining); err != nil {
 			return err
 		}
@@ -1089,6 +1094,9 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	}
 	if *detach {
 		value.(map[string]any)["detached"] = true
+	}
+	if *runAs != "" {
+		value.(map[string]any)["user"] = *runAs
 	}
 	result, err := c.client.doJSON(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(id)+"/commands", value, nil)
 	if err != nil {
@@ -2505,8 +2513,9 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 
 func (c *CLI) printUsage() {
 	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
-	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env drive")
+	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env drive user group")
 	_, _ = fmt.Fprintln(c.Out, "Drives: boxes drive create|list|rm|fork; boxes new --mount DRIVE:PATH[:ro] (PATH under /mnt)")
+	_, _ = fmt.Fprintln(c.Out, "Users: boxes user add|list|rm <box> [name]; boxes group add <box> <group>; boxes group member add|rm <box> <group> <user>; boxes exec --user <name>")
 	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }

@@ -1044,6 +1044,49 @@ paths:
       summary: Remove an exposed port
       responses:
         "200": {description: Successful response}
+  /sandboxes/{id}/users:
+    get:
+      summary: List home-directory users in a running sandbox with their groups
+      responses:
+        "200": {description: "{users: [{username, homeDir, groups}]}"}
+        "409": {description: sandbox_not_running}
+    post:
+      summary: Create an isolated Linux user (useradd -m, home mode 770, abc joins the user's group)
+      responses:
+        "201": {description: "{username, homeDir}"}
+        "400": {description: invalid_user}
+        "409": {description: user_exists or sandbox_not_running}
+        "502": {description: user_create_failed}
+  /sandboxes/{id}/users/{username}:
+    delete:
+      summary: Delete a user and its home directory (userdel -r)
+      responses:
+        "204": {description: Deleted}
+        "404": {description: user_not_found}
+        "409": {description: sandbox_not_running}
+  /sandboxes/{id}/groups:
+    post:
+      summary: Create a shared group with a setgid directory at /shared/{name}
+      responses:
+        "201": {description: "{name, sharedDir}"}
+        "400": {description: invalid_group}
+        "409": {description: group_exists or sandbox_not_running}
+        "502": {description: group_create_failed}
+  /sandboxes/{id}/groups/{name}/members/{username}:
+    put:
+      summary: Add a user to a group (takes effect for the user's new processes)
+      responses:
+        "200": {description: "{group, username}"}
+        "400": {description: invalid_membership}
+        "404": {description: not_found (user or group does not exist)}
+        "409": {description: sandbox_not_running}
+    delete:
+      summary: Remove a user from a group (new processes only; running processes keep the group)
+      responses:
+        "204": {description: Removed}
+        "400": {description: invalid_membership}
+        "404": {description: not_found (user or group does not exist)}
+        "409": {description: sandbox_not_running}
   /sandboxes/{id}/ssh-key:
     post:
       summary: Add an SSH key to a sandbox
