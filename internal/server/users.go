@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/tony1908/boxes-oss/internal/types"
@@ -101,6 +102,10 @@ func parseUsers(passwd, group string) []boxUser {
 	for scanner.Scan() {
 		fields := strings.Split(scanner.Text(), ":")
 		if len(fields) < 7 || !strings.HasPrefix(fields[5], "/home/") {
+			continue
+		}
+		// System accounts such as dockremap are not box users: keep uid >= 1001 and skip nobody (65534).
+		if uid, err := strconv.Atoi(fields[2]); err != nil || uid < 1001 || uid == 65534 {
 			continue
 		}
 		groups := []string{}

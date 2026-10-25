@@ -69,6 +69,14 @@ func TestParseUsersKeepsHomeAccountsWithGroups(t *testing.T) {
 	}
 }
 
+func TestParseUsersSkipsSystemAccounts(t *testing.T) {
+	passwd := "dockremap:x:999:999::/home/dockremap:/usr/sbin/nologin\nnobody:x:65534:65534::/home/nobody:/usr/sbin/nologin\nsvc:x:1000:1000::/home/svc:/bin/sh\nalice:x:1001:1001::/home/alice:/bin/bash\nopt:x:1002:1002::/opt/opt:/bin/bash\n"
+	got := parseUsers(passwd, "")
+	if len(got) != 1 || got[0].Username != "alice" {
+		t.Fatalf("parseUsers = %#v, want only alice", got)
+	}
+}
+
 // serveUserAgent connects a fake agent that records exec bodies and answers each with exitFor(argv).
 func serveUserAgent(t *testing.T, srv *Server, httpServer *httptest.Server, nodeID, boxID, nodeToken string, exitFor func([]string) int) <-chan map[string]any {
 	t.Helper()

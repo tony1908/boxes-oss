@@ -296,6 +296,74 @@ func TestExecPreservesArgumentBoundaries(t *testing.T) {
 	}
 }
 
+// execServer answers command posts with response and records the decoded request body.
+func execServer(t *testing.T, response string, got *map[string]any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/sandboxes/bx_abcdefghijkl/commands" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(got); err != nil {
+			t.Errorf("decode command: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, response)
+	}))
+}
+
+func TestExecReturnsRemoteExitStatus(t *testing.T) {
+	var got map[string]any
+	server := execServer(t, `{"exitCode":3,"stdout":"","stderr":"boom\n"}`, &got)
+	defer server.Close()
+	var stderr bytes.Buffer
+	app := CLI{Out: io.Discard, Err: &stderr, ConfigPath: filepath.Join(t.TempDir(), "config.json"), HTTPClient: server.Client(), BaseURL: server.URL, Token: "api-token"}
+	err := app.Run(context.Background(), []string{"exec", "bx_abcdefghijkl", "--", "false"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 3 {
+		t.Fatalf("Run exec error = %#v, want ExitError code 3", err)
+	}
+	if stderr.String() != "boom\n" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestExecAcceptsOptionsBeforeBoxID(t *testing.T) {
+	var got map[string]any
+	server := execServer(t, `{"processId":"p1"}`, &got)
+	defer server.Close()
+	var out bytes.Buffer
+	app := CLI{Out: &out, Err: io.Discard, ConfigPath: filepath.Join(t.TempDir(), "config.json"), HTTPClient: server.Client(), BaseURL: server.URL, Token: "api-token"}
+	if err := app.Run(context.Background(), []string{"exec", "--detach", "bx_abcdefghijkl", "--", "sleep", "600"}); err != nil {
+		t.Fatalf("Run exec --detach: %v", err)
+	}
+	if got["detached"] != true || !reflect.DeepEqual(got["cmd"], []any{"sleep", "600"}) {
+		t.Fatalf("request body = %#v", got)
+	}
+	if out.String() != "p1\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestExecAcceptsUserCwdEnvAfterBoxID(t *testing.T) {
+	var got map[string]any
+	server := execServer(t, `{"exitCode":0,"stdout":"","stderr":""}`, &got)
+	defer server.Close()
+	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: filepath.Join(t.TempDir(), "config.json"), HTTPClient: server.Client(), BaseURL: server.URL, Token: "api-token"}
+	args := []string{"exec", "bx_abcdefghijkl", "--user", "alice", "--cwd", "/shared/team", "--env", "A=1", "--env", "B=x=y", "--", "id", "-un"}
+	if err := app.Run(context.Background(), args); err != nil {
+		t.Fatalf("Run exec: %v", err)
+	}
+	if got["user"] != "alice" || got["cwd"] != "/shared/team" {
+		t.Fatalf("request body = %#v", got)
+	}
+	if env, ok := got["env"].(map[string]any); !ok || env["A"] != "1" || env["B"] != "x=y" {
+		t.Fatalf("env = %#v", got["env"])
+	}
+	if !reflect.DeepEqual(got["cmd"], []any{"id", "-un"}) {
+		t.Fatalf("cmd = %#v", got["cmd"])
+	}
+}
+
 func TestExternalCommandUsesWindowsOpenSSHExecutableNames(t *testing.T) {
 	for _, test := range []struct {
 		goos string

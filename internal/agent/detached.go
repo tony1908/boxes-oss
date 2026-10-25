@@ -123,28 +123,44 @@ func (p *execProcess) closeStdinLocked() {
 }
 
 // detachedArgv runs argv in its own session and records the shell PID, which is also the process group ID.
+// setsid --wait keeps docker exec attached until the command exits and returns its status; without it,
+// setsid forks when the process is already a group leader and the exec ends early.
+// wrapper is the argv prefix that switches to the box user (nil for abc and root).
 // The mkdir runs as the box user before the pid file is written.
-func detachedArgv(processID string, argv []string) []string {
+func detachedArgv(processID string, argv, wrapper []string) []string {
 	script := fmt.Sprintf(`mkdir -p %s; echo $$ > "$0"; exec "$@"`, detachedPIDDir)
-	return append([]string{"setsid", "sh", "-c", script, detachedPIDFile(processID)}, argv...)
+	out := append([]string{}, wrapper...)
+	out = append(out, "setsid", "--wait", "sh", "-c", script, detachedPIDFile(processID))
+	return append(out, argv...)
 }
 
 func detachedPIDFile(processID string) string {
 	return fmt.Sprintf("%s/%s.pid", detachedPIDDir, processID)
 }
 
-func (a *Agent) runDetached(container string, request execRequest, argv []string, timeout time.Duration, processID string, process *execProcess, stdinReader *os.File) {
+func (a *Agent) runDetached(container string, request execRequest, argv, wrapper []string, timeout time.Duration, processID string, process *execProcess, stdinReader *os.File) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	var stdin io.Reader
 	if stdinReader != nil {
 		stdin = stdinReader
 	}
-	code, err := a.docker.Exec(ctx, container, request.User, request.Cwd, request.Env, detachedArgv(processID, argv), stdin, &process.Stdout, &process.Stderr)
+	exitCode := 1
+	if len(wrapper) > 0 {
+		// The box user must be able to create its pid file here; a root-owned 755 dir would block it.
+		prepCode, prepErr := a.docker.Exec(ctx, container, "root", "", nil, []string{"sh", "-c", "mkdir -p " + detachedPIDDir + " && chmod 1777 " + detachedPIDDir}, nil, io.Discard, io.Discard)
+		if prepErr != nil || prepCode != 0 {
+			if stdinReader != nil {
+				_ = stdinReader.Close()
+			}
+			process.finish(exitCode)
+			return
+		}
+	}
+	code, err := a.docker.Exec(ctx, container, request.User, request.Cwd, request.Env, detachedArgv(processID, argv, wrapper), stdin, &process.Stdout, &process.Stderr)
 	if stdinReader != nil {
 		_ = stdinReader.Close()
 	}
-	exitCode := 1
 	if err == nil {
 		exitCode = code
 	}

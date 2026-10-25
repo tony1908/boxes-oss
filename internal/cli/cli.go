@@ -1044,40 +1044,56 @@ func (c *CLI) info(ctx context.Context, args []string) error {
 }
 
 func (c *CLI) exec(ctx context.Context, args []string) error {
-	if len(args) < 1 {
-		return errors.New("usage: boxes exec <id|current> [--user NAME] [--detach] [--status PID] -- <command> [arguments]")
-	}
-	id, err := c.boxID(args[0])
-	if err != nil {
-		return err
-	}
+	usage := errors.New("usage: boxes exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]")
 	fs := c.flagSet("exec")
 	detach := fs.Bool("detach", false, "run command in the background")
 	statusPID := fs.String("status", "", "show detached process status")
 	runAs := fs.String("user", "", "run the command as this box user (default abc)")
-	remaining := args[1:]
+	cwd := fs.String("cwd", "", "working directory for the command inside the box")
+	var envVars stringList
+	fs.Var(&envVars, "env", "environment variable KEY=VALUE for the command (repeatable)")
+	// Options may appear before or after the box ID. The box ID is the first positional argument; with
+	// "--" the command is everything after it, without "--" the command starts at the first non-option.
+	sep := indexOf(args, "--")
+	head := args
+	if sep >= 0 {
+		head = args[:sep]
+	}
+	var id string
 	var command []string
-	if separator := indexOf(remaining, "--"); separator >= 0 {
-		if err := fs.Parse(flagsBeforePositionals(fs, remaining[:separator])); err != nil {
+	for rest := head; ; {
+		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		if fs.NArg() != 0 {
-			return errors.New("exec options must appear before --")
+		rest = fs.Args()
+		if len(rest) == 0 {
+			break
 		}
-		command = remaining[separator+1:]
-	} else if len(remaining) > 0 && (remaining[0] == "--detach" || remaining[0] == "--status" || strings.HasPrefix(remaining[0], "--status=") || remaining[0] == "--user" || strings.HasPrefix(remaining[0], "--user=")) {
-		if err := fs.Parse(remaining); err != nil {
-			return err
+		if id == "" {
+			id, rest = rest[0], rest[1:]
+			continue
 		}
-		command = fs.Args()
-	} else {
-		command = remaining
+		if sep < 0 {
+			command = rest
+			break
+		}
+		return errors.New("exec options must appear before --")
+	}
+	if sep >= 0 {
+		command = args[sep+1:]
+	}
+	if id == "" {
+		return usage
+	}
+	boxID, err := c.boxID(id)
+	if err != nil {
+		return err
 	}
 	if *statusPID != "" {
 		if len(command) != 0 {
 			return errors.New("exec --status cannot be combined with a command")
 		}
-		result, err := c.client.doJSON(ctx, http.MethodGet, "/sandboxes/"+url.PathEscape(id)+"/commands/"+url.PathEscape(*statusPID), nil, nil)
+		result, err := c.client.doJSON(ctx, http.MethodGet, "/sandboxes/"+url.PathEscape(boxID)+"/commands/"+url.PathEscape(*statusPID), nil, nil)
 		if err != nil {
 			return err
 		}
@@ -1098,7 +1114,21 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	if *runAs != "" {
 		value.(map[string]any)["user"] = *runAs
 	}
-	result, err := c.client.doJSON(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(id)+"/commands", value, nil)
+	if *cwd != "" {
+		value.(map[string]any)["cwd"] = *cwd
+	}
+	if len(envVars) > 0 {
+		env := make(map[string]string, len(envVars))
+		for _, entry := range envVars {
+			key, val, ok := strings.Cut(entry, "=")
+			if !ok || key == "" {
+				return fmt.Errorf("--env %q must be KEY=VALUE", entry)
+			}
+			env[key] = val
+		}
+		value.(map[string]any)["env"] = env
+	}
+	result, err := c.client.doJSON(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(boxID)+"/commands", value, nil)
 	if err != nil {
 		return err
 	}
@@ -1111,28 +1141,31 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	if err := json.Unmarshal(result, &commandResult); err != nil {
 		return fmt.Errorf("decode command result: %w", err)
 	}
-	if c.jsonOutput {
-		return c.printValue(result)
-	}
-	if *detach {
+	switch {
+	case c.jsonOutput:
+		if err := c.printValue(result); err != nil {
+			return err
+		}
+	case *detach:
 		if commandResult.ProcessID != "" {
 			_, err := fmt.Fprintln(c.Out, commandResult.ProcessID)
 			return err
 		}
 		return c.printValue(result)
-	}
-	if commandResult.Stdout != "" {
-		if _, err := io.WriteString(c.Out, commandResult.Stdout); err != nil {
-			return err
+	default:
+		if commandResult.Stdout != "" {
+			if _, err := io.WriteString(c.Out, commandResult.Stdout); err != nil {
+				return err
+			}
 		}
-	}
-	if commandResult.Stderr != "" {
-		if _, err := io.WriteString(c.Err, commandResult.Stderr); err != nil {
-			return err
+		if commandResult.Stderr != "" {
+			if _, err := io.WriteString(c.Err, commandResult.Stderr); err != nil {
+				return err
+			}
 		}
 	}
 	if commandResult.ExitCode != 0 {
-		return fmt.Errorf("remote command exited with status %d", commandResult.ExitCode)
+		return &ExitError{Code: commandResult.ExitCode}
 	}
 	return nil
 }

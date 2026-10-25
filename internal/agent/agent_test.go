@@ -1300,13 +1300,7 @@ func TestExecDefaultCWDFollowsUser(t *testing.T) {
 		}
 	}
 	var dockerCalls []callRecord
-	dockerExec := testExecutor{calls: &dockerCalls, command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
-		if len(argv) > 1 && argv[1] == "inspect" {
-			return 1, nil
-		}
-		return 0, nil
-	}}
-	agent := New(Config{NodeID: "nd_test"}, dockercli.New(dockerExec), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	agent := New(Config{NodeID: "nd_test"}, dockercli.New(boxUserExecutor(&dockerCalls)), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
 	request := httptest.NewRequest(http.MethodPost, "/v1/boxes/bx_abcdefgh2345/exec", strings.NewReader(`{"cmd":["id"],"user":"alice"}`))
 	response := httptest.NewRecorder()
 	agent.Handler().ServeHTTP(response, request)
@@ -1319,7 +1313,7 @@ func TestExecDefaultCWDFollowsUser(t *testing.T) {
 			execCall = call.argv
 		}
 	}
-	want := []string{"docker", "exec", "--user", "alice", "--workdir", "/home/alice", "box-bx_abcdefgh2345", "id"}
+	want := []string{"docker", "exec", "--user", "root", "--workdir", "/home/alice", "--env", "HOME=/home/alice", "--env", "LOGNAME=alice", "--env", "USER=alice", "box-bx_abcdefgh2345", "setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "id"}
 	if !reflect.DeepEqual(execCall, want) {
 		t.Fatalf("docker exec argv = %#v, want %#v", execCall, want)
 	}
@@ -1592,10 +1586,92 @@ func TestDetachedKillSignalsProcessGroupFromPidFile(t *testing.T) {
 }
 
 func TestDetachedArgvRecordsPidAndKeepsArgumentsLiteral(t *testing.T) {
-	got := detachedArgv("abc_-1", []string{"printf", "%s", "a b;c"})
-	want := []string{"setsid", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/abc_-1.pid", "printf", "%s", "a b;c"}
+	got := detachedArgv("abc_-1", []string{"printf", "%s", "a b;c"}, nil)
+	want := []string{"setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/abc_-1.pid", "printf", "%s", "a b;c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("detachedArgv = %#v, want %#v", got, want)
+	}
+	wrapped := detachedArgv("abc_-1", []string{"sleep", "9"}, []string{"setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--"})
+	wantWrapped := []string{"setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/abc_-1.pid", "sleep", "9"}
+	if !reflect.DeepEqual(wrapped, wantWrapped) {
+		t.Fatalf("wrapped detachedArgv = %#v, want %#v", wrapped, wantWrapped)
+	}
+}
+
+// boxUserExecutor answers getent for alice (and fails for ghost) and records every docker call.
+func boxUserExecutor(calls *[]callRecord) testExecutor {
+	return testExecutor{calls: calls, command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
+		if len(argv) > 1 && argv[1] == "inspect" {
+			return 1, nil
+		}
+		if containsArg(argv, "getent") {
+			if argv[len(argv)-1] == "ghost" {
+				return 2, nil
+			}
+			if stdout != nil {
+				_, _ = io.WriteString(stdout, "alice:x:1001:1001::/home/alice:/bin/bash\n")
+			}
+		}
+		return 0, nil
+	}}
+}
+
+func findDockerCall(calls []callRecord, marker string) []string {
+	for _, call := range calls {
+		if containsArg(call.argv, marker) {
+			return call.argv
+		}
+	}
+	return nil
+}
+
+func TestExecAsBoxUserRunsThroughSetprivWithHome(t *testing.T) {
+	var dockerCalls []callRecord
+	agent := New(Config{NodeID: "nd_test"}, dockercli.New(boxUserExecutor(&dockerCalls)), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	request := httptest.NewRequest(http.MethodPost, "/v1/boxes/bx_abcdefgh2345/exec", strings.NewReader(`{"cmd":["whoami"],"user":"alice"}`))
+	response := httptest.NewRecorder()
+	agent.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d/%s", response.Code, response.Body.String())
+	}
+	want := []string{"docker", "exec", "--user", "root", "--workdir", "/home/alice", "--env", "HOME=/home/alice", "--env", "LOGNAME=alice", "--env", "USER=alice", "box-bx_abcdefgh2345", "setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "whoami"}
+	if got := findDockerCall(dockerCalls, "whoami"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("docker exec argv = %#v, want %#v", got, want)
+	}
+}
+
+func TestExecAsBoxUserRejectsBadNamesAndMissingUsers(t *testing.T) {
+	var dockerCalls []callRecord
+	agent := New(Config{NodeID: "nd_test"}, dockercli.New(boxUserExecutor(&dockerCalls)), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	for body, want := range map[string]int{
+		`{"cmd":["id"],"user":"Bad User"}`:              http.StatusBadRequest,
+		`{"cmd":["id"],"user":"1000:1000"}`:             http.StatusBadRequest,
+		`{"cmd":["id"],"user":"ghost"}`:                 http.StatusNotFound,
+		`{"cmd":["id"],"user":"ghost","detached":true}`: http.StatusNotFound,
+	} {
+		response := httptest.NewRecorder()
+		agent.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/boxes/bx_abcdefgh2345/exec", strings.NewReader(body)))
+		if response.Code != want {
+			t.Fatalf("%s: status = %d/%s, want %d", body, response.Code, response.Body.String(), want)
+		}
+	}
+	if got := findDockerCall(dockerCalls, "id"); got != nil {
+		t.Fatalf("command ran for rejected user: %#v", got)
+	}
+}
+
+func TestDetachedExecAsBoxUserWrapsSetsidAndOpensPidDir(t *testing.T) {
+	var dockerCalls []callRecord
+	agent := New(Config{NodeID: "nd_test"}, dockercli.New(boxUserExecutor(&dockerCalls)), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	processID := startDetached(t, agent.Handler(), "bx_abcdefgh2345", `{"cmd":["sleep","9"],"user":"alice","detached":true}`)
+	waitForProcessExit(t, agent.Handler(), "bx_abcdefgh2345", processID)
+	wantPrep := []string{"docker", "exec", "--user", "root", "box-bx_abcdefgh2345", "sh", "-c", "mkdir -p /tmp/.boxes-exec && chmod 1777 /tmp/.boxes-exec"}
+	if got := findDockerCall(dockerCalls, "sh"); !reflect.DeepEqual(got, wantPrep) {
+		t.Fatalf("pid dir prep argv = %#v, want %#v", got, wantPrep)
+	}
+	want := []string{"docker", "exec", "--user", "root", "--workdir", "/home/alice", "--env", "HOME=/home/alice", "--env", "LOGNAME=alice", "--env", "USER=alice", "box-bx_abcdefgh2345", "setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/" + processID + ".pid", "sleep", "9"}
+	if got := findDockerCall(dockerCalls, "sleep"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("detached docker exec argv = %#v, want %#v", got, want)
 	}
 }
 

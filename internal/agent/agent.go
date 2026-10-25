@@ -133,6 +133,50 @@ func defaultExecCWD(user string) string {
 	return "/home/" + user
 }
 
+var (
+	errInvalidExecUser  = errors.New("invalid exec user")
+	errExecUserNotFound = errors.New("exec user not found")
+	execUserPattern     = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+)
+
+// prepareBoxUser resolves a request user other than abc and root. Docker cannot resolve accounts
+// created at runtime, so such commands run as root behind the returned setpriv prefix. The user's
+// home becomes the default cwd and HOME/USER/LOGNAME env. Returns nil for abc, root and "".
+func (a *Agent) prepareBoxUser(ctx context.Context, container string, request *execRequest) ([]string, error) {
+	user := request.User
+	if user == "" || user == "abc" || user == "root" {
+		return nil, nil
+	}
+	if !execUserPattern.MatchString(user) {
+		return nil, errInvalidExecUser
+	}
+	var passwd bytes.Buffer
+	code, err := a.docker.Exec(ctx, container, "root", "", nil, []string{"getent", "passwd", user}, nil, &passwd, io.Discard)
+	if err != nil {
+		return nil, err
+	}
+	if code == 2 { // getent: key not found
+		return nil, errExecUserNotFound
+	}
+	fields := strings.Split(strings.TrimSpace(passwd.String()), ":")
+	if code != 0 || len(fields) < 7 || fields[0] != user || !path.IsAbs(fields[5]) {
+		return nil, fmt.Errorf("getent passwd %s returned code %d", user, code)
+	}
+	home := fields[5]
+	if request.Cwd == "" {
+		request.Cwd = home
+	}
+	env := make(map[string]string, len(request.Env)+3)
+	for key, value := range request.Env {
+		env[key] = value
+	}
+	env["HOME"], env["USER"], env["LOGNAME"] = home, user, user
+	request.Env = env
+	request.User = "root"
+	// --init-groups keeps supplementary groups, such as a /shared/<group> membership.
+	return []string{"setpriv", "--reuid=" + user, "--regid=" + user, "--init-groups", "--"}, nil
+}
+
 type cappedBuffer struct {
 	bytes.Buffer
 	limit int
@@ -755,6 +799,18 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 	if request.User == "" {
 		request.User = "abc"
 	}
+	wrapper, err := a.prepareBoxUser(r.Context(), boxName(r.PathValue("id")), &request)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidExecUser):
+			writeError(w, http.StatusBadRequest, "invalid_user", "user must match ^[a-z_][a-z0-9_-]{0,31}$")
+		case errors.Is(err, errExecUserNotFound):
+			writeError(w, http.StatusNotFound, "user_not_found", "user does not exist")
+		default:
+			writeError(w, http.StatusBadGateway, "exec_failed", "box user could not be resolved")
+		}
+		return
+	}
 	if request.Cwd == "" {
 		request.Cwd = defaultExecCWD(request.User)
 	}
@@ -780,14 +836,14 @@ func (a *Agent) execBox(w http.ResponseWriter, r *http.Request) {
 		a.pruneProcessesLocked(boxID, time.Now().UTC())
 		a.processes[processID] = process
 		a.mu.Unlock()
-		go a.runDetached(boxName(boxID), request, argv, timeout, processID, process, stdinReader)
+		go a.runDetached(boxName(boxID), request, argv, wrapper, timeout, processID, process, stdinReader)
 		writeJSON(w, http.StatusAccepted, map[string]string{"processId": processID})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	stdout, stderr := &cappedBuffer{limit: maxExecOutput}, &cappedBuffer{limit: maxExecOutput}
-	code, err := a.docker.Exec(ctx, boxName(r.PathValue("id")), request.User, request.Cwd, request.Env, argv, nil, stdout, stderr)
+	code, err := a.docker.Exec(ctx, boxName(r.PathValue("id")), request.User, request.Cwd, request.Env, append(wrapper, argv...), nil, stdout, stderr)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "exec_failed", "box command could not be executed")
 		return
