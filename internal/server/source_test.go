@@ -100,7 +100,8 @@ func TestCreateSandboxSourceSendsSetupWithoutPersistingToken(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -169,8 +170,8 @@ func TestCreateSandboxSourceSendsSetupWithoutPersistingToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get stored box: %v", err)
 	}
-	if record.Box.Source == nil || record.Box.Source.URL != "https://example.test/private.git" {
-		t.Fatalf("stored source = %#v", record.Box.Source)
+	if record.Source == nil || record.Source.URL != "https://example.test/private.git" {
+		t.Fatalf("stored source = %#v", record.Source)
 	}
 	activity, err := srv.store.ListActivity(context.Background(), boxID, "", "", 100)
 	if err != nil || len(activity) == 0 {

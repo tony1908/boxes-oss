@@ -23,10 +23,10 @@ func (c boxCounters) plus(other boxCounters) boxCounters {
 // liveCounters asks the box's agent for its running container's counters since the container was created.
 // ok is false when the box is not running or the agent cannot answer; callers must not fail on that.
 func (s *Server) liveCounters(ctx context.Context, box store.BoxRecord) (boxCounters, bool) {
-	if box.Box.State != types.StateReady && box.Box.State != types.StateIdle {
+	if box.State != types.StateReady && box.State != types.StateIdle {
 		return boxCounters{}, false
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		return boxCounters{}, false
 	}
@@ -37,7 +37,7 @@ func (s *Server) liveCounters(ctx context.Context, box store.BoxRecord) (boxCoun
 		RxBytes    *int64   `json:"rxBytes"`
 		TxBytes    *int64   `json:"txBytes"`
 	}
-	if err := client.json(ctx, http.MethodGet, agentPath("v1", "boxes", box.Box.ID, "stats"), nil, &stats); err != nil ||
+	if err := client.json(ctx, http.MethodGet, agentPath("v1", "boxes", box.ID, "stats"), nil, &stats); err != nil ||
 		stats.CPUSeconds == nil || stats.RxBytes == nil || stats.TxBytes == nil {
 		return boxCounters{}, false
 	}

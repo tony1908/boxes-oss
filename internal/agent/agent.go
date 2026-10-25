@@ -405,7 +405,7 @@ func writeStorageFile(filename string, update storageUpdate) error {
 		return err
 	}
 	temporary := file.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
 		return err
@@ -1252,7 +1252,7 @@ func snapshotStorageFromHeader(r *http.Request) (storageUpdate, bool) {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -1491,11 +1491,6 @@ func randomProcessID() string {
 	return base64.RawURLEncoding.EncodeToString(bytes[:])
 }
 
-func hostMemory() (int64, int64) {
-	total, available, _, _ := hostMemoryAt("/proc")
-	return total, available
-}
-
 func hostMemoryAt(procRoot string) (int64, int64, int64, int64) {
 	content, err := os.ReadFile(filepath.Join(procRoot, "meminfo"))
 	if err != nil {
@@ -1572,13 +1567,13 @@ func (a *Agent) tcpBridge(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer ws.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = ws.Close(websocket.StatusNormalClosure, "") }()
 	remote, err := (&net.Dialer{}).DialContext(r.Context(), "tcp", net.JoinHostPort(container.IP, strconv.Itoa(port)))
 	if err != nil {
 		_ = ws.Close(websocket.StatusInternalError, "box port unavailable")
 		return
 	}
-	defer remote.Close()
+	defer func() { _ = remote.Close() }()
 	stream := websocket.NetConn(r.Context(), ws, websocket.MessageBinary)
 	copyDone := make(chan struct{}, 1)
 	go func() {
@@ -1612,17 +1607,17 @@ func (a *Agent) proxyBoxd(w http.ResponseWriter, r *http.Request) {
 	}
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort(container.IP, "7070")}
 	proxy := &httputil.ReverseProxy{
-		Director: func(request *http.Request) {
-			request.URL.Scheme = target.Scheme
-			request.URL.Host = target.Host
-			request.Host = target.Host
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.Out.URL.Scheme = target.Scheme
+			request.Out.URL.Host = target.Host
+			request.Out.Host = target.Host
 			suffix := strings.TrimPrefix(r.PathValue("path"), "/")
 			if suffix == "" {
-				request.URL.Path = "/"
+				request.Out.URL.Path = "/"
 			} else {
-				request.URL.Path = path.Clean("/" + suffix)
+				request.Out.URL.Path = path.Clean("/" + suffix)
 			}
-			request.Header.Set("Authorization", "Bearer "+token)
+			request.Out.Header.Set("Authorization", "Bearer "+token)
 		},
 		ErrorHandler: func(response http.ResponseWriter, _ *http.Request, _ error) {
 			http.Error(response, "boxd unavailable", http.StatusBadGateway)

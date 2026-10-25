@@ -127,9 +127,9 @@ func TestSandboxPatchExtendsAndDisablesAutoStopWithoutStopping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	box.Box.TTLSeconds = 600
+	box.TTLSeconds = 600
 	expires := time.Now().Add(10 * time.Minute)
-	box.Box.ExpiresAt = &expires
+	box.ExpiresAt = &expires
 	if err := srv.store.UpdateBox(context.Background(), box); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestSandboxPatchExtendsAndDisablesAutoStopWithoutStopping(t *testing.T) {
 		t.Fatalf("zero TTL did not disable auto-stop: %#v", sandbox)
 	}
 	stored, err := srv.store.GetBox(context.Background(), boxID)
-	if err != nil || stored.Box.State != types.StateReady || stored.Box.ExpiresAt != nil || stored.Box.TTLSeconds != 0 {
+	if err != nil || stored.State != types.StateReady || stored.ExpiresAt != nil || stored.TTLSeconds != 0 {
 		t.Fatalf("stored box after extension = %#v, err %v", stored.Box, err)
 	}
 }
@@ -221,7 +221,7 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	script, _ := io.ReadAll(response.Body)
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(script), "SERVER_URL='https://boxes.example.test'") || !strings.Contains(string(script), "/install/cli/${binary}") || !strings.Contains(string(script), "boxes skill install") {
 		t.Fatalf("CLI install script response status=%d body=%s", response.StatusCode, script)
 	}
@@ -230,7 +230,7 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	powershellScript, _ := io.ReadAll(powershellResponse.Body)
-	powershellResponse.Body.Close()
+	_ = powershellResponse.Body.Close()
 	if powershellResponse.StatusCode != http.StatusOK || !strings.Contains(string(powershellScript), "$SERVER_URL = 'https://boxes.example.test'") || !strings.Contains(string(powershellScript), "boxes-windows-$arch.exe") || !strings.Contains(string(powershellScript), "$env:LOCALAPPDATA") || !strings.Contains(string(powershellScript), "--json skill install") {
 		t.Fatalf("PowerShell CLI install response status=%d body=%s", powershellResponse.StatusCode, powershellScript)
 	}
@@ -239,7 +239,7 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	message, _ := io.ReadAll(missing.Body)
-	missing.Body.Close()
+	_ = missing.Body.Close()
 	if missing.StatusCode != http.StatusNotFound || !strings.Contains(string(message), "not installed") {
 		t.Fatalf("missing binary response status=%d body=%s", missing.StatusCode, message)
 	}
@@ -255,7 +255,7 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	contents, _ := io.ReadAll(installed.Body)
-	installed.Body.Close()
+	_ = installed.Body.Close()
 	if installed.StatusCode != http.StatusOK || string(contents) != "cli-binary" {
 		t.Fatalf("binary response status=%d contents=%q", installed.StatusCode, contents)
 	}
@@ -267,7 +267,7 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	windowsContents, _ := io.ReadAll(windowsInstalled.Body)
-	windowsInstalled.Body.Close()
+	_ = windowsInstalled.Body.Close()
 	if windowsInstalled.StatusCode != http.StatusOK || string(windowsContents) != "windows-cli-binary" {
 		t.Fatalf("Windows binary response status=%d contents=%q", windowsInstalled.StatusCode, windowsContents)
 	}

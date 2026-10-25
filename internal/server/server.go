@@ -581,59 +581,59 @@ func (s *Server) reconcileNode(ctx context.Context, nodeID string, client *agent
 			log.Printf("reconcile box lookup failed box=%s node=%s: %v", remote.BoxID, nodeID, err)
 			continue
 		}
-		if record.Box.NodeID != nodeID {
+		if record.NodeID != nodeID {
 			remove, reason := s.mayFenceBox(ctx, record)
 			if remove {
-				log.Printf("fencing removal box=%s reported_node=%s recorded_node=%s reason=%s", remote.BoxID, nodeID, record.Box.NodeID, reason)
+				log.Printf("fencing removal box=%s reported_node=%s recorded_node=%s reason=%s", remote.BoxID, nodeID, record.NodeID, reason)
 				_ = client.json(ctx, http.MethodDelete, agentPath("v1", "boxes", remote.BoxID), nil, nil)
 			} else {
-				log.Printf("fencing left box=%s reported_node=%s recorded_node=%s reason=%s", remote.BoxID, nodeID, record.Box.NodeID, reason)
+				log.Printf("fencing left box=%s reported_node=%s recorded_node=%s reason=%s", remote.BoxID, nodeID, record.NodeID, reason)
 			}
 			continue
 		}
-		previousState := record.Box.State
+		previousState := record.State
 		wasRunning := record.RunningSince != nil
 		switch remote.State {
 		case "running", "ready", "idle":
-			record.Box.Error = ""
-			record.Box.ErrorCode = ""
+			record.Error = ""
+			record.ErrorCode = ""
 			if record.RunningSince == nil {
 				now := time.Now().UTC()
 				record.RunningSince = &now
 			}
 			if remote.State == "idle" {
-				record.Box.State = types.StateIdle
+				record.State = types.StateIdle
 			} else {
-				record.Box.State = types.StateReady
+				record.State = types.StateReady
 			}
 		case "stopped":
-			record.Box.State = types.StateStopped
+			record.State = types.StateStopped
 			now := time.Now().UTC()
-			record.Box.StoppedAt = &now
+			record.StoppedAt = &now
 			closeRunningInterval(&record, now)
 		default:
-			record.Box.State = types.StateError
-			record.Box.ErrorCode = "agent_box_error"
-			record.Box.Error = diagnostics.Sanitize("Agent reported box state: " + remote.State)
+			record.State = types.StateError
+			record.ErrorCode = "agent_box_error"
+			record.Error = diagnostics.Sanitize("Agent reported box state: " + remote.State)
 			closeRunningInterval(&record, time.Now().UTC())
 		}
 		if err := s.store.UpdateBox(ctx, record); err != nil {
-			s.stopEventPump(record.Box.ID)
+			s.stopEventPump(record.ID)
 			continue
 		}
 		if (remote.State == "running" || remote.State == "ready" || remote.State == "idle") && !wasRunning && record.RunningSince != nil && previousState != types.StateReady && previousState != types.StateIdle {
-			_ = s.store.OpenRunningInterval(ctx, record.Box.ID, *record.RunningSince)
-			s.recordSystemActivity(ctx, record.Box.ID, "system", "lifecycle", "started/ready", map[string]any{"node": nodeID}, "ok")
+			_ = s.store.OpenRunningInterval(ctx, record.ID, *record.RunningSince)
+			s.recordSystemActivity(ctx, record.ID, "system", "lifecycle", "started/ready", map[string]any{"node": nodeID}, "ok")
 		}
 		if remote.State == "stopped" && previousState != types.StateStopped {
 			now := time.Now().UTC()
-			_ = s.store.CloseRunningInterval(ctx, record.Box.ID, now)
-			s.recordSystemActivity(ctx, record.Box.ID, "system", "lifecycle", "stopped", nil, "ok")
+			_ = s.store.CloseRunningInterval(ctx, record.ID, now)
+			s.recordSystemActivity(ctx, record.ID, "system", "lifecycle", "stopped", nil, "ok")
 			s.queueRetentionDelete(ctx, record)
 		}
-		if record.Box.State == types.StateError && previousState != types.StateError {
-			_ = s.store.CloseRunningInterval(ctx, record.Box.ID, time.Now().UTC())
-			s.recordSystemActivity(ctx, record.Box.ID, "system", "lifecycle", "error", map[string]any{"reason": record.Box.Error}, "error")
+		if record.State == types.StateError && previousState != types.StateError {
+			_ = s.store.CloseRunningInterval(ctx, record.ID, time.Now().UTC())
+			s.recordSystemActivity(ctx, record.ID, "system", "lifecycle", "error", map[string]any{"reason": record.Error}, "error")
 		}
 		s.syncEventPump(record.Box)
 	}
@@ -642,20 +642,20 @@ func (s *Server) reconcileNode(ctx context.Context, nodeID string, client *agent
 		return
 	}
 	for _, box := range boxes {
-		if _, ok := seen[box.Box.ID]; ok {
+		if _, ok := seen[box.ID]; ok {
 			continue
 		}
-		if box.Box.State == types.StateReady || box.Box.State == types.StateIdle || box.Box.State == types.StateUnreachable {
-			box.Box.State = types.StateError
-			box.Box.ErrorCode = "box_missing"
-			box.Box.Error = "The agent did not report this box as running."
+		if box.State == types.StateReady || box.State == types.StateIdle || box.State == types.StateUnreachable {
+			box.State = types.StateError
+			box.ErrorCode = "box_missing"
+			box.Error = "The agent did not report this box as running."
 			now := time.Now().UTC()
 			closeRunningInterval(&box, now)
 			if s.store.UpdateBox(ctx, box) == nil {
-				_ = s.store.CloseRunningInterval(ctx, box.Box.ID, now)
-				s.recordSystemActivity(ctx, box.Box.ID, "system", "lifecycle", "error", map[string]any{"reason": box.Box.Error}, "error")
+				_ = s.store.CloseRunningInterval(ctx, box.ID, now)
+				s.recordSystemActivity(ctx, box.ID, "system", "lifecycle", "error", map[string]any{"reason": box.Error}, "error")
 			}
-			s.stopEventPump(box.Box.ID)
+			s.stopEventPump(box.ID)
 		}
 	}
 }
@@ -678,10 +678,10 @@ func (s *Server) logOrphanContainer(nodeID, boxID string) {
 }
 
 func (s *Server) mayFenceBox(ctx context.Context, record store.BoxRecord) (bool, string) {
-	if record.Box.State == types.StateStopped || record.Box.State == types.StateStopping {
+	if record.State == types.StateStopped || record.State == types.StateStopping {
 		return true, "recorded box is stopped or stopping; data is in a snapshot"
 	}
-	client, ok := newAgentClient(s.hub, record.Box.NodeID)
+	client, ok := newAgentClient(s.hub, record.NodeID)
 	if !ok {
 		return false, "recorded node is not connected"
 	}
@@ -690,7 +690,7 @@ func (s *Server) mayFenceBox(ctx context.Context, record store.BoxRecord) (bool,
 		return false, "recorded node health unavailable"
 	}
 	for _, remote := range health.Boxes {
-		if remote.BoxID == record.Box.ID && (remote.State == "running" || remote.State == "ready" || remote.State == "idle") {
+		if remote.BoxID == record.ID && (remote.State == "running" || remote.State == "ready" || remote.State == "idle") {
 			return true, "recorded node health confirms box running"
 		}
 	}
@@ -709,12 +709,12 @@ func (s *Server) nodeDisconnected(nodeID string) {
 		return
 	}
 	for _, box := range boxes {
-		if box.Box.State == types.StateReady || box.Box.State == types.StateIdle {
-			box.Box.State = types.StateUnreachable
+		if box.State == types.StateReady || box.State == types.StateIdle {
+			box.State = types.StateUnreachable
 			if s.store.UpdateBox(ctx, box) == nil {
-				s.recordSystemActivity(ctx, box.Box.ID, "system", "lifecycle", "error", map[string]any{"reason": "node disconnected"}, "error")
+				s.recordSystemActivity(ctx, box.ID, "system", "lifecycle", "error", map[string]any{"reason": "node disconnected"}, "error")
 			}
-			s.stopEventPump(box.Box.ID)
+			s.stopEventPump(box.ID)
 		}
 	}
 }

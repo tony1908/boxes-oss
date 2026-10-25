@@ -63,11 +63,11 @@ func (c *agentClient) rawJSON(ctx context.Context, method, endpoint string, inpu
 		return nil, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		return nil, fmt.Errorf("agent route update returned HTTP %d", response.StatusCode)
 	}
 	_, _ = io.Copy(io.Discard, response.Body)
-	response.Body.Close()
+	_ = response.Body.Close()
 	return response, nil
 }
 
@@ -96,7 +96,7 @@ func (c *agentClient) jsonWithHeaders(ctx context.Context, method, endpoint stri
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var failure struct {
 			Error struct {

@@ -41,7 +41,8 @@ func TestAgentHTTPRequestsTravelThroughTunnel(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("RunForever did not stop after context cancellation")
 		}
@@ -52,7 +53,7 @@ func TestAgentHTTPRequestsTravelThroughTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET through tunnel: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
@@ -80,7 +81,7 @@ func TestWebSocketUpgradeTravelsThroughTunnel(t *testing.T) {
 			if err != nil {
 				return
 			}
-			defer conn.Close(websocket.StatusNormalClosure, "")
+			defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 			for {
 				typ, message, err := conn.Read(r.Context())
 				if err != nil {
@@ -95,7 +96,8 @@ func TestWebSocketUpgradeTravelsThroughTunnel(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("RunForever did not stop after context cancellation")
 		}
@@ -106,7 +108,7 @@ func TestWebSocketUpgradeTravelsThroughTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WebSocket dial through tunnel: %v", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	if err := conn.Write(context.Background(), websocket.MessageText, []byte("tunnel websocket")); err != nil {
 		t.Fatalf("write through tunnel: %v", err)
@@ -140,7 +142,8 @@ func TestRunForeverReconnectsAfterTunnelDrops(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("RunForever did not stop after context cancellation")
 		}
@@ -201,7 +204,8 @@ func TestRunForeverReconnectsAfterServerClosesTunnelWithOpenStreams(t *testing.T
 		}
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("RunForever did not stop after context cancellation")
 		}
@@ -286,7 +290,7 @@ func TestLargeBodiesTravelThroughTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	n, err := io.Copy(io.Discard, response.Body)
 	if err != nil || n != size {
 		t.Fatalf("read %d bytes, err %v; want %d", n, err, size)

@@ -46,7 +46,7 @@ func TestLoginEmailRateLimitUsesClockAndSuccessfulLoginClearsFailures(t *testing
 		requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/login", "", map[string]any{"email": "owner@example.test", "password": "wrong"}, http.StatusUnauthorized, nil)
 	}
 	response := doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/login", nil, map[string]any{"email": "OWNER@example.test", "password": "correct horse battery staple"})
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusTooManyRequests || response.Header.Get("Retry-After") == "" {
 		t.Fatalf("limited login status/header = %d %q", response.StatusCode, response.Header.Get("Retry-After"))
 	}
@@ -59,7 +59,7 @@ func TestLoginEmailRateLimitUsesClockAndSuccessfulLoginClearsFailures(t *testing
 		requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/login", "", map[string]any{"email": "owner@example.test", "password": "wrong"}, http.StatusUnauthorized, nil)
 	}
 	response = doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/login", nil, map[string]any{"email": "owner@example.test", "password": "correct horse battery staple"})
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("email limit status = %d", response.StatusCode)
 	}

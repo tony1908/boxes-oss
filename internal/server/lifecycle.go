@@ -41,22 +41,22 @@ type sandboxResponse struct {
 // sandboxView converts persisted lifecycle accounting to the public sandbox representation.
 func sandboxView(record store.BoxRecord, lastSnapshot *time.Time, now time.Time) sandboxResponse {
 	view := sandboxResponse{
-		Box: record.Box, AutoStop: record.Box.TTLSeconds > 0, ExpiresAt: record.Box.ExpiresAt, LastSnapshotAt: lastSnapshot,
-		DesktopAvailable: record.Box.State == types.StateReady || record.Box.State == types.StateIdle,
+		Box: record.Box, AutoStop: record.TTLSeconds > 0, ExpiresAt: record.ExpiresAt, LastSnapshotAt: lastSnapshot,
+		DesktopAvailable: record.State == types.StateReady || record.State == types.StateIdle,
 		RunningSeconds:   record.RunningSeconds, SetupStatus: record.SetupStatus,
 	}
 	if view.SetupStatus == "" {
 		view.SetupStatus = "none"
 	}
-	if record.Box.TTLSeconds > 0 {
-		ttl := record.Box.TTLSeconds
+	if record.TTLSeconds > 0 {
+		ttl := record.TTLSeconds
 		view.TTLSeconds = &ttl
 	}
-	if record.Box.IdleStopSeconds > 0 {
-		seconds := record.Box.IdleStopSeconds
+	if record.IdleStopSeconds > 0 {
+		seconds := record.IdleStopSeconds
 		view.IdleStopSeconds = &seconds
 	}
-	if record.Box.ExpiresAt != nil {
+	if record.ExpiresAt != nil {
 		remaining := int64(record.Box.ExpiresAt.Sub(now).Seconds())
 		if remaining < 0 {
 			remaining = 0
@@ -290,7 +290,7 @@ func payloadFiles(payload map[string]any) []map[string]any {
 }
 
 func (s *Server) sandboxView(ctx context.Context, record store.BoxRecord) (sandboxResponse, error) {
-	snapshots, err := s.store.ListSnapshots(ctx, record.Box.ID)
+	snapshots, err := s.store.ListSnapshots(ctx, record.ID)
 	if err != nil {
 		return sandboxResponse{}, err
 	}

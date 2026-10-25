@@ -22,7 +22,7 @@ func (s *Server) limits(w http.ResponseWriter, r *http.Request) {
 	for _, node := range nodes {
 		boxCount := 0
 		for _, box := range boxes {
-			if box.Box.NodeID == node.Node.ID && box.Box.State != types.StateStopped && box.Box.State != types.StateError && box.Box.State != types.StateDeleting {
+			if box.NodeID == node.Node.ID && box.State != types.StateStopped && box.State != types.StateError && box.State != types.StateDeleting {
 				boxCount++
 			}
 		}

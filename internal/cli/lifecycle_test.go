@@ -275,9 +275,9 @@ func TestForwardBridgesLocalTCPOverSandboxWebSocket(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer ws.Close(websocket.StatusNormalClosure, "done")
+		defer func() { _ = ws.Close(websocket.StatusNormalClosure, "done") }()
 		conn := websocket.NetConn(r.Context(), ws, websocket.MessageBinary)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, _ = io.Copy(conn, conn)
 	}))
 	defer server.Close()

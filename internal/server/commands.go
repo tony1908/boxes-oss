@@ -100,7 +100,7 @@ func (s *Server) forwardCommand(w http.ResponseWriter, r *http.Request, body io.
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	prefix := &prefixBuffer{max: 64 << 10}
@@ -148,7 +148,7 @@ func (s *Server) commandResult(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
@@ -204,7 +204,7 @@ func (s *Server) commandLogs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	controller := http.NewResponseController(w)
@@ -250,7 +250,7 @@ func (s *Server) killCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, response.Body)
@@ -286,7 +286,7 @@ func (s *Server) commandStdin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, response.Body)
@@ -323,7 +323,7 @@ func (s *Server) putArchive(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, response.Body)
@@ -341,7 +341,7 @@ func (s *Server) getArtifacts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_path", "path must be an absolute path without traversal")
 		return
 	}
-	if record, err := s.store.GetBox(r.Context(), boxID); err == nil && record.Box.State != types.StateReady && record.Box.State != types.StateIdle {
+	if record, err := s.store.GetBox(r.Context(), boxID); err == nil && record.State != types.StateReady && record.State != types.StateIdle {
 		writeError(w, http.StatusConflict, "sandbox_not_running", "sandbox must be running to download artifacts")
 		return
 	}
@@ -356,7 +356,7 @@ func (s *Server) getArtifacts(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	_, copyErr := io.Copy(w, response.Body)
@@ -408,7 +408,7 @@ func (s *Server) forwardFile(w http.ResponseWriter, r *http.Request, method stri
 		s.apiError(w, err)
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	copyResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	transferred := &byteCounter{reader: response.Body}
@@ -458,7 +458,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, method, endpoin
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	for key, values := range response.Header {
 		if strings.EqualFold(key, "Content-Length") || strings.EqualFold(key, "Connection") || strings.EqualFold(key, "Transfer-Encoding") {
 			continue

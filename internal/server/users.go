@@ -191,7 +191,7 @@ func (s *Server) checkRunningBox(w http.ResponseWriter, r *http.Request, boxID s
 		s.apiError(w, err)
 		return false
 	}
-	if record.Box.State != types.StateReady && record.Box.State != types.StateIdle {
+	if record.State != types.StateReady && record.State != types.StateIdle {
 		writeError(w, http.StatusConflict, "sandbox_not_running", "sandbox must be running to manage users and groups")
 		return false
 	}

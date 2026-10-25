@@ -140,14 +140,14 @@ func TestScreenshotCapturesDownloadsAndCleansUp(t *testing.T) {
 	var calls []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
-		switch {
-		case r.URL.Path == "/api/v1/sandboxes/bx_abcdefghijkl/artifacts":
+		switch r.URL.Path {
+		case "/api/v1/sandboxes/bx_abcdefghijkl/artifacts":
 			if r.URL.Query().Get("path") != "/tmp/boxes-screenshot.png" {
 				t.Errorf("artifact path = %q", r.URL.Query().Get("path"))
 			}
 			w.Header().Set("Content-Type", "image/png")
 			_, _ = w.Write(png)
-		case r.URL.Path == "/api/v1/sandboxes/bx_abcdefghijkl/commands":
+		case "/api/v1/sandboxes/bx_abcdefghijkl/commands":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			cmd, _ := body["cmd"].([]any)

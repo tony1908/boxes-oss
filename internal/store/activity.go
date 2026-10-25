@@ -41,7 +41,7 @@ func (s *Store) AddAPIKeyRequestCounts(ctx context.Context, counts map[string]in
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	day := at.UTC().Format("2006-01-02")
 	for id, count := range counts {
 		if count == 0 {
@@ -107,7 +107,7 @@ func (s *Store) ListActivityPage(ctx context.Context, boxID, category string, be
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []Activity{}
 	for rows.Next() {
 		var a Activity
@@ -269,7 +269,7 @@ func (s *Store) RunningUsage(ctx context.Context, boxID string, now time.Time) (
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	total, month := int64(0), int64(0)
 	days := map[string]int64{}
 	monthStart := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)

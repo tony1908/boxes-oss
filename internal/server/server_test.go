@@ -94,7 +94,7 @@ func TestRuntimeAdminRequiresLocalAdminToken(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode runtime stop response: %v", err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if body["error"] == nil {
 		t.Fatalf("runtime stop response has no JSON error: %#v", body)
 	}
@@ -102,7 +102,7 @@ func TestRuntimeAdminRequiresLocalAdminToken(t *testing.T) {
 	response = doJSONRequest(t, httpServer.Client(), http.MethodPost, url, map[string]string{
 		"Authorization": "Bearer " + srv.adminToken,
 	}, map[string]any{})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("authenticated runtime stop status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
@@ -126,12 +126,12 @@ func TestAuthResponsesSetSessionCookie(t *testing.T) {
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("signup status = %d, want %d", response.StatusCode, http.StatusCreated)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 
 	response = doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/auth/login", map[string]string{
 		"X-Forwarded-Proto": "https",
 	}, map[string]any{"email": "owner@example.test", "password": "correct horse battery staple"})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
@@ -158,18 +158,18 @@ func TestCookieSessionAuthenticationCSRFAndLogout(t *testing.T) {
 		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	})
 	cookie := sessionCookie(t, signup)
-	signup.Body.Close()
+	_ = signup.Body.Close()
 	cookieHeader := map[string]string{"Cookie": cookie.Name + "=" + cookie.Value}
 
 	me := doJSONRequest(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/me", cookieHeader, nil)
 	if me.StatusCode != http.StatusOK {
 		t.Fatalf("cookie-authenticated /me status = %d, want %d", me.StatusCode, http.StatusOK)
 	}
-	me.Body.Close()
+	_ = me.Body.Close()
 
 	unsafe := doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/api-keys", cookieHeader, map[string]any{"name": "csrf test"})
 	assertErrorCode(t, unsafe, http.StatusForbidden, "csrf_failed")
-	unsafe.Body.Close()
+	_ = unsafe.Body.Close()
 
 	crossOriginHeaders := map[string]string{
 		"Cookie": cookie.Name + "=" + cookie.Value,
@@ -177,7 +177,7 @@ func TestCookieSessionAuthenticationCSRFAndLogout(t *testing.T) {
 	}
 	unsafe = doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/api-keys", crossOriginHeaders, map[string]any{"name": "cross origin"})
 	assertErrorCode(t, unsafe, http.StatusForbidden, "csrf_failed")
-	unsafe.Body.Close()
+	_ = unsafe.Body.Close()
 
 	sameOriginHeaders := map[string]string{
 		"Cookie": cookie.Name + "=" + cookie.Value,
@@ -188,7 +188,7 @@ func TestCookieSessionAuthenticationCSRFAndLogout(t *testing.T) {
 		bytes, _ := io.ReadAll(createdKey.Body)
 		t.Fatalf("same-origin cookie-authenticated POST status = %d, want %d; body: %s", createdKey.StatusCode, http.StatusCreated, bytes)
 	}
-	createdKey.Body.Close()
+	_ = createdKey.Body.Close()
 
 	logoutHeaders := map[string]string{
 		"Cookie": cookie.Name + "=" + cookie.Value,
@@ -203,11 +203,11 @@ func TestCookieSessionAuthenticationCSRFAndLogout(t *testing.T) {
 	if cleared.Value != "" || cleared.MaxAge != -1 || cleared.Path != "/" || !strings.Contains(logout.Header.Get("Set-Cookie"), "Max-Age=0") {
 		t.Fatalf("logout cookie = %#v, want empty value, Path=/, Max-Age=0", cleared)
 	}
-	logout.Body.Close()
+	_ = logout.Body.Close()
 
 	me = doJSONRequest(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/me", cookieHeader, nil)
 	assertErrorCode(t, me, http.StatusUnauthorized, "unauthorized")
-	me.Body.Close()
+	_ = me.Body.Close()
 }
 
 func TestAPIKeyInSessionCookieIsRejected(t *testing.T) {
@@ -230,7 +230,7 @@ func TestAPIKeyInSessionCookieIsRejected(t *testing.T) {
 
 	response := doJSONRequest(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/me", map[string]string{"Cookie": "boxes_session=" + keyToken}, nil)
 	assertErrorCode(t, response, http.StatusUnauthorized, "unauthorized")
-	response.Body.Close()
+	_ = response.Body.Close()
 }
 
 func TestAPIKeyAuthenticatesEveryCLISandboxRoute(t *testing.T) {
@@ -269,7 +269,7 @@ func TestAPIKeyAuthenticatesEveryCLISandboxRoute(t *testing.T) {
 			response := doJSONRequest(t, httpServer.Client(), route.method, httpServer.URL+"/api/v1"+route.path, map[string]string{
 				"Authorization": "Bearer " + apiKey,
 			}, route.body)
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode == http.StatusUnauthorized {
 				body, _ := io.ReadAll(response.Body)
 				t.Fatalf("API key was rejected with 401: %s", body)
@@ -303,7 +303,7 @@ func TestAPIKeyAuthenticatesTCPProxyWebSocket(t *testing.T) {
 	if response == nil {
 		t.Fatalf("WebSocket response is nil: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(response.Body)
 		t.Fatalf("API-key WebSocket status = %d, want 404 after authentication; body: %s", response.StatusCode, body)
@@ -319,7 +319,7 @@ func TestCookieCSRFAllowsSameOriginReferer(t *testing.T) {
 		"email": "owner@example.test", "setupToken": srv.adminToken, "password": "correct horse battery staple",
 	})
 	cookie := sessionCookie(t, response)
-	response.Body.Close()
+	_ = response.Body.Close()
 
 	response = doJSONRequest(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/api-keys", map[string]string{
 		"Cookie":  cookie.Name + "=" + cookie.Value,
@@ -329,7 +329,7 @@ func TestCookieCSRFAllowsSameOriginReferer(t *testing.T) {
 		bytes, _ := io.ReadAll(response.Body)
 		t.Fatalf("same-origin Referer POST status = %d, want %d; body: %s", response.StatusCode, http.StatusCreated, bytes)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 }
 
 func TestSignupRejectsPasswordsShorterThanTwelveCharacters(t *testing.T) {
@@ -380,7 +380,7 @@ func TestInstallAssetsAreServedPublicly(t *testing.T) {
 			if err != nil {
 				t.Fatalf("get install asset: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("GET %s status = %d, want %d", asset.path, response.StatusCode, http.StatusOK)
 			}
@@ -421,7 +421,7 @@ func TestBootstrapNodeUsesJoinTokenHashAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open test store: %v", err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	config := Config{
 		Store: st, DataDir: t.TempDir(), PublicURL: "https://boxes.example.test",
@@ -463,7 +463,7 @@ func TestBootstrapNodeDefaultsNameToLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open test store: %v", err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	srv, err := New(Config{Store: st, DataDir: t.TempDir(), BootstrapJoinToken: "bootstrap-secret"})
 	if err != nil {
@@ -527,7 +527,7 @@ func requestJSONWithHeaders(t *testing.T, client *http.Client, method, url, toke
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, url, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != status {
 		bytes, _ := io.ReadAll(response.Body)
 		t.Fatalf("%s %s status = %d, want %d; body: %s", method, url, response.StatusCode, status, bytes)
@@ -590,47 +590,6 @@ func assertErrorCode(t *testing.T, response *http.Response, status int, code str
 	errorValue, _ := payload["error"].(map[string]any)
 	if errorValue["code"] != code {
 		t.Fatalf("error code = %v, want %q", errorValue["code"], code)
-	}
-}
-
-func assertErrorMessage(t *testing.T, response *http.Response, status int, code, message string) {
-	t.Helper()
-	if response.StatusCode != status {
-		body, _ := io.ReadAll(response.Body)
-		t.Fatalf("status = %d, want %d; body: %s", response.StatusCode, status, body)
-	}
-	var payload struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode error response: %v", err)
-	}
-	if payload.Error.Code != code || !strings.HasPrefix(payload.Error.Message, message) {
-		t.Fatalf("error = %#v, want code %q and message %q", payload.Error, code, message)
-	}
-}
-
-func addCapacityReservations(t *testing.T, srv *Server, nodeID string) func() {
-	t.Helper()
-	ctx := context.Background()
-	ids := make([]string, 10)
-	for index := range ids {
-		ids[index] = types.NewID("bx_")
-		box := types.Box{ID: ids[index], NodeID: nodeID, Type: "default", State: types.StateReady, CreatedAt: time.Now().UTC()}
-		if err := srv.store.CreateBox(ctx, store.BoxRecord{Box: box}); err != nil {
-			t.Fatalf("create capacity reservation %s: %v", ids[index], err)
-		}
-	}
-	return func() {
-		t.Helper()
-		for _, id := range ids {
-			if err := srv.store.DeleteBox(ctx, id); err != nil {
-				t.Errorf("delete capacity reservation %s: %v", id, err)
-			}
-		}
 	}
 }
 

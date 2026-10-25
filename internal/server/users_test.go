@@ -108,7 +108,8 @@ func serveUserAgent(t *testing.T, srv *Server, httpServer *httptest.Server, node
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop")
 		}
@@ -131,7 +132,7 @@ func TestUserAndGroupRoutesRunRootStepsAndMapExitCodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record.Box.State = types.StateStopped
+	record.State = types.StateStopped
 	if err := srv.store.UpdateBox(context.Background(), record); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func TestUserAndGroupRoutesRunRootStepsAndMapExitCodes(t *testing.T) {
 		t.Fatalf("stopped error code = %v", code)
 	}
 
-	record.Box.State = types.StateReady
+	record.State = types.StateReady
 	if err := srv.store.UpdateBox(context.Background(), record); err != nil {
 		t.Fatal(err)
 	}

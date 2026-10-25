@@ -77,18 +77,18 @@ func TestReaperStopsIdleBoxAndLeavesBusyBoxRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idle.Box.State != types.StateStopped {
-		t.Fatalf("idle box state = %s, want stopped", idle.Box.State)
+	if idle.State != types.StateStopped {
+		t.Fatalf("idle box state = %s, want stopped", idle.State)
 	}
-	if busy.Box.State != types.StateReady {
-		t.Fatalf("busy box state = %s, want ready", busy.Box.State)
+	if busy.State != types.StateReady {
+		t.Fatalf("busy box state = %s, want ready", busy.State)
 	}
 	desktop, err := srv.store.GetBox(ctx, desktopID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if desktop.Box.State != types.StateReady {
-		t.Fatalf("desktop box state = %s, want ready", desktop.Box.State)
+	if desktop.State != types.StateReady {
+		t.Fatalf("desktop box state = %s, want ready", desktop.State)
 	}
 	if len(srv.idleCPUSamples[desktopID]) != 0 {
 		t.Fatalf("desktop box retained CPU samples: %#v", srv.idleCPUSamples[desktopID])
@@ -101,7 +101,8 @@ func TestReaperStopsIdleBoxAndLeavesBusyBoxRunning(t *testing.T) {
 	}
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err
 	case <-time.After(5 * time.Second):
 		t.Fatal("agent tunnel did not stop")
 	}

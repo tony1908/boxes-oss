@@ -16,7 +16,7 @@ func TestBoxLifecycleAccountingFieldsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Date(2026, time.September, 24, 12, 0, 0, 0, time.UTC)
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_lifecycle", Name: "node", Status: "healthy"}}); err != nil {
@@ -35,8 +35,8 @@ func TestBoxLifecycleAccountingFieldsRoundTrip(t *testing.T) {
 	if got.RunningSeconds != box.RunningSeconds || got.RunningSince == nil || !got.RunningSince.Equal(since) || got.SetupStatus != "running" {
 		t.Fatalf("lifecycle fields = %#v, want runningSeconds=%d runningSince=%s setupStatus=running", got, box.RunningSeconds, since)
 	}
-	if got.Box.IdleStopSeconds != 1800 {
-		t.Fatalf("idle stop seconds = %d", got.Box.IdleStopSeconds)
+	if got.IdleStopSeconds != 1800 {
+		t.Fatalf("idle stop seconds = %d", got.IdleStopSeconds)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestBoxTagsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_tags", Name: "node", Status: "healthy"}}); err != nil {
@@ -59,10 +59,10 @@ func TestBoxTagsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox(): %v", err)
 	}
-	if !reflect.DeepEqual(got.Box.Tags, tags) {
-		t.Fatalf("created tags = %#v, want %#v", got.Box.Tags, tags)
+	if !reflect.DeepEqual(got.Tags, tags) {
+		t.Fatalf("created tags = %#v, want %#v", got.Tags, tags)
 	}
-	got.Box.Tags = map[string]string{"owner": "ci"}
+	got.Tags = map[string]string{"owner": "ci"}
 	if err := s.UpdateBox(ctx, got); err != nil {
 		t.Fatalf("UpdateBox(): %v", err)
 	}
@@ -70,10 +70,10 @@ func TestBoxTagsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox() after update: %v", err)
 	}
-	if !reflect.DeepEqual(updated.Box.Tags, map[string]string{"owner": "ci"}) {
-		t.Fatalf("updated tags = %#v", updated.Box.Tags)
+	if !reflect.DeepEqual(updated.Tags, map[string]string{"owner": "ci"}) {
+		t.Fatalf("updated tags = %#v", updated.Tags)
 	}
-	got.Box.Tags = nil
+	got.Tags = nil
 	if err := s.UpdateBox(ctx, got); err != nil {
 		t.Fatalf("UpdateBox() clear: %v", err)
 	}
@@ -81,8 +81,8 @@ func TestBoxTagsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox() after clear: %v", err)
 	}
-	if cleared.Box.Tags != nil {
-		t.Fatalf("cleared tags = %#v, want nil", cleared.Box.Tags)
+	if cleared.Tags != nil {
+		t.Fatalf("cleared tags = %#v, want nil", cleared.Tags)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestIdleActivityAndOpenProxyTracking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Now().UTC()
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_idle", Name: "node", Status: "healthy"}}); err != nil {
@@ -136,7 +136,7 @@ func TestAPIKeyDailyUsageFlushAndSandboxAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
 	if err := s.AddAPIKeyRequestCounts(ctx, map[string]int64{"key_usage": 1204}, now); err != nil {
@@ -206,7 +206,7 @@ func TestOpenMigratesAndPersistsUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen database: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if _, err := s.GetUser(ctx, user.ID); err != nil {
 		t.Fatalf("GetUser() after reopen: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestSettingsPersistStorageDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	if err := s.SetSetting(ctx, "storage", []byte(`{"repository":"s3:https://s3.example.test/boxes"}`)); err != nil {
 		t.Fatalf("SetSetting(): %v", err)
@@ -240,7 +240,7 @@ func TestBackfillSnapshotStorageLeavesPreviouslyAssignedRepositoriesAlone(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Now().UTC()
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_storagebackfill", Name: "node", Status: "healthy"}}); err != nil {
@@ -276,7 +276,7 @@ func TestStorePersistsTypedRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	now := time.Date(2026, 9, 24, 12, 30, 0, 0, time.UTC)
 
 	user := types.User{ID: "usr_owner", Email: "owner@example.com", Role: "owner", PasswordHash: "hash", CreatedAt: now}
@@ -405,7 +405,7 @@ func TestRunStopWhenDonePolicyPersistsAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_runpolicy", Name: "node", Status: "healthy"}}); err != nil {
 		t.Fatal(err)
@@ -431,7 +431,7 @@ func TestCreateBoxEnforcesNodeForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	err = s.CreateBox(context.Background(), BoxRecord{
 		Box: types.Box{
@@ -453,7 +453,7 @@ func TestBoxNetworkPolicyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_net", Name: "node", Status: "healthy"}}); err != nil {
@@ -467,10 +467,10 @@ func TestBoxNetworkPolicyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox(): %v", err)
 	}
-	if !reflect.DeepEqual(got.Box.NetworkPolicy, policy) {
-		t.Fatalf("created policy = %#v, want %#v", got.Box.NetworkPolicy, policy)
+	if !reflect.DeepEqual(got.NetworkPolicy, policy) {
+		t.Fatalf("created policy = %#v, want %#v", got.NetworkPolicy, policy)
 	}
-	got.Box.NetworkPolicy = &types.NetworkPolicy{Mode: types.NetworkDenyAll}
+	got.NetworkPolicy = &types.NetworkPolicy{Mode: types.NetworkDenyAll}
 	if err := s.UpdateBox(ctx, got); err != nil {
 		t.Fatalf("UpdateBox(): %v", err)
 	}
@@ -478,10 +478,10 @@ func TestBoxNetworkPolicyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox() after update: %v", err)
 	}
-	if updated.Box.NetworkPolicy == nil || updated.Box.NetworkPolicy.Mode != types.NetworkDenyAll || len(updated.Box.NetworkPolicy.AllowDomains) != 0 {
-		t.Fatalf("updated policy = %#v", updated.Box.NetworkPolicy)
+	if updated.NetworkPolicy == nil || updated.NetworkPolicy.Mode != types.NetworkDenyAll || len(updated.NetworkPolicy.AllowDomains) != 0 {
+		t.Fatalf("updated policy = %#v", updated.NetworkPolicy)
 	}
-	updated.Box.NetworkPolicy = nil
+	updated.NetworkPolicy = nil
 	if err := s.UpdateBox(ctx, updated); err != nil {
 		t.Fatalf("UpdateBox(nil): %v", err)
 	}
@@ -489,8 +489,8 @@ func TestBoxNetworkPolicyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox() after clear: %v", err)
 	}
-	if cleared.Box.NetworkPolicy != nil {
-		t.Fatalf("cleared policy = %#v, want nil", cleared.Box.NetworkPolicy)
+	if cleared.NetworkPolicy != nil {
+		t.Fatalf("cleared policy = %#v, want nil", cleared.NetworkPolicy)
 	}
 }
 
@@ -499,7 +499,7 @@ func TestBoxSourceRoundTripOmitsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_source", Name: "node", Status: "healthy"}}); err != nil {
 		t.Fatalf("CreateNode(): %v", err)
@@ -512,10 +512,10 @@ func TestBoxSourceRoundTripOmitsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox(): %v", err)
 	}
-	if !reflect.DeepEqual(got.Box.Source, source) {
-		t.Fatalf("source = %#v, want %#v", got.Box.Source, source)
+	if !reflect.DeepEqual(got.Source, source) {
+		t.Fatalf("source = %#v, want %#v", got.Source, source)
 	}
-	got.Box.Source = nil
+	got.Source = nil
 	if err := s.UpdateBox(ctx, got); err != nil {
 		t.Fatalf("UpdateBox(): %v", err)
 	}
@@ -523,8 +523,8 @@ func TestBoxSourceRoundTripOmitsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox() after clear: %v", err)
 	}
-	if cleared.Box.Source != nil {
-		t.Fatalf("cleared source = %#v, want nil", cleared.Box.Source)
+	if cleared.Source != nil {
+		t.Fatalf("cleared source = %#v, want nil", cleared.Source)
 	}
 }
 
@@ -533,7 +533,7 @@ func TestBoxKeepSnapshotsAndRestoreSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_keep", Name: "node", Status: "healthy"}}); err != nil {
 		t.Fatalf("CreateNode(): %v", err)
@@ -545,10 +545,10 @@ func TestBoxKeepSnapshotsAndRestoreSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox(): %v", err)
 	}
-	if got.Box.KeepSnapshots != 2 || got.RestoreSnapshotID != "sn_restore1" {
-		t.Fatalf("created keepSnapshots = %d, restoreSnapshotId = %q", got.Box.KeepSnapshots, got.RestoreSnapshotID)
+	if got.KeepSnapshots != 2 || got.RestoreSnapshotID != "sn_restore1" {
+		t.Fatalf("created keepSnapshots = %d, restoreSnapshotId = %q", got.KeepSnapshots, got.RestoreSnapshotID)
 	}
-	got.Box.KeepSnapshots = 7
+	got.KeepSnapshots = 7
 	got.RestoreSnapshotID = ""
 	if err := s.UpdateBox(ctx, got); err != nil {
 		t.Fatalf("UpdateBox(): %v", err)
@@ -557,7 +557,7 @@ func TestBoxKeepSnapshotsAndRestoreSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBox() after update: %v", err)
 	}
-	if updated.Box.KeepSnapshots != 7 || updated.RestoreSnapshotID != "" {
-		t.Fatalf("updated keepSnapshots = %d, restoreSnapshotId = %q", updated.Box.KeepSnapshots, updated.RestoreSnapshotID)
+	if updated.KeepSnapshots != 7 || updated.RestoreSnapshotID != "" {
+		t.Fatalf("updated keepSnapshots = %d, restoreSnapshotId = %q", updated.KeepSnapshots, updated.RestoreSnapshotID)
 	}
 }

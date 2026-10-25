@@ -125,7 +125,7 @@ func (s *Server) proxySnapshot(w http.ResponseWriter, r *http.Request, action st
 		writeError(w, http.StatusBadGateway, "agent_unavailable", "agent request failed")
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		writeError(w, response.StatusCode, "agent_error", "snapshot could not be read")
 		return
@@ -185,17 +185,17 @@ func (s *Server) createNamedSnapshot(w http.ResponseWriter, r *http.Request) {
 			s.apiError(w, err)
 			return
 		}
-		if err := s.waitSnapshot(r.Context(), box.Box.ID); err != nil {
+		if err := s.waitSnapshot(r.Context(), box.ID); err != nil {
 			writeError(w, http.StatusConflict, "snapshot_in_progress", "sandbox snapshot capture did not finish before the wait expired")
 			return
 		}
-		defer s.endSnapshot(box.Box.ID)
+		defer s.endSnapshot(box.ID)
 		var response struct {
 			SnapshotID string    `json:"snapshotId"`
 			SizeBytes  int64     `json:"sizeBytes"`
 			CreatedAt  time.Time `json:"createdAt"`
 		}
-		if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", box.Box.ID, "snapshot"), nil, &response); err != nil {
+		if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", box.ID, "snapshot"), nil, &response); err != nil {
 			s.apiError(w, err)
 			return
 		}
@@ -206,13 +206,13 @@ func (s *Server) createNamedSnapshot(w http.ResponseWriter, r *http.Request) {
 		if response.CreatedAt.IsZero() {
 			response.CreatedAt = time.Now().UTC()
 		}
-		snapshot, err := s.recordSnapshot(r.Context(), box.Box.ID, response.SnapshotID, response.SizeBytes, response.CreatedAt, s.storageConfig())
+		snapshot, err := s.recordSnapshot(r.Context(), box.ID, response.SnapshotID, response.SizeBytes, response.CreatedAt, s.storageConfig())
 		if err != nil {
 			s.apiError(w, err)
 			return
 		}
-		capturedBoxID = box.Box.ID
-		s.recordActivity(r.Context(), box.Box.ID, "snapshot", "manual capture", map[string]any{"sizeBytes": response.SizeBytes}, "ok")
+		capturedBoxID = box.ID
+		s.recordActivity(r.Context(), box.ID, "snapshot", "manual capture", map[string]any{"sizeBytes": response.SizeBytes}, "ok")
 		input.SnapshotID = snapshot.ID
 	}
 	// Do not hold snapshotRefs while waiting for a per-box capture: periodic
@@ -271,7 +271,7 @@ func (s *Server) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	if snapshot.BoxID != box.Box.ID {
+	if snapshot.BoxID != box.ID {
 		writeError(w, http.StatusNotFound, "not_found", "snapshot not found")
 		return
 	}
@@ -287,16 +287,16 @@ func (s *Server) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	force := r.URL.Query().Get("force") == "true"
-	snapshots, err := s.store.ListSnapshots(r.Context(), box.Box.ID)
+	snapshots, err := s.store.ListSnapshots(r.Context(), box.ID)
 	if err != nil {
 		s.apiError(w, err)
 		return
 	}
-	if box.Box.State == types.StateStopped && len(snapshots) > 0 && (snapshots[len(snapshots)-1].ID == snapshot.ID || box.RestoreSnapshotID == snapshot.ID) && !force {
+	if box.State == types.StateStopped && len(snapshots) > 0 && (snapshots[len(snapshots)-1].ID == snapshot.ID || box.RestoreSnapshotID == snapshot.ID) && !force {
 		writeError(w, http.StatusConflict, "resume_snapshot", "the snapshot a stopped sandbox resumes from is required; pass force=true to delete it")
 		return
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "agent_unavailable", "snapshot agent is unavailable")
 		return

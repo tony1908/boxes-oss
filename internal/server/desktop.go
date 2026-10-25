@@ -74,7 +74,7 @@ func (s *Server) createDesktop(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	node, err := s.store.GetNode(r.Context(), box.Box.NodeID)
+	node, err := s.store.GetNode(r.Context(), box.NodeID)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -84,7 +84,7 @@ func (s *Server) createDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "node_host_missing", "node requires host or hostBase to create a desktop URL")
 		return
 	}
-	host := "desk-" + dnsBoxID(box.Box.ID) + "." + hostBase
+	host := "desk-" + dnsBoxID(box.ID) + "." + hostBase
 	token, err := randomToken(32)
 	if err != nil {
 		s.apiError(w, err)
@@ -92,7 +92,7 @@ func (s *Server) createDesktop(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.now().UTC()
 	s.platformMu.Lock()
-	session, exists := s.desktopSessions[box.Box.ID]
+	session, exists := s.desktopSessions[box.ID]
 	created := !exists || session.Public != input.Public
 	reused := exists && session.Public == input.Public && session.ExpiresAt.After(now.Add(30*time.Minute))
 	if exists && session.Public == input.Public && session.ExpiresAt.After(now.Add(30*time.Minute)) {
@@ -111,33 +111,33 @@ func (s *Server) createDesktop(w http.ResponseWriter, r *http.Request) {
 			s.apiError(w, err)
 			return
 		}
-		if err := s.store.SaveDesktopSession(r.Context(), store.DesktopSessionRecord{BoxID: box.Box.ID, TokenEnc: enc, ExpiresAt: session.ExpiresAt, Public: session.Public, Host: session.Host, Browser: session.Browser, Profile: session.Profile}); err != nil {
+		if err := s.store.SaveDesktopSession(r.Context(), store.DesktopSessionRecord{BoxID: box.ID, TokenEnc: enc, ExpiresAt: session.ExpiresAt, Public: session.Public, Host: session.Host, Browser: session.Browser, Profile: session.Profile}); err != nil {
 			s.platformMu.Unlock()
 			s.apiError(w, err)
 			return
 		}
-		s.desktopSessions[box.Box.ID] = session
+		s.desktopSessions[box.ID] = session
 	}
 	s.platformMu.Unlock()
 	expiresAt := session.ExpiresAt
 	route := desktopRouteState{Host: host, TokenHash: tokenHash(token), ExpiresAt: expiresAt}
 	s.platformMu.Lock()
-	s.desktopRoutes[box.Box.ID] = route
+	s.desktopRoutes[box.ID] = route
 	s.platformMu.Unlock()
 	ready, err := s.pushBoxRoutesReady(r.Context(), client, box.Box, &route)
 	if err != nil {
 		s.platformMu.Lock()
-		delete(s.desktopRoutes, box.Box.ID)
-		delete(s.desktopSessions, box.Box.ID)
+		delete(s.desktopRoutes, box.ID)
+		delete(s.desktopSessions, box.ID)
 		s.platformMu.Unlock()
-		_ = s.store.DeleteDesktopSession(r.Context(), box.Box.ID)
+		_ = s.store.DeleteDesktopSession(r.Context(), box.ID)
 		s.apiError(w, err)
 		return
 	}
 	if created && !input.Renewal {
-		s.recordActivity(r.Context(), box.Box.ID, "access", "desktop session created", map[string]any{"public": session.Public, "browser": session.Browser}, "ok")
+		s.recordActivity(r.Context(), box.ID, "access", "desktop session created", map[string]any{"public": session.Public, "browser": session.Browser}, "ok")
 	} else if reused && !input.Renewal {
-		s.recordActivity(r.Context(), box.Box.ID, "access", "desktop session reused", map[string]any{"public": session.Public, "browser": session.Browser}, "ok")
+		s.recordActivity(r.Context(), box.ID, "access", "desktop session reused", map[string]any{"public": session.Public, "browser": session.Browser}, "ok")
 	}
 	parsed := url.URL{Scheme: "https", Host: host, Path: "/"}
 	query := url.Values{}
@@ -159,10 +159,10 @@ func (s *Server) getDesktop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.platformMu.Lock()
-	session, ok := s.desktopSessions[box.Box.ID]
+	session, ok := s.desktopSessions[box.ID]
 	if ok && !session.ExpiresAt.After(s.now()) {
-		delete(s.desktopSessions, box.Box.ID)
-		delete(s.desktopRoutes, box.Box.ID)
+		delete(s.desktopSessions, box.ID)
+		delete(s.desktopRoutes, box.ID)
 		ok = false
 	}
 	s.platformMu.Unlock()
@@ -170,7 +170,7 @@ func (s *Server) getDesktop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "desktop_not_found", "desktop session not found")
 		return
 	}
-	s.recordActivity(r.Context(), box.Box.ID, "access", "desktop session reused", map[string]any{"public": session.Public, "browser": session.Browser}, "ok")
+	s.recordActivity(r.Context(), box.ID, "access", "desktop session reused", map[string]any{"public": session.Public, "browser": session.Browser}, "ok")
 	parsed := url.URL{Scheme: "https", Host: session.Host, Path: "/"}
 	query := url.Values{}
 	query.Set("token", session.Token)
@@ -297,7 +297,7 @@ func (s *Server) repushNodeRoutes(ctx context.Context, nodeID string, client *ag
 		return
 	}
 	for _, record := range boxes {
-		if record.Box.State != types.StateReady {
+		if record.State != types.StateReady {
 			continue
 		}
 		s.pushBoxRoutes(ctx, client, record.Box)

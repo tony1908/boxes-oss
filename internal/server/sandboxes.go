@@ -252,9 +252,6 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 		return types.Box{}, err
 	}
 	idleStop, err := parseIdleStopSeconds(input.IdleStopSeconds, 0)
-	if input.Fork && len(input.IdleStopSeconds) == 0 {
-		// Fork defaults are filled by the caller from its source sandbox.
-	}
 	if err != nil {
 		return types.Box{}, err
 	}
@@ -433,7 +430,7 @@ func (s *Server) listSandboxes(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]sandboxResponse, 0, len(boxes))
 	for _, box := range boxes {
-		if !matchingSandboxFilter(box.Box.State, filter) || !matchingTagFilters(box.Box.Tags, tagFilters) {
+		if !matchingSandboxFilter(box.State, filter) || !matchingTagFilters(box.Tags, tagFilters) {
 			continue
 		}
 		view, err := s.sandboxView(r.Context(), box)
@@ -497,7 +494,7 @@ func (s *Server) sandboxUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	total, month, days, err := s.store.RunningUsage(r.Context(), box.Box.ID, now)
+	total, month, days, err := s.store.RunningUsage(r.Context(), box.ID, now)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -549,12 +546,12 @@ func (s *Server) sandboxUsage(w http.ResponseWriter, r *http.Request) {
 		d := now.AddDate(0, 0, -i).Format("2006-01-02")
 		perDay = append(perDay, map[string]any{"date": d, "runningSeconds": days[d]})
 	}
-	counts, err := s.store.ActivityCounts(r.Context(), box.Box.ID)
+	counts, err := s.store.ActivityCounts(r.Context(), box.ID)
 	if err != nil {
 		s.apiError(w, err)
 		return
 	}
-	snapshots, err := s.store.ListSnapshots(r.Context(), box.Box.ID)
+	snapshots, err := s.store.ListSnapshots(r.Context(), box.ID)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -574,7 +571,7 @@ func (s *Server) sandboxUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	usage["totals"] = totals
 	pricing := s.pricing(r.Context())
-	rate, configured := pricing.HourlyBySize[box.Box.Type]
+	rate, configured := pricing.HourlyBySize[box.Type]
 	if !configured {
 		rate = pricing.HourlyBySize["default"]
 		configured = rate > 0
@@ -625,8 +622,8 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	oldTTL := box.Box.TTLSeconds
-	oldIdleStop := box.Box.IdleStopSeconds
+	oldTTL := box.TTLSeconds
+	oldIdleStop := box.IdleStopSeconds
 	ttlChanged := false
 	if input.TTLSeconds != nil {
 		ttl, err := parseTTLSeconds(input.TTLSeconds, 0)
@@ -634,11 +631,11 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_ttl", err.Error())
 			return
 		}
-		box.Box.TTLSeconds = ttl
-		box.Box.ExpiresAt = nil
+		box.TTLSeconds = ttl
+		box.ExpiresAt = nil
 		if ttl > 0 {
 			expires := time.Now().UTC().Add(time.Duration(ttl) * time.Second)
-			box.Box.ExpiresAt = &expires
+			box.ExpiresAt = &expires
 		}
 		ttlChanged = oldTTL != ttl
 	}
@@ -648,19 +645,19 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_idle_stop", err.Error())
 			return
 		}
-		box.Box.IdleStopSeconds = seconds
+		box.IdleStopSeconds = seconds
 	}
 	if input.Tags != nil {
 		// Replaces the whole map; an empty object clears all tags.
-		box.Box.Tags = input.Tags
+		box.Tags = input.Tags
 	}
 	if input.KeepSnapshots != nil {
-		box.Box.KeepSnapshots = *input.KeepSnapshots
+		box.KeepSnapshots = *input.KeepSnapshots
 	}
 	if policyChanged {
 		// A stopped box only stores the policy; it is sent on the next create (resume or start).
-		if box.Box.State == types.StateReady || box.Box.State == types.StateIdle {
-			client, connected := newAgentClient(s.hub, box.Box.NodeID)
+		if box.State == types.StateReady || box.State == types.StateIdle {
+			client, connected := newAgentClient(s.hub, box.NodeID)
 			if !connected {
 				writeError(w, http.StatusBadGateway, "network_policy_failed", "box node is offline")
 				return
@@ -669,24 +666,24 @@ func (s *Server) patchSandbox(w http.ResponseWriter, r *http.Request) {
 			if policyUpdate != nil {
 				body = policyUpdate
 			}
-			if err := client.json(r.Context(), http.MethodPut, agentPath("v1", "boxes", box.Box.ID, "network"), body, nil); err != nil {
-				s.recordActivity(r.Context(), box.Box.ID, "network", "error", map[string]any{"reason": err.Error()}, "error")
+			if err := client.json(r.Context(), http.MethodPut, agentPath("v1", "boxes", box.ID, "network"), body, nil); err != nil {
+				s.recordActivity(r.Context(), box.ID, "network", "error", map[string]any{"reason": err.Error()}, "error")
 				writeError(w, http.StatusBadGateway, "network_policy_failed", withAgentError("network policy could not be applied", err))
 				return
 			}
 		}
-		box.Box.NetworkPolicy = policyUpdate
-		s.recordActivity(r.Context(), box.Box.ID, "network", "policy changed", map[string]any{"mode": networkMode(policyUpdate)}, "ok")
+		box.NetworkPolicy = policyUpdate
+		s.recordActivity(r.Context(), box.ID, "network", "policy changed", map[string]any{"mode": networkMode(policyUpdate)}, "ok")
 	}
 	if err := s.store.UpdateBox(r.Context(), box); err != nil {
 		s.apiError(w, err)
 		return
 	}
 	if ttlChanged {
-		s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": box.Box.TTLSeconds}, "ok")
+		s.recordActivity(r.Context(), box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": box.TTLSeconds}, "ok")
 	}
-	if oldIdleStop != box.Box.IdleStopSeconds {
-		s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "idle stop changed", map[string]any{"old": oldIdleStop, "new": box.Box.IdleStopSeconds}, "ok")
+	if oldIdleStop != box.IdleStopSeconds {
+		s.recordActivity(r.Context(), box.ID, "lifecycle", "idle stop changed", map[string]any{"old": oldIdleStop, "new": box.IdleStopSeconds}, "ok")
 	}
 	view, err := s.sandboxView(r.Context(), box)
 	if err != nil {
@@ -702,12 +699,12 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	if err := s.waitSnapshot(r.Context(), box.Box.ID); err != nil {
+	if err := s.waitSnapshot(r.Context(), box.ID); err != nil {
 		writeError(w, http.StatusConflict, "snapshot_in_progress", "sandbox snapshot capture did not finish before the wait expired")
 		return
 	}
-	defer s.endSnapshot(box.Box.ID)
-	s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "stop requested", nil, "ok")
+	defer s.endSnapshot(box.ID)
+	s.recordActivity(r.Context(), box.ID, "lifecycle", "stop requested", nil, "ok")
 	// Read usage before the container stops; a failed read only leaves this session out of the totals.
 	// ponytail: a crash between stops loses that session's usage numbers.
 	sessionUsage, hasUsage := s.liveCounters(r.Context(), box)
@@ -718,8 +715,8 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 			CreatedAt  time.Time `json:"createdAt"`
 		} `json:"snapshot"`
 	}
-	if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", box.Box.ID, "stop"), map[string]bool{"snapshot": true}, &response); err != nil {
-		s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+	if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", box.ID, "stop"), map[string]bool{"snapshot": true}, &response); err != nil {
+		s.recordActivity(r.Context(), box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		if agentErrorStatus(err) == http.StatusConflict {
 			writeError(w, http.StatusConflict, "snapshot_failed", withAgentError("sandbox could not be captured and remains running", err))
 			return
@@ -728,7 +725,7 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if response.Snapshot.SnapshotID == "" {
-		s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "error", map[string]any{"reason": "agent returned no stop snapshot"}, "error")
+		s.recordActivity(r.Context(), box.ID, "lifecycle", "error", map[string]any{"reason": "agent returned no stop snapshot"}, "error")
 		writeError(w, http.StatusBadGateway, "snapshot_failed", "agent returned no snapshot identifier; sandbox remains running")
 		return
 	}
@@ -738,29 +735,29 @@ func (s *Server) stopSandbox(w http.ResponseWriter, r *http.Request) {
 		box.TotalTxBytes += sessionUsage.TxBytes
 	}
 	now := time.Now().UTC()
-	box.Box.State = types.StateStopped
-	s.dropDesktopSession(box.Box.ID)
-	box.Box.StoppedAt = &now
+	box.State = types.StateStopped
+	s.dropDesktopSession(box.ID)
+	box.StoppedAt = &now
 	closeRunningInterval(&box, now)
 	if response.Snapshot.SnapshotID != "" {
 		createdAt := response.Snapshot.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = now
 		}
-		if _, err := s.recordSnapshot(r.Context(), box.Box.ID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
-			s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+		if _, err := s.recordSnapshot(r.Context(), box.ID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
+			s.recordActivity(r.Context(), box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 			s.apiError(w, err)
 			return
 		}
-		s.recordActivity(r.Context(), box.Box.ID, "snapshot", "stop capture", map[string]any{"sizeBytes": response.Snapshot.SizeBytes}, "ok")
+		s.recordActivity(r.Context(), box.ID, "snapshot", "stop capture", map[string]any{"sizeBytes": response.Snapshot.SizeBytes}, "ok")
 	}
 	if err := s.store.UpdateBox(r.Context(), box); err != nil {
 		s.apiError(w, err)
 		return
 	}
-	_ = s.store.CloseRunningInterval(r.Context(), box.Box.ID, now)
-	s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "stopped", nil, "ok")
-	s.stopEventPump(box.Box.ID)
+	_ = s.store.CloseRunningInterval(r.Context(), box.ID, now)
+	s.recordActivity(r.Context(), box.ID, "lifecycle", "stopped", nil, "ok")
+	s.stopEventPump(box.ID)
 	view, err := s.sandboxView(r.Context(), box)
 	if err != nil {
 		s.apiError(w, err)
@@ -796,7 +793,7 @@ func (s *Server) resumeSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	box, err = s.resumeBox(r.Context(), box, input)
 	if err != nil {
-		s.writeResumeError(w, box.Box.ID, err)
+		s.writeResumeError(w, box.ID, err)
 		return
 	}
 	view, err := s.sandboxView(r.Context(), box)
@@ -808,24 +805,24 @@ func (s *Server) resumeSandbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resumeSandboxRequest) (store.BoxRecord, error) {
-	oldTTL := box.Box.TTLSeconds
-	if err := s.waitSnapshot(ctx, box.Box.ID); err != nil {
+	oldTTL := box.TTLSeconds
+	if err := s.waitSnapshot(ctx, box.ID); err != nil {
 		return box, errSnapshotBusy
 	}
-	defer s.endSnapshot(box.Box.ID)
+	defer s.endSnapshot(box.ID)
 	if input.Type != "" {
 		if _, err := types.SizeFor(input.Type); err != nil {
 			return box, err
 		}
 	}
-	snapshots, err := s.store.ListSnapshots(ctx, box.Box.ID)
+	snapshots, err := s.store.ListSnapshots(ctx, box.ID)
 	if err != nil {
 		return box, err
 	}
 	if len(snapshots) == 0 {
 		return box, errSnapshotRequired
 	}
-	ttl := box.Box.TTLSeconds
+	ttl := box.TTLSeconds
 	if input.TTLSeconds != nil {
 		ttl, err = parseTTLSeconds(input.TTLSeconds, ttl)
 		if err != nil {
@@ -833,17 +830,17 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 		}
 	}
 	if input.Type == "" {
-		input.Type = box.Box.Type
+		input.Type = box.Type
 	}
-	box.Box.State = types.StateResuming
+	box.State = types.StateResuming
 	if err := s.store.UpdateBox(ctx, box); err != nil {
 		return box, err
 	}
 	if err := s.migrateBox(ctx, &box, struct {
 		Type string `json:"type"`
 	}{Type: input.Type}); err != nil {
-		s.recordActivity(ctx, box.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
-		box.Box.State = types.StateStopped
+		s.recordActivity(ctx, box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+		box.State = types.StateStopped
 		_ = s.store.UpdateBox(context.Background(), box)
 		s.emitWebhookEvent(context.Background(), "sandbox.error", map[string]any{"sandbox": box.Box, "error": err.Error()})
 		return box, err
@@ -851,44 +848,44 @@ func (s *Server) resumeBox(ctx context.Context, box store.BoxRecord, input resum
 	// The restore target is consumed by a successful resume.
 	box.RestoreSnapshotID = ""
 	now := time.Now().UTC()
-	if box.Box.State == types.StateProvisioning {
-		box.Box.StoppedAt = nil
-		box.Box.TTLSeconds = ttl
-		box.Box.Error = ""
-		box.Box.ErrorCode = ""
-		box.Box.ExpiresAt = nil
+	if box.State == types.StateProvisioning {
+		box.StoppedAt = nil
+		box.TTLSeconds = ttl
+		box.Error = ""
+		box.ErrorCode = ""
+		box.ExpiresAt = nil
 		if ttl > 0 {
 			expires := now.Add(time.Duration(ttl) * time.Second)
-			box.Box.ExpiresAt = &expires
+			box.ExpiresAt = &expires
 		}
 		if err := s.store.UpdateBox(ctx, box); err != nil {
 			return box, err
 		}
 		if oldTTL != ttl {
-			s.recordActivity(ctx, box.Box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": ttl}, "ok")
+			s.recordActivity(ctx, box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": ttl}, "ok")
 		}
-		s.recordActivity(ctx, box.Box.ID, "lifecycle", "resumed", map[string]any{"node": box.Box.NodeID}, "ok")
+		s.recordActivity(ctx, box.ID, "lifecycle", "resumed", map[string]any{"node": box.NodeID}, "ok")
 		return box, nil
 	}
-	box.Box.State = types.StateReady
-	box.Box.Error = ""
-	box.Box.ErrorCode = ""
-	box.Box.StoppedAt = nil
-	box.Box.TTLSeconds = ttl
-	box.Box.ExpiresAt = nil
+	box.State = types.StateReady
+	box.Error = ""
+	box.ErrorCode = ""
+	box.StoppedAt = nil
+	box.TTLSeconds = ttl
+	box.ExpiresAt = nil
 	if ttl > 0 {
 		expires := now.Add(time.Duration(ttl) * time.Second)
-		box.Box.ExpiresAt = &expires
+		box.ExpiresAt = &expires
 	}
 	box.RunningSince = &now
 	if err := s.store.UpdateBox(ctx, box); err != nil {
 		return box, err
 	}
-	_ = s.store.OpenRunningInterval(ctx, box.Box.ID, now)
+	_ = s.store.OpenRunningInterval(ctx, box.ID, now)
 	if oldTTL != ttl {
-		s.recordActivity(ctx, box.Box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": ttl}, "ok")
+		s.recordActivity(ctx, box.ID, "lifecycle", "TTL changed", map[string]any{"old": oldTTL, "new": ttl}, "ok")
 	}
-	s.recordActivity(ctx, box.Box.ID, "lifecycle", "resumed", map[string]any{"node": box.Box.NodeID}, "ok")
+	s.recordActivity(ctx, box.ID, "lifecycle", "resumed", map[string]any{"node": box.NodeID}, "ok")
 	s.syncEventPump(box.Box)
 	return box, nil
 }
@@ -909,12 +906,12 @@ func (s *Server) restoreSandbox(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	switch box.Box.State {
+	switch box.State {
 	case types.StateProvisioning, types.StateStopping, types.StateResuming, types.StateDeleting:
-		writeError(w, http.StatusConflict, "sandbox_busy", "sandbox is "+string(box.Box.State)+"; retry when it settles")
+		writeError(w, http.StatusConflict, "sandbox_busy", "sandbox is "+string(box.State)+"; retry when it settles")
 		return
 	}
-	snapshots, err := s.store.ListSnapshots(r.Context(), box.Box.ID)
+	snapshots, err := s.store.ListSnapshots(r.Context(), box.ID)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -927,7 +924,7 @@ func (s *Server) restoreSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "snapshot_not_found", "snapshot not found for this sandbox")
 		return
 	}
-	running := box.Box.State == types.StateReady || box.Box.State == types.StateIdle
+	running := box.State == types.StateReady || box.State == types.StateIdle
 	if running {
 		// Reuse the stop handler; relay its response unchanged if the stop fails.
 		recorder := httptest.NewRecorder()
@@ -940,7 +937,7 @@ func (s *Server) restoreSandbox(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(recorder.Body.Bytes())
 			return
 		}
-		if box, err = s.store.GetBox(r.Context(), box.Box.ID); err != nil {
+		if box, err = s.store.GetBox(r.Context(), box.ID); err != nil {
 			s.apiError(w, err)
 			return
 		}
@@ -950,10 +947,10 @@ func (s *Server) restoreSandbox(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	s.recordActivity(r.Context(), box.Box.ID, "snapshot", "restore requested", map[string]any{"snapshotId": input.SnapshotID}, "ok")
+	s.recordActivity(r.Context(), box.ID, "snapshot", "restore requested", map[string]any{"snapshotId": input.SnapshotID}, "ok")
 	if running {
 		if box, err = s.resumeBox(r.Context(), box, resumeSandboxRequest{}); err != nil {
-			s.writeResumeError(w, box.Box.ID, err)
+			s.writeResumeError(w, box.ID, err)
 			return
 		}
 	}
@@ -992,11 +989,11 @@ func (s *Server) writeResumeError(w http.ResponseWriter, boxID string, err error
 func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input struct {
 	Type string `json:"type"`
 }) error {
-	snapshots, err := s.store.ListSnapshots(ctx, record.Box.ID)
+	snapshots, err := s.store.ListSnapshots(ctx, record.ID)
 	if err != nil || len(snapshots) == 0 {
 		return errors.New("cannot migrate without a snapshot")
 	}
-	targetType := record.Box.Type
+	targetType := record.Type
 	if input.Type != "" {
 		targetType = input.Type
 	}
@@ -1004,11 +1001,11 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	if err != nil {
 		return err
 	}
-	node, err := s.scheduleExcluding(ctx, size, targetType, record.Box.ID)
+	node, err := s.scheduleExcluding(ctx, size, targetType, record.ID)
 	if err != nil {
 		return err
 	}
-	oldAgent, sourceConnected := newAgentClient(s.hub, record.Box.NodeID)
+	oldAgent, sourceConnected := newAgentClient(s.hub, record.NodeID)
 	if !sourceConnected {
 		return errors.New("local agent disconnected")
 	}
@@ -1037,26 +1034,26 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{"boxId": record.Box.ID, "image": record.Box.Image, "toolsImage": s.defaultImages().Tools, "type": targetType,
+	payload := map[string]any{"boxId": record.ID, "image": record.Image, "toolsImage": s.defaultImages().Tools, "type": targetType,
 		"desktopPassword": string(password), "boxdToken": string(boxdToken), "fromSnapshot": source.ResticID,
 		"storage": restoreStorage}
-	if record.Box.NetworkPolicy != nil {
-		payload["networkPolicy"] = record.Box.NetworkPolicy
+	if record.NetworkPolicy != nil {
+		payload["networkPolicy"] = record.NetworkPolicy
 	}
-	if len(record.Box.Mounts) != 0 {
-		payload["mounts"] = record.Box.Mounts
+	if len(record.Mounts) != 0 {
+		payload["mounts"] = record.Mounts
 	}
-	if node.Node.ID == record.Box.NodeID {
-		if err := oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.Box.ID), nil, nil); err != nil {
+	if node.Node.ID == record.NodeID {
+		if err := oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.ID), nil, nil); err != nil {
 			return err
 		}
 		if err := newAgent.json(ctx, http.MethodPost, "/v1/boxes", payload, nil); err != nil {
 			return err
 		}
 	}
-	record.Box.NodeID = node.Node.ID
-	record.Box.Type = targetType
-	record.Box.State = types.StateReady
+	record.NodeID = node.Node.ID
+	record.Type = targetType
+	record.State = types.StateReady
 	_ = s.pushCurrentBoxRoutes(ctx, newAgent, record.Box)
 	return nil
 }
@@ -1088,24 +1085,24 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	if err := s.waitSnapshot(r.Context(), source.Box.ID); err != nil {
-		s.recordActivity(r.Context(), source.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+	if err := s.waitSnapshot(r.Context(), source.ID); err != nil {
+		s.recordActivity(r.Context(), source.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		writeError(w, http.StatusConflict, "snapshot_in_progress", "source sandbox snapshot capture did not finish before the wait expired")
 		return
 	}
-	defer s.endSnapshot(source.Box.ID)
+	defer s.endSnapshot(source.ID)
 	var captured struct {
 		SnapshotID string    `json:"snapshotId"`
 		SizeBytes  int64     `json:"sizeBytes"`
 		CreatedAt  time.Time `json:"createdAt"`
 	}
-	if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", source.Box.ID, "snapshot"), nil, &captured); err != nil {
-		s.recordActivity(r.Context(), source.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+	if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", source.ID, "snapshot"), nil, &captured); err != nil {
+		s.recordActivity(r.Context(), source.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		writeError(w, agentErrorStatus(err), "snapshot_failed", "source sandbox could not be captured")
 		return
 	}
 	if captured.SnapshotID == "" {
-		s.recordActivity(r.Context(), source.Box.ID, "lifecycle", "error", map[string]any{"reason": "agent returned no snapshot identifier"}, "error")
+		s.recordActivity(r.Context(), source.ID, "lifecycle", "error", map[string]any{"reason": "agent returned no snapshot identifier"}, "error")
 		writeError(w, http.StatusBadGateway, "snapshot_failed", "agent returned no snapshot identifier")
 		return
 	}
@@ -1113,34 +1110,34 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	if _, err := s.recordSnapshot(r.Context(), source.Box.ID, captured.SnapshotID, captured.SizeBytes, now, s.storageConfig()); err != nil {
-		s.recordActivity(r.Context(), source.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+	if _, err := s.recordSnapshot(r.Context(), source.ID, captured.SnapshotID, captured.SizeBytes, now, s.storageConfig()); err != nil {
+		s.recordActivity(r.Context(), source.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		s.apiError(w, err)
 		return
 	}
-	s.recordActivity(r.Context(), source.Box.ID, "snapshot", "manual capture", map[string]any{"sizeBytes": captured.SizeBytes}, "ok")
+	s.recordActivity(r.Context(), source.ID, "snapshot", "manual capture", map[string]any{"sizeBytes": captured.SizeBytes}, "ok")
 	if input.Type == "" {
-		input.Type = source.Box.Type
+		input.Type = source.Type
 	}
-	input.Image = source.Box.Image // a fork always runs the source's image
+	input.Image = source.Image // a fork always runs the source's image
 	if len(input.IdleStopSeconds) == 0 {
-		input.IdleStopSeconds, _ = json.Marshal(source.Box.IdleStopSeconds)
+		input.IdleStopSeconds, _ = json.Marshal(source.IdleStopSeconds)
 	}
 	if input.Tags == nil {
-		input.Tags = source.Box.Tags
+		input.Tags = source.Tags
 	}
 	if input.NetworkPolicy == nil {
-		input.NetworkPolicy = source.Box.NetworkPolicy
+		input.NetworkPolicy = source.NetworkPolicy
 	}
 	if input.KeepSnapshots == 0 {
-		input.KeepSnapshots = source.Box.KeepSnapshots
+		input.KeepSnapshots = source.KeepSnapshots
 	}
 	// Forks keep read-only drive mounts only; read-write drives are not copied (see docs).
-	input.Mounts = readOnlyMounts(source.Box.Mounts)
+	input.Mounts = readOnlyMounts(source.Mounts)
 	input.Fork = true
 	fork, err := s.provisionSandbox(r.Context(), input, captured.SnapshotID, "")
 	if err != nil {
-		s.recordActivity(r.Context(), source.Box.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+		s.recordActivity(r.Context(), source.ID, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		s.emitWebhookEvent(context.Background(), "sandbox.error", map[string]any{"sandbox": source.Box, "error": err.Error()})
 		if agentErrorCode(err) == "box_not_ready" {
 			writeError(w, http.StatusServiceUnavailable, "box_not_ready", withAgentError("boxd did not become ready", err))
@@ -1158,7 +1155,7 @@ func (s *Server) forkSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fork_failed", withAgentError("sandbox could not be forked", err))
 		return
 	}
-	s.recordActivity(r.Context(), source.Box.ID, "lifecycle", "forked", map[string]any{"newBoxId": fork.ID, "sourceBoxId": source.Box.ID}, "ok")
+	s.recordActivity(r.Context(), source.ID, "lifecycle", "forked", map[string]any{"newBoxId": fork.ID, "sourceBoxId": source.ID}, "ok")
 	record, err := s.store.GetBox(r.Context(), fork.ID)
 	if err != nil {
 		s.apiError(w, err)
@@ -1176,8 +1173,8 @@ func (s *Server) deleteSandboxNow(w http.ResponseWriter, r *http.Request) {
 	queued, queuedErr := s.store.GetBox(r.Context(), pathID(r))
 	if queuedErr == nil {
 		localDelete := false
-		if queued.Box.State == types.StateStopped {
-			if node, err := s.store.GetNode(r.Context(), queued.Box.NodeID); err == nil {
+		if queued.State == types.StateStopped {
+			if node, err := s.store.GetNode(r.Context(), queued.NodeID); err == nil {
 				localDelete = node.Node.Status == "offline"
 			}
 		}
@@ -1195,25 +1192,25 @@ func (s *Server) deleteSandboxNow(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	box.Box.State = types.StateDeleting
+	box.State = types.StateDeleting
 	if err := s.store.UpdateBox(r.Context(), box); err != nil {
 		s.apiError(w, err)
 		return
 	}
-	s.stopEventPump(box.Box.ID)
-	if err := client.json(r.Context(), http.MethodDelete, agentPath("v1", "boxes", box.Box.ID), nil, nil); err != nil {
-		box.Box.State = types.StateReady
+	s.stopEventPump(box.ID)
+	if err := client.json(r.Context(), http.MethodDelete, agentPath("v1", "boxes", box.ID), nil, nil); err != nil {
+		box.State = types.StateReady
 		_ = s.store.UpdateBox(context.Background(), box)
 		writeError(w, agentErrorStatus(err), "agent_error", "agent could not delete sandbox")
 		return
 	}
-	snapshots, _ := s.store.ListSnapshots(r.Context(), box.Box.ID)
-	s.recordActivity(r.Context(), box.Box.ID, "lifecycle", "deleted", map[string]any{"boxId": box.Box.ID}, "ok")
-	if err := s.store.DeleteBox(r.Context(), box.Box.ID); err != nil {
+	snapshots, _ := s.store.ListSnapshots(r.Context(), box.ID)
+	s.recordActivity(r.Context(), box.ID, "lifecycle", "deleted", map[string]any{"boxId": box.ID}, "ok")
+	if err := s.store.DeleteBox(r.Context(), box.ID); err != nil {
 		s.apiError(w, err)
 		return
 	}
-	s.dropDesktopSession(box.Box.ID)
+	s.dropDesktopSession(box.ID)
 	s.emitWebhookEvent(context.Background(), "sandbox.deleted", map[string]any{"sandbox": box.Box})
 	w.WriteHeader(http.StatusNoContent)
 	go s.forgetSnapshotsAsync(snapshots, client)
@@ -1239,7 +1236,7 @@ func (s *Server) forgetSnapshotsAsync(snapshots []types.Snapshot, client *agentC
 }
 
 func (s *Server) deleteDetachedSandbox(ctx context.Context, record store.BoxRecord) error {
-	snapshots, err := s.store.ListSnapshots(ctx, record.Box.ID)
+	snapshots, err := s.store.ListSnapshots(ctx, record.ID)
 	if err != nil {
 		return err
 	}
@@ -1258,9 +1255,9 @@ func (s *Server) deleteDetachedSandbox(ctx context.Context, record store.BoxReco
 			}
 		}
 	}
-	s.stopEventPump(record.Box.ID)
-	s.recordActivity(ctx, record.Box.ID, "lifecycle", "deleted", map[string]any{"boxId": record.Box.ID}, "ok")
-	if err := s.store.DeleteBox(ctx, record.Box.ID); err != nil {
+	s.stopEventPump(record.ID)
+	s.recordActivity(ctx, record.ID, "lifecycle", "deleted", map[string]any{"boxId": record.ID}, "ok")
+	if err := s.store.DeleteBox(ctx, record.ID); err != nil {
 		return err
 	}
 	s.emitWebhookEvent(context.Background(), "sandbox.deleted", map[string]any{"sandbox": record.Box})
@@ -1272,7 +1269,7 @@ func (s *Server) loadBoxAgent(ctx context.Context, id string) (store.BoxRecord, 
 	if err != nil {
 		return store.BoxRecord{}, nil, err
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		return store.BoxRecord{}, nil, errors.New("box node is offline")
 	}

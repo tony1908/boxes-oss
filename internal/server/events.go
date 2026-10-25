@@ -85,12 +85,12 @@ func (s *Server) runEventPump(ctx context.Context, boxID string) {
 			}
 			continue
 		}
-		if box.Box.State != types.StateReady && box.Box.State != types.StateIdle {
+		if box.State != types.StateReady && box.State != types.StateIdle {
 			return
 		}
-		client, ok := newAgentClient(s.hub, box.Box.NodeID)
+		client, ok := newAgentClient(s.hub, box.NodeID)
 		if !ok {
-			s.logEventPumpError(boxID, fmt.Errorf("node %s is not connected", box.Box.NodeID))
+			s.logEventPumpError(boxID, fmt.Errorf("node %s is not connected", box.NodeID))
 			if !sleepContext(ctx, time.Second) {
 				return
 			}
@@ -101,7 +101,7 @@ func (s *Server) runEventPump(ctx context.Context, boxID string) {
 				return
 			}
 			// A box that is stopping closes its event store under the pump (outbox_error "database is closed"); that is a normal end.
-			if current, getErr := s.store.GetBox(ctx, boxID); getErr != nil || (current.Box.State != types.StateReady && current.Box.State != types.StateIdle) {
+			if current, getErr := s.store.GetBox(ctx, boxID); getErr != nil || (current.State != types.StateReady && current.State != types.StateIdle) {
 				return
 			}
 			s.logEventPumpError(boxID, err)
@@ -509,27 +509,27 @@ func (s *Server) stopBoxAfterRun(boxID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	box, err := s.store.GetBox(ctx, boxID)
-	if err != nil || (box.Box.State != types.StateReady && box.Box.State != types.StateIdle) {
+	if err != nil || (box.State != types.StateReady && box.State != types.StateIdle) {
 		return
 	}
 	if err := s.waitSnapshot(ctx, boxID); err != nil {
 		return
 	}
 	defer s.endSnapshot(boxID)
-	previousState := box.Box.State
-	box.Box.State = types.StateStopping
+	previousState := box.State
+	box.State = types.StateStopping
 	if err := s.store.UpdateBox(ctx, box); err != nil {
 		return
 	}
 	s.recordSystemActivity(ctx, boxID, "system", "lifecycle", "stop requested", map[string]any{"reason": "run completed"}, "ok")
 	resumeAfterFailure := func() {
-		if current, err := s.store.GetBox(context.Background(), boxID); err == nil && current.Box.State == types.StateStopping {
-			current.Box.State = previousState
+		if current, err := s.store.GetBox(context.Background(), boxID); err == nil && current.State == types.StateStopping {
+			current.State = previousState
 			_ = s.store.UpdateBox(context.Background(), current)
 			s.syncEventPump(current.Box)
 		}
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		resumeAfterFailure()
 		return
@@ -557,18 +557,18 @@ func (s *Server) stopBoxAfterRun(boxID string) {
 	}
 	if _, err := s.recordSnapshot(ctx, boxID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
 		now := time.Now().UTC()
-		box.Box.State = types.StateError
-		box.Box.ErrorCode = "snapshot_failed"
-		box.Box.Error = diagnostics.Sanitize(err.Error())
-		box.Box.StoppedAt = &now
+		box.State = types.StateError
+		box.ErrorCode = "snapshot_failed"
+		box.Error = diagnostics.Sanitize(err.Error())
+		box.StoppedAt = &now
 		closeRunningInterval(&box, now)
 		_ = s.store.UpdateBox(context.Background(), box)
 		s.recordSystemActivity(ctx, boxID, "system", "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
 		s.stopEventPump(boxID)
 		return
 	}
-	box.Box.State = types.StateStopped
-	box.Box.StoppedAt = &now
+	box.State = types.StateStopped
+	box.StoppedAt = &now
 	closeRunningInterval(&box, now)
 	if err := s.store.UpdateBox(ctx, box); err != nil {
 		return
@@ -612,7 +612,7 @@ func (s *Server) boxAgent(ctx context.Context, boxID string) (*agentClient, erro
 	if err != nil {
 		return nil, err
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		return nil, fmt.Errorf("box node is offline")
 	}
@@ -650,8 +650,4 @@ func sleepContext(ctx context.Context, duration time.Duration) bool {
 	case <-timer.C:
 		return true
 	}
-}
-
-func eventPath(boxID, suffix string) string {
-	return strings.TrimSuffix(agentPath("v1", "boxes", boxID, "boxd", suffix), "/")
 }

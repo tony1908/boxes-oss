@@ -29,8 +29,8 @@ func (s *Server) getOperation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteSandbox(w http.ResponseWriter, r *http.Request) {
 	if box, err := s.store.GetBox(r.Context(), pathID(r)); err == nil {
 		local := false
-		if box.Box.State == types.StateStopped {
-			if node, nodeErr := s.store.GetNode(r.Context(), box.Box.NodeID); nodeErr == nil {
+		if box.State == types.StateStopped {
+			if node, nodeErr := s.store.GetNode(r.Context(), box.NodeID); nodeErr == nil {
 				local = node.Node.Status == "offline"
 			}
 		}

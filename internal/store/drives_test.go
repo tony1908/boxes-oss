@@ -16,7 +16,7 @@ func TestDrivesCRUDAndBoxMountsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	now := time.Date(2026, time.October, 24, 12, 0, 0, 0, time.UTC)
 	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_drv", Name: "node", Status: "healthy"}}); err != nil {
@@ -44,16 +44,16 @@ func TestDrivesCRUDAndBoxMountsRoundTrip(t *testing.T) {
 		t.Fatalf("CreateBox(): %v", err)
 	}
 	box, err := s.GetBox(ctx, "bx_drives12345")
-	if err != nil || !reflect.DeepEqual(box.Box.Mounts, mounts) {
-		t.Fatalf("created mounts = %#v, %v", box.Box.Mounts, err)
+	if err != nil || !reflect.DeepEqual(box.Mounts, mounts) {
+		t.Fatalf("created mounts = %#v, %v", box.Mounts, err)
 	}
-	box.Box.Mounts = nil
+	box.Mounts = nil
 	if err := s.UpdateBox(ctx, box); err != nil {
 		t.Fatalf("UpdateBox(): %v", err)
 	}
 	cleared, err := s.GetBox(ctx, "bx_drives12345")
-	if err != nil || cleared.Box.Mounts != nil {
-		t.Fatalf("cleared mounts = %#v, %v", cleared.Box.Mounts, err)
+	if err != nil || cleared.Mounts != nil {
+		t.Fatalf("cleared mounts = %#v, %v", cleared.Mounts, err)
 	}
 	if err := s.DeleteDrive(ctx, "cache"); err != nil {
 		t.Fatalf("DeleteDrive(): %v", err)

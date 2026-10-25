@@ -84,7 +84,7 @@ func TestPushRoundTripsStreamingArchiveToAPI(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		tr := tar.NewReader(gz)
 		for {
 			header, err := tr.Next()

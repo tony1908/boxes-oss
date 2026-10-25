@@ -304,7 +304,7 @@ func (s *codexSession) readMessages() {
 	s.mu.Lock()
 	for id, response := range s.pending {
 		delete(s.pending, id)
-		response <- codexResponse{err: errors.New("Codex app-server closed")}
+		response <- codexResponse{err: errors.New("codex app-server closed")}
 	}
 	s.mu.Unlock()
 	_ = s.process.Wait()

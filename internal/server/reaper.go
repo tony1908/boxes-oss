@@ -35,22 +35,22 @@ func (s *Server) reapExpired(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, box := range boxes {
-		if box.Box.State == types.StateStopped || box.Box.State == types.StateStopping || box.Box.State == types.StateDeleting {
+		if box.State == types.StateStopped || box.State == types.StateStopping || box.State == types.StateDeleting {
 			continue
 		}
-		ttlDue := box.Box.TTLSeconds > 0 && box.Box.ExpiresAt != nil && !box.Box.ExpiresAt.After(now)
+		ttlDue := box.TTLSeconds > 0 && box.ExpiresAt != nil && !box.ExpiresAt.After(now)
 		idleDue := false
-		if !ttlDue && box.Box.IdleStopSeconds > 0 {
+		if !ttlDue && box.IdleStopSeconds > 0 {
 			idleDue = s.boxIdleDue(ctx, box, now)
 		}
 		if !ttlDue && !idleDue {
 			continue
 		}
-		client, ok := newAgentClient(s.hub, box.Box.NodeID)
+		client, ok := newAgentClient(s.hub, box.NodeID)
 		if !ok {
 			continue
 		}
-		if !s.beginSnapshot(box.Box.ID) {
+		if !s.beginSnapshot(box.ID) {
 			continue
 		}
 		var response struct {
@@ -60,13 +60,13 @@ func (s *Server) reapExpired(ctx context.Context, now time.Time) {
 				CreatedAt  time.Time `json:"createdAt"`
 			} `json:"snapshot"`
 		}
-		if err := client.json(ctx, http.MethodPost, agentPath("v1", "boxes", box.Box.ID, "stop"), map[string]bool{"snapshot": true}, &response); err != nil {
+		if err := client.json(ctx, http.MethodPost, agentPath("v1", "boxes", box.ID, "stop"), map[string]bool{"snapshot": true}, &response); err != nil {
 			actor := "auto-stop timer"
 			if idleDue {
 				actor = "idle auto-stop"
 			}
-			s.recordSystemActivity(ctx, box.Box.ID, actor, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
-			s.endSnapshot(box.Box.ID)
+			s.recordSystemActivity(ctx, box.ID, actor, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+			s.endSnapshot(box.ID)
 			continue
 		}
 		if response.Snapshot.SnapshotID == "" {
@@ -74,70 +74,70 @@ func (s *Server) reapExpired(ctx context.Context, now time.Time) {
 			if idleDue {
 				actor = "idle auto-stop"
 			}
-			s.recordSystemActivity(ctx, box.Box.ID, actor, "lifecycle", "error", map[string]any{"reason": "agent returned no stop snapshot"}, "error")
-			s.endSnapshot(box.Box.ID)
+			s.recordSystemActivity(ctx, box.ID, actor, "lifecycle", "error", map[string]any{"reason": "agent returned no stop snapshot"}, "error")
+			s.endSnapshot(box.ID)
 			continue
 		}
 		createdAt := response.Snapshot.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = now
 		}
-		if _, err := s.recordSnapshot(ctx, box.Box.ID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
+		if _, err := s.recordSnapshot(ctx, box.ID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
 			actor := "auto-stop timer"
 			if idleDue {
 				actor = "idle auto-stop"
 			}
-			s.recordSystemActivity(ctx, box.Box.ID, actor, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
-			s.endSnapshot(box.Box.ID)
+			s.recordSystemActivity(ctx, box.ID, actor, "lifecycle", "error", map[string]any{"reason": err.Error()}, "error")
+			s.endSnapshot(box.ID)
 			continue
 		}
 		actor := "auto-stop timer"
 		if idleDue {
 			actor = "idle auto-stop"
 		}
-		s.recordSystemActivity(ctx, box.Box.ID, actor, "snapshot", "stop capture", map[string]any{"sizeBytes": response.Snapshot.SizeBytes}, "ok")
-		box.Box.State = types.StateStopped
-		box.Box.StoppedAt = &now
+		s.recordSystemActivity(ctx, box.ID, actor, "snapshot", "stop capture", map[string]any{"sizeBytes": response.Snapshot.SizeBytes}, "ok")
+		box.State = types.StateStopped
+		box.StoppedAt = &now
 		closeRunningInterval(&box, now)
 		if err := s.store.UpdateBox(ctx, box); err == nil {
-			s.clearIdleCPUSamples(box.Box.ID)
-			_ = s.store.CloseRunningInterval(ctx, box.Box.ID, now)
+			s.clearIdleCPUSamples(box.ID)
+			_ = s.store.CloseRunningInterval(ctx, box.ID, now)
 			if idleDue {
-				s.recordSystemActivity(ctx, box.Box.ID, actor, "lifecycle", fmt.Sprintf("Stopped after %d min idle", box.Box.IdleStopSeconds/60), nil, "ok")
+				s.recordSystemActivity(ctx, box.ID, actor, "lifecycle", fmt.Sprintf("Stopped after %d min idle", box.IdleStopSeconds/60), nil, "ok")
 			} else {
-				s.recordSystemActivity(ctx, box.Box.ID, actor, "lifecycle", "auto-stopped by timer", nil, "ok")
+				s.recordSystemActivity(ctx, box.ID, actor, "lifecycle", "auto-stopped by timer", nil, "ok")
 			}
-			s.stopEventPump(box.Box.ID)
+			s.stopEventPump(box.ID)
 			s.emitWebhookEvent(context.Background(), "sandbox.stopped", map[string]any{"sandbox": box.Box})
 			s.queueRetentionDelete(ctx, box)
 		}
-		s.endSnapshot(box.Box.ID)
+		s.endSnapshot(box.ID)
 	}
 }
 
 func (s *Server) boxIdleDue(ctx context.Context, box store.BoxRecord, now time.Time) bool {
-	last, err := s.store.BoxIdleSince(ctx, box.Box.ID)
+	last, err := s.store.BoxIdleSince(ctx, box.ID)
 	if err != nil {
 		return false
 	}
 	if last.IsZero() {
-		last = box.Box.CreatedAt
+		last = box.CreatedAt
 	}
 	if box.RunningSince != nil && box.RunningSince.After(last) {
 		last = *box.RunningSince
 	}
-	if !idleStopEligible(now, last, box.RunningSince, time.Duration(box.Box.IdleStopSeconds)*time.Second, false, false, 0) {
+	if !idleStopEligible(now, last, box.RunningSince, time.Duration(box.IdleStopSeconds)*time.Second, false, false, 0) {
 		return false
 	}
-	running, err := s.store.BoxHasRunningAgentRun(ctx, box.Box.ID)
+	running, err := s.store.BoxHasRunningAgentRun(ctx, box.ID)
 	if err != nil || running {
 		return false
 	}
-	proxyOpen, err := s.store.BoxHasOpenProxySession(ctx, box.Box.ID)
+	proxyOpen, err := s.store.BoxHasOpenProxySession(ctx, box.ID)
 	if err != nil || proxyOpen {
 		return false
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		return false
 	}
@@ -145,15 +145,15 @@ func (s *Server) boxIdleDue(ctx context.Context, box store.BoxRecord, now time.T
 		CPUPercent         float64 `json:"cpuPercent"`
 		DesktopConnections int     `json:"desktopConnections"`
 	}
-	if err := client.json(ctx, http.MethodGet, agentPath("v1", "boxes", box.Box.ID, "stats"), nil, &stats); err != nil {
+	if err := client.json(ctx, http.MethodGet, agentPath("v1", "boxes", box.ID, "stats"), nil, &stats); err != nil {
 		return false
 	}
 	if stats.DesktopConnections > 0 {
-		s.clearIdleCPUSamples(box.Box.ID)
+		s.clearIdleCPUSamples(box.ID)
 		return false
 	}
-	average, ready := s.addIdleCPUSample(box.Box.ID, now, stats.CPUPercent)
-	return ready && idleStopEligible(now, last, box.RunningSince, time.Duration(box.Box.IdleStopSeconds)*time.Second, running, proxyOpen, average)
+	average, ready := s.addIdleCPUSample(box.ID, now, stats.CPUPercent)
+	return ready && idleStopEligible(now, last, box.RunningSince, time.Duration(box.IdleStopSeconds)*time.Second, running, proxyOpen, average)
 }
 
 func (s *Server) addIdleCPUSample(boxID string, at time.Time, percent float64) (float64, bool) {

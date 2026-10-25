@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -284,7 +285,7 @@ func (s *kimiSession) write(v any) error {
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	if _, err = s.stdin.Write([]byte(fmt.Sprintf("Content-Length: %d\r\n\r\n", len(b)))); err != nil {
+	if _, err = fmt.Fprintf(s.stdin, "Content-Length: %d\r\n\r\n", len(b)); err != nil {
 		return err
 	}
 	_, err = s.stdin.Write(b)
@@ -384,7 +385,9 @@ func (s *kimiSession) readMessages() {
 				break
 			}
 			if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-				fmt.Sscanf(strings.TrimSpace(strings.SplitN(line, ":", 2)[1]), "%d", &length)
+				if parsed, err := strconv.Atoi(strings.TrimSpace(strings.SplitN(line, ":", 2)[1])); err == nil {
+					length = parsed
+				}
 			}
 		}
 		if length < 0 {

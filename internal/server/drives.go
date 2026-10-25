@@ -51,9 +51,9 @@ func (s *Server) driveUses(ctx context.Context) (map[string][]driveUse, error) {
 	}
 	uses := map[string][]driveUse{}
 	for _, record := range boxes {
-		for _, mount := range record.Box.Mounts {
-			uses[mount.Drive] = append(uses[mount.Drive], driveUse{boxID: record.Box.ID, path: mount.Path,
-				readOnly: mount.ReadOnly, running: record.Box.State != types.StateStopped})
+		for _, mount := range record.Mounts {
+			uses[mount.Drive] = append(uses[mount.Drive], driveUse{boxID: record.ID, path: mount.Path,
+				readOnly: mount.ReadOnly, running: record.State != types.StateStopped})
 		}
 	}
 	return uses, nil

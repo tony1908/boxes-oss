@@ -126,7 +126,7 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	executor := options.Executor
 	if executor == nil {
 		executor = osSetupExecutor{}
@@ -184,7 +184,7 @@ func cloneSetupRepos(ctx context.Context, executor SetupExecutor, store *Outbox,
 	Depth       int    `json:"depth"`
 	TokenSecret string `json:"tokenSecret"`
 }, root, secretsDir string, env []string) error {
-	defer os.Remove(filepath.Join(secretsDir, sourceTokenSecret))
+	defer func() { _ = os.Remove(filepath.Join(secretsDir, sourceTokenSecret)) }()
 	for _, repo := range repos {
 		if strings.TrimSpace(repo.Name) == "" || strings.TrimSpace(repo.URL) == "" {
 			return errors.New("setup repository requires name and url")
@@ -260,7 +260,7 @@ func writeSetupStatus(root, status string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	_, err = store.AddEvent(Event{ID: types.NewID("ev_"), Type: "setup.status", Time: time.Now().UTC(), Data: map[string]any{"status": status}})
 	return err
 }

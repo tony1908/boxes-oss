@@ -66,7 +66,7 @@ func TestBoxdProxyUsesSingleLeadingSlashForUpstreamPath(t *testing.T) {
 	if err != nil {
 		t.Skipf("boxd proxy test port is unavailable: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {
 			t.Errorf("upstream path = %q, want /healthz", r.URL.Path)
@@ -239,7 +239,7 @@ func TestBoxdEventsProxyPreservesQueryAndEventResponseShape(t *testing.T) {
 	if err != nil {
 		t.Skipf("boxd proxy test port is unavailable: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/events" || r.URL.Query().Get("after") != "0" || r.URL.Query().Get("wait") != "25" {
 			t.Errorf("upstream request = %s %s, want /events?after=0&wait=25", r.Method, r.URL.String())
@@ -382,7 +382,7 @@ func TestCreateRestoresBeforeStartingAndReturnsContainerID(t *testing.T) {
 			}
 		}
 	}
-	if !(createIndex >= 0 && createIndex < copyIndex && copyIndex < startIndex && markerIndex >= 0 && markerIndex < startIndex) {
+	if createIndex < 0 || createIndex >= copyIndex || copyIndex >= startIndex || markerIndex < 0 || markerIndex >= startIndex {
 		t.Fatalf("expected docker create -> snapshot restore and fork marker -> docker start, calls = %#v", calls)
 	}
 }
@@ -902,7 +902,7 @@ func TestCredentialsRecoverFromContainerAfterAgentRestart(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})}
 	go func() { _ = upstream.Serve(listener) }()
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 
 	var dockerCalls []callRecord
 	dockerExec := testExecutor{calls: &dockerCalls, command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
@@ -1519,7 +1519,7 @@ func TestDetachedLogsReturnDataAfterOffsetAndFollowEndsWithExit(t *testing.T) {
 		}
 		follow = response
 		body, _ := io.ReadAll(response.Body)
-		response.Body.Close()
+		_ = response.Body.Close()
 		done <- string(body)
 	}()
 	close(release)

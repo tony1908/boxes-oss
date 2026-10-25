@@ -52,7 +52,7 @@ func TestServiceConsolidatesRepeatedFullMessagePartUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"Reply with exactly: boxes-ok","provider":"opencode"}`))
 	request.Header.Set("Authorization", "Bearer box-secret")
@@ -134,7 +134,7 @@ func TestOpencodeRealSSEReplayConsolidatesAssistantMessageOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"reply with exactly: boxes-ok","provider":"opencode","model":"google/gemini-3.8-flash"}`))
 	request.Header.Set("Authorization", "Bearer box-secret")
@@ -194,13 +194,13 @@ func TestServiceRequiresBearerExceptHealthAndPersistsConversation(t *testing.T) 
 	}
 	server := httptest.NewServer(service.Handler())
 	defer server.Close()
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	response, err := http.Get(server.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("health status = %d, want 200", response.StatusCode)
 	}
@@ -208,7 +208,7 @@ func TestServiceRequiresBearerExceptHealthAndPersistsConversation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated conversations status = %d, want 401", response.StatusCode)
 	}
@@ -225,10 +225,10 @@ func TestServiceRequiresBearerExceptHealthAndPersistsConversation(t *testing.T) 
 		ConversationID string `json:"conversationId"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
-		response.Body.Close()
+		_ = response.Body.Close()
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != http.StatusAccepted || !strings.HasPrefix(created.RunID, "run_") || !strings.HasPrefix(created.ConversationID, "cv_") {
 		t.Fatalf("prompt response = status %d, %+v", response.StatusCode, created)
 	}
@@ -245,7 +245,7 @@ func TestServiceRequiresBearerExceptHealthAndPersistsConversation(t *testing.T) 
 			Status string `json:"status"`
 		}
 		_ = json.NewDecoder(response.Body).Decode(&run)
-		response.Body.Close()
+		_ = response.Body.Close()
 		if run.Status == "completed" {
 			break
 		}
@@ -261,7 +261,7 @@ func TestServiceRequiresBearerExceptHealthAndPersistsConversation(t *testing.T) 
 		Status string `json:"status"`
 	}
 	_ = json.NewDecoder(response.Body).Decode(&run)
-	response.Body.Close()
+	_ = response.Body.Close()
 	if run.Status != "completed" {
 		t.Fatalf("run status = %q, want completed", run.Status)
 	}
@@ -278,10 +278,10 @@ func TestServiceRequiresBearerExceptHealthAndPersistsConversation(t *testing.T) 
 		} `json:"events"`
 	}
 	if err := json.NewDecoder(eventsResponse.Body).Decode(&eventList); err != nil {
-		eventsResponse.Body.Close()
+		_ = eventsResponse.Body.Close()
 		t.Fatal(err)
 	}
-	eventsResponse.Body.Close()
+	_ = eventsResponse.Body.Close()
 	messageFound := false
 	for _, event := range eventList.Events {
 		if event.Type == "message" && event.Data["text"] == "inspect the page" {
@@ -303,7 +303,7 @@ func TestServiceAcceptsCodexAndOpencodeProviders(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer service.Close()
+			defer func() { _ = service.Close() }()
 
 			request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"say hi","provider":"`+provider+`"}`))
 			request.Header.Set("Authorization", "Bearer box-secret")
@@ -337,7 +337,7 @@ func TestOutboxRetainsClaudeSessionIDAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	got, err := store.Conversation(conversation.ID)
 	if err != nil {
 		t.Fatal(err)

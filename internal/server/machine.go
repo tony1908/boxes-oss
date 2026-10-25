@@ -45,7 +45,7 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 	}
 	running := 0
 	for _, box := range boxes {
-		if box.Box.State != types.StateStopped && box.Box.State != types.StateError && box.Box.State != types.StateDeleting {
+		if box.State != types.StateStopped && box.State != types.StateError && box.State != types.StateDeleting {
 			running++
 		}
 	}

@@ -113,7 +113,7 @@ func (o *Outbox) Conversations() ([]Conversation, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []Conversation
 	for rows.Next() {
 		var c Conversation
@@ -175,7 +175,7 @@ func (o *Outbox) Events(after int64, conversationID string, limit int) ([]Event,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []Event
 	for rows.Next() {
 		var e Event

@@ -31,8 +31,4 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 
-func jsonError(w http.ResponseWriter, status int, code, message string) {
-	writeError(w, status, code, message)
-}
-
 func pathID(r *http.Request) string { return strings.TrimSpace(r.PathValue("id")) }

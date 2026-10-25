@@ -51,7 +51,9 @@ func TestComputerMCPServerExposesDesktopTools(t *testing.T) {
 	}
 	defer func() {
 		_ = session.Close()
-		<-serverDone
+		if err := <-serverDone; err != nil {
+			t.Logf("mcp server stopped: %v", err)
+		}
 	}()
 
 	tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})

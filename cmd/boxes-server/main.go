@@ -52,7 +52,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	srv, err := server.New(server.Config{
 		Store: db, DataDir: *dataDir, PublicURL: *publicURL, Image: *image, ToolsImage: os.Getenv("BOXES_TOOLS_IMAGE"), SnapshotInterval: *snapshotInterval, SnapshotBusyInterval: *snapshotBusyInterval, DesktopSessionTTL: *desktopSessionTTL, MemoryOvercommit: *memoryOvercommit, AdmissionMode: *admissionMode, AdmissionBufferPercent: *bufferPercent, AdmissionBufferMin: *bufferMin, AdmissionExpectedBox: *expectedBox, AdmissionPSIMax: *psiMax, AdmissionSwapAllowance: *swapAllowance,
 		BootstrapJoinToken: os.Getenv("BOXES_BOOTSTRAP_JOIN_TOKEN"),

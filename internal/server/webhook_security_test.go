@@ -25,7 +25,7 @@ func TestWebhookDialBlocksPrivateAddressesAtConnectionTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	_, err = webhookDialContext(false)(context.Background(), "tcp", listener.Addr().String())
 	if err == nil || !strings.Contains(err.Error(), "private or reserved") {
 		t.Fatalf("private address dial error = %v", err)
@@ -34,7 +34,7 @@ func TestWebhookDialBlocksPrivateAddressesAtConnectionTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("private address opt out dial: %v", err)
 	}
-	conn.Close()
+	_ = conn.Close()
 }
 
 func TestCreateWebhookRejectsInternalDestinationWithClearError(t *testing.T) {

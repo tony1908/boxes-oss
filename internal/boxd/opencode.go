@@ -123,7 +123,7 @@ func waitForOpencode(ctx context.Context, client *http.Client, baseURL string) e
 		request, _ := http.NewRequestWithContext(requestCtx, http.MethodGet, baseURL+"/global/health", nil)
 		response, err := client.Do(request)
 		if err == nil {
-			response.Body.Close()
+			_ = response.Body.Close()
 			if response.StatusCode >= 200 && response.StatusCode < 300 {
 				cancel()
 				return nil
@@ -171,7 +171,7 @@ func requestJSON(ctx context.Context, client *http.Client, method, target string
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 		return fmt.Errorf("OpenCode API returned %s: %s", response.Status, strings.TrimSpace(string(data)))
@@ -280,7 +280,7 @@ func (s *opencodeSession) readEvents(ctx context.Context) {
 		}
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		s.emit(HarnessEvent{Type: "turn.failed", Data: map[string]any{"error": "OpenCode event stream returned " + response.Status}})
 		return
@@ -381,9 +381,6 @@ func (m *opencodeEventMapper) mapEvent(line []byte) []HarnessEvent {
 		role, _ := info["role"].(string)
 		if messageID != "" {
 			m.messageRoles[messageID] = role
-		}
-		if sessionID == "" {
-			sessionID, _ = info["sessionID"].(string)
 		}
 		return nil
 	}

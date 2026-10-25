@@ -273,14 +273,14 @@ func (s *Server) captureRunningBoxes(config storageConfig) {
 		return
 	}
 	for _, box := range boxes {
-		if box.Box.State != types.StateReady && box.Box.State != types.StateIdle {
+		if box.State != types.StateReady && box.State != types.StateIdle {
 			continue
 		}
-		client, ok := newAgentClient(s.hub, box.Box.NodeID)
+		client, ok := newAgentClient(s.hub, box.NodeID)
 		if !ok {
 			continue
 		}
-		if s.waitSnapshot(ctx, box.Box.ID) != nil {
+		if s.waitSnapshot(ctx, box.ID) != nil {
 			continue
 		}
 		var result struct {
@@ -288,8 +288,8 @@ func (s *Server) captureRunningBoxes(config storageConfig) {
 			SizeBytes  int64     `json:"sizeBytes"`
 			CreatedAt  time.Time `json:"createdAt"`
 		}
-		err := client.json(ctx, http.MethodPost, agentPath("v1", "boxes", box.Box.ID, "snapshot"), nil, &result)
-		s.endSnapshot(box.Box.ID)
+		err := client.json(ctx, http.MethodPost, agentPath("v1", "boxes", box.ID, "snapshot"), nil, &result)
+		s.endSnapshot(box.ID)
 		if err != nil || result.SnapshotID == "" {
 			continue
 		}
@@ -297,7 +297,7 @@ func (s *Server) captureRunningBoxes(config storageConfig) {
 		if createdAt.IsZero() {
 			createdAt = time.Now().UTC()
 		}
-		_, _ = s.recordSnapshot(ctx, box.Box.ID, result.SnapshotID, result.SizeBytes, createdAt, config)
+		_, _ = s.recordSnapshot(ctx, box.ID, result.SnapshotID, result.SizeBytes, createdAt, config)
 	}
 }
 
@@ -318,7 +318,7 @@ func (s *Server) recordSnapshot(ctx context.Context, boxID, resticID string, siz
 	// Retention runs for every recorded snapshot (manual, stop, reaper, periodic). Periodic capture alone
 	// prunes only when it captures a change, so rows added here would otherwise exceed keepSnapshots.
 	if box, err := s.store.GetBox(ctx, boxID); err == nil {
-		if client, ok := newAgentClient(s.hub, box.Box.NodeID); ok {
+		if client, ok := newAgentClient(s.hub, box.NodeID); ok {
 			if err := s.pruneSnapshots(ctx, boxID, client); err != nil {
 				log.Printf("prune snapshots for %s after recording: %v", boxID, err)
 			}

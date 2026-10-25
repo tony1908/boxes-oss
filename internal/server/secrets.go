@@ -27,6 +27,9 @@ func openSecretBox(dataDir string) (*secretBox, error) {
 		file, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if errors.Is(err, os.ErrExist) {
 			key, err = os.ReadFile(keyPath)
+			if err != nil {
+				return nil, fmt.Errorf("read master key: %w", err)
+			}
 		} else if err != nil {
 			return nil, fmt.Errorf("create master key: %w", err)
 		} else {

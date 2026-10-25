@@ -50,18 +50,18 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	if box.Box.State == types.StateStopped {
+	if box.State == types.StateStopped {
 		box, err = s.resumeBox(r.Context(), box, resumeSandboxRequest{})
 		if err != nil {
-			s.writeResumeError(w, box.Box.ID, err)
+			s.writeResumeError(w, box.ID, err)
 			return
 		}
 	}
-	if box.Box.State != types.StateReady && box.Box.State != types.StateIdle {
+	if box.State != types.StateReady && box.State != types.StateIdle {
 		writeError(w, http.StatusConflict, "sandbox_not_ready", "sandbox must be ready before prompting")
 		return
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		writeError(w, http.StatusBadGateway, "node_unavailable", "sandbox node is offline")
 		return
@@ -78,29 +78,29 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		New            bool   `json:"new"`
 	}{input.Prompt, input.Provider, input.Model, input.ConversationID, input.New}
 	queuedAt := time.Now()
-	if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", box.Box.ID, "boxd", "prompt"), boxdInput, &response); err != nil {
+	if err := client.json(r.Context(), http.MethodPost, agentPath("v1", "boxes", box.ID, "boxd", "prompt"), boxdInput, &response); err != nil {
 		duration := time.Since(queuedAt).Milliseconds()
-		s.recordActivityWithMetrics(r.Context(), box.Box.ID, "agent", "prompt run failed", map[string]any{"provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120)}, &duration, "error", time.Now().UTC())
+		s.recordActivityWithMetrics(r.Context(), box.ID, "agent", "prompt run failed", map[string]any{"provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120)}, &duration, "error", time.Now().UTC())
 		s.apiError(w, err)
 		return
 	}
 	if response.RunID == "" || response.ConversationID == "" {
 		duration := time.Since(queuedAt).Milliseconds()
-		s.recordActivityWithMetrics(r.Context(), box.Box.ID, "agent", "prompt run failed", map[string]any{"provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120), "reason": "incomplete prompt response"}, &duration, "error", time.Now().UTC())
+		s.recordActivityWithMetrics(r.Context(), box.ID, "agent", "prompt run failed", map[string]any{"provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120), "reason": "incomplete prompt response"}, &duration, "error", time.Now().UTC())
 		writeError(w, http.StatusBadGateway, "agent_error", "boxd returned an incomplete prompt response")
 		return
 	}
 	now := time.Now().UTC()
 	if _, activityErr := s.store.GetPromptRunQueuedActivity(r.Context(), response.RunID); errors.Is(activityErr, sql.ErrNoRows) {
 		duration := time.Since(queuedAt).Milliseconds()
-		s.recordActivityWithMetrics(r.Context(), box.Box.ID, "agent", "prompt run queued", map[string]any{"runId": response.RunID, "provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120)}, &duration, "ok", now)
+		s.recordActivityWithMetrics(r.Context(), box.ID, "agent", "prompt run queued", map[string]any{"runId": response.RunID, "provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120)}, &duration, "ok", now)
 	} else if activityErr != nil {
 		s.apiError(w, activityErr)
 		return
 	}
 	conversation, getErr := s.store.GetConversation(r.Context(), response.ConversationID)
 	if getErr != nil {
-		conversation = types.Conversation{ID: response.ConversationID, BoxID: box.Box.ID, Provider: input.Provider, Model: input.Model, CreatedAt: now}
+		conversation = types.Conversation{ID: response.ConversationID, BoxID: box.ID, Provider: input.Provider, Model: input.Model, CreatedAt: now}
 	}
 	conversation.Provider, conversation.Model, conversation.LastPrompt = input.Provider, input.Model, input.Prompt
 	conversation.Prompts++
@@ -124,13 +124,13 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		duration := time.Since(queuedAt).Milliseconds()
-		s.recordActivityWithMetrics(r.Context(), box.Box.ID, "agent", "prompt run failed", map[string]any{"runId": response.RunID, "provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120), "reason": err.Error()}, &duration, "error", now)
+		s.recordActivityWithMetrics(r.Context(), box.ID, "agent", "prompt run failed", map[string]any{"runId": response.RunID, "provider": input.Provider, "model": input.Model, "promptPreview": safeActivityText(input.Prompt, 120), "reason": err.Error()}, &duration, "error", now)
 		s.apiError(w, err)
 		return
 	}
 	if input.StopWhenDone {
 		if storedRun, err := s.store.GetRun(r.Context(), run.ID); err == nil && isTerminalRunStatus(storedRun.Status) {
-			go s.stopBoxAfterRun(box.Box.ID)
+			go s.stopBoxAfterRun(box.ID)
 		}
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"runId": response.RunID, "conversationId": response.ConversationID})
@@ -180,7 +180,7 @@ func (s *Server) forwardBoxdJSON(w http.ResponseWriter, r *http.Request, method,
 		outcome = "error"
 	}
 	s.recordActivityWithMetrics(r.Context(), boxID, "agent", action, nil, &duration, outcome, time.Now().UTC())
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	for key, values := range response.Header {
 		if strings.EqualFold(key, "Content-Length") || strings.EqualFold(key, "Connection") || strings.EqualFold(key, "Transfer-Encoding") {
 			continue
@@ -227,31 +227,31 @@ func (s *Server) tcpProxy(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	client, ok := newAgentClient(s.hub, box.Box.NodeID)
+	client, ok := newAgentClient(s.hub, box.NodeID)
 	if !ok {
 		writeError(w, http.StatusBadGateway, "node_unavailable", "sandbox node is offline")
 		return
 	}
-	agentConn, _, err := websocket.Dial(r.Context(), "ws://agent"+agentPath("v1", "boxes", box.Box.ID, "tcp", strconv.Itoa(port)), &websocket.DialOptions{HTTPClient: client.http})
+	agentConn, _, err := websocket.Dial(r.Context(), "ws://agent"+agentPath("v1", "boxes", box.ID, "tcp", strconv.Itoa(port)), &websocket.DialOptions{HTTPClient: client.http})
 	if err != nil {
 		s.apiError(w, err)
 		return
 	}
-	defer agentConn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = agentConn.Close(websocket.StatusNormalClosure, "") }()
 	browserConn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
-	defer browserConn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = browserConn.Close(websocket.StatusNormalClosure, "") }()
 	proxyType := "TCP"
 	if port == 22 {
 		proxyType = "SSH"
 	}
 	openedAt := time.Now()
-	s.recordActivity(r.Context(), box.Box.ID, "access", proxyType+" proxy session opened", map[string]any{"port": port}, "ok")
+	s.recordActivity(r.Context(), box.ID, "access", proxyType+" proxy session opened", map[string]any{"port": port}, "ok")
 	defer func() {
 		duration := time.Since(openedAt).Milliseconds()
-		s.recordActivityWithMetrics(r.Context(), box.Box.ID, "access", proxyType+" proxy session closed", map[string]any{"port": port}, &duration, "ok", time.Now().UTC())
+		s.recordActivityWithMetrics(r.Context(), box.ID, "access", proxyType+" proxy session closed", map[string]any{"port": port}, &duration, "ok", time.Now().UTC())
 	}()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

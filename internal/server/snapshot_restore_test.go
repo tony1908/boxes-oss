@@ -39,7 +39,7 @@ func TestRestoreRollsBackStoppedAndRunningBoxesFromChosenSnapshot(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	record.Box.State = types.StateStopped
+	record.State = types.StateStopped
 	if err := srv.store.UpdateBox(ctx, record); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,8 @@ func TestRestoreRollsBackStoppedAndRunningBoxesFromChosenSnapshot(t *testing.T) 
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop")
 		}
@@ -136,7 +137,7 @@ func TestRestoreRollsBackStoppedAndRunningBoxesFromChosenSnapshot(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	busy.Box.State = types.StateResuming
+	busy.State = types.StateResuming
 	if err := srv.store.UpdateBox(ctx, busy); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +175,7 @@ func TestKeepSnapshotsValidatesOnCreateAndPatch(t *testing.T) {
 	if got := patched["sandbox"].(map[string]any)["keepSnapshots"]; got != float64(2) {
 		t.Fatalf("patched keepSnapshots = %v, want 2", got)
 	}
-	if stored, err := srv.store.GetBox(context.Background(), boxID); err != nil || stored.Box.KeepSnapshots != 2 {
-		t.Fatalf("stored keepSnapshots = %d (err %v), want 2", stored.Box.KeepSnapshots, err)
+	if stored, err := srv.store.GetBox(context.Background(), boxID); err != nil || stored.KeepSnapshots != 2 {
+		t.Fatalf("stored keepSnapshots = %d (err %v), want 2", stored.KeepSnapshots, err)
 	}
 }

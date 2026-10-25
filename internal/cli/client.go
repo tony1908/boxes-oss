@@ -60,7 +60,7 @@ func (c *Client) Do(ctx context.Context, method, endpoint string, body any, head
 	if err != nil {
 		return nil, fmt.Errorf("request %s %s: %w", method, endpoint, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
@@ -110,7 +110,7 @@ func (c *Client) DoReader(ctx context.Context, method, endpoint string, body io.
 	if err != nil {
 		return nil, fmt.Errorf("request %s %s: %w", method, endpoint, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
@@ -151,7 +151,7 @@ func (c *Client) Download(ctx context.Context, endpoint string, dst io.Writer, p
 	if err != nil {
 		return fmt.Errorf("request GET %s: %w", endpoint, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		data, err := io.ReadAll(response.Body)
 		if err != nil {

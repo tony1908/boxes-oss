@@ -502,7 +502,7 @@ func (e *Engine) Tree(ctx context.Context, snapshotID string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer archive.Close()
+	defer func() { _ = archive.Close() }()
 	reader := tar.NewReader(archive)
 	var entries []Entry
 	for {
@@ -510,8 +510,7 @@ func (e *Engine) Tree(ctx context.Context, snapshotID string) ([]Entry, error) {
 		if errors.Is(err, io.EOF) {
 			if _, err := io.Copy(io.Discard, archive); err != nil {
 				_ = archive.Close()
-				<-dumpResult
-				return nil, fmt.Errorf("read snapshot tar trailer: %w", err)
+				return nil, errors.Join(fmt.Errorf("read snapshot tar trailer: %w", err), <-dumpResult)
 			}
 			if dumpErr := <-dumpResult; dumpErr != nil {
 				return nil, dumpErr
@@ -520,23 +519,20 @@ func (e *Engine) Tree(ctx context.Context, snapshotID string) ([]Entry, error) {
 		}
 		if err != nil {
 			_ = archive.Close()
-			<-dumpResult
-			return nil, fmt.Errorf("read snapshot tar: %w", err)
+			return nil, errors.Join(fmt.Errorf("read snapshot tar: %w", err), <-dumpResult)
 		}
 		name := cleanTarPath(header.Name)
 		if name == "/" {
 			if _, err := io.Copy(io.Discard, reader); err != nil {
 				_ = archive.Close()
-				<-dumpResult
-				return nil, fmt.Errorf("read snapshot tar entry: %w", err)
+				return nil, errors.Join(fmt.Errorf("read snapshot tar entry: %w", err), <-dumpResult)
 			}
 			continue
 		}
 		entries = append(entries, Entry{Path: name, Size: header.Size, Type: tarType(header.Typeflag)})
 		if _, err := io.Copy(io.Discard, reader); err != nil {
 			_ = archive.Close()
-			<-dumpResult
-			return nil, fmt.Errorf("read snapshot tar entry: %w", err)
+			return nil, errors.Join(fmt.Errorf("read snapshot tar entry: %w", err), <-dumpResult)
 		}
 	}
 	return entries, nil
@@ -552,7 +548,7 @@ func (e *Engine) File(ctx context.Context, snapshotID, filePath string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	defer archive.Close()
+	defer func() { _ = archive.Close() }()
 	reader := tar.NewReader(archive)
 	var content []byte
 	found := false
@@ -564,15 +560,13 @@ func (e *Engine) File(ctx context.Context, snapshotID, filePath string) ([]byte,
 		if errors.Is(err, io.EOF) {
 			if _, err := io.Copy(io.Discard, archive); err != nil {
 				_ = archive.Close()
-				<-dumpResult
-				return nil, fmt.Errorf("read snapshot tar trailer: %w", err)
+				return nil, errors.Join(fmt.Errorf("read snapshot tar trailer: %w", err), <-dumpResult)
 			}
 			break
 		}
 		if err != nil {
 			_ = archive.Close()
-			<-dumpResult
-			return nil, fmt.Errorf("read snapshot tar: %w", err)
+			return nil, errors.Join(fmt.Errorf("read snapshot tar: %w", err), <-dumpResult)
 		}
 		entryPath := cleanTarPath(header.Name)
 		if entryPath == wanted {
@@ -583,21 +577,18 @@ func (e *Engine) File(ctx context.Context, snapshotID, filePath string) ([]byte,
 				directoryContents = append(directoryContents, nil)
 				if _, err := io.Copy(io.Discard, reader); err != nil {
 					_ = archive.Close()
-					<-dumpResult
-					return nil, err
+					return nil, errors.Join(err, <-dumpResult)
 				}
 				continue
 			}
-			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			if header.Typeflag != tar.TypeReg {
 				_ = archive.Close()
-				<-dumpResult
-				return nil, fmt.Errorf("snapshot path %q is not a regular file", wanted)
+				return nil, errors.Join(fmt.Errorf("snapshot path %q is not a regular file", wanted), <-dumpResult)
 			}
 			content, err = io.ReadAll(reader)
 			if err != nil {
 				_ = archive.Close()
-				<-dumpResult
-				return nil, fmt.Errorf("read snapshot file %q: %w", wanted, err)
+				return nil, errors.Join(fmt.Errorf("read snapshot file %q: %w", wanted, err), <-dumpResult)
 			}
 			found = true
 		} else if directory && strings.HasPrefix(entryPath, strings.TrimSuffix(wanted, "/")+"/") {
@@ -605,14 +596,12 @@ func (e *Engine) File(ctx context.Context, snapshotID, filePath string) ([]byte,
 			entry, readErr := io.ReadAll(reader)
 			if readErr != nil {
 				_ = archive.Close()
-				<-dumpResult
-				return nil, readErr
+				return nil, errors.Join(readErr, <-dumpResult)
 			}
 			directoryContents = append(directoryContents, entry)
 		} else if _, err := io.Copy(io.Discard, reader); err != nil {
 			_ = archive.Close()
-			<-dumpResult
-			return nil, fmt.Errorf("read snapshot tar entry: %w", err)
+			return nil, errors.Join(fmt.Errorf("read snapshot tar entry: %w", err), <-dumpResult)
 		}
 	}
 	if err := <-dumpResult; err != nil {
@@ -771,7 +760,7 @@ func (e *Engine) runResticOnce(ctx context.Context, stdin io.Reader, stdout io.W
 		return fmt.Errorf("create restic password file: %w", err)
 	}
 	passwordPath := passwordFile.Name()
-	defer os.Remove(passwordPath)
+	defer func() { _ = os.Remove(passwordPath) }()
 	if err := passwordFile.Chmod(0o600); err != nil {
 		_ = passwordFile.Close()
 		return fmt.Errorf("secure restic password file: %w", err)
@@ -933,11 +922,7 @@ func isIgnored(files []boxIgnoreFile, filePath string) bool {
 		if file.path != "/config/.boxignore" && !strings.HasPrefix(filePath, path.Dir(file.path)+"/") {
 			continue
 		}
-		var matched bool
-		ignored, matched = evaluateIgnoreRules(file.rules, filePath, ignored)
-		if !matched {
-			continue
-		}
+		ignored, _ = evaluateIgnoreRules(file.rules, filePath, ignored)
 	}
 	return ignored
 }
@@ -974,7 +959,7 @@ func tarType(typeFlag byte) string {
 		return "symlink"
 	case tar.TypeLink:
 		return "hardlink"
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg:
 		return "file"
 	default:
 		return "special"

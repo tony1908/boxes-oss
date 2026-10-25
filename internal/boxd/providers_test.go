@@ -212,7 +212,7 @@ func TestOpencodeSessionUsesHTTPAPIAndConsumesSSE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	if session.SessionID() != "ses-test" {
 		t.Fatalf("session id = %q, want ses-test", session.SessionID())
 	}
@@ -358,7 +358,7 @@ func TestOpencodeMessageReplyErrorBecomesTurnFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	if err := session.Send("hello"); err != nil {
 		t.Fatal(err)
 	}

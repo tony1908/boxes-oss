@@ -12,7 +12,7 @@ func TestRunningUsageAcrossIntervalsAndMonthBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	ctx := context.Background()
 	now := time.Date(2026, time.February, 1, 1, 30, 0, 0, time.UTC)
 	if err := st.OpenRunningInterval(ctx, "bx_usage", now.Add(-2*time.Hour)); err != nil {
@@ -41,7 +41,7 @@ func TestActivityPaginationKeepsEqualTimeRowsAndPrunesOldRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	ctx := context.Background()
 	at := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
 	for _, id := range []string{"act_a", "act_b", "act_c"} {
@@ -78,7 +78,7 @@ func TestPeriodicSnapshotActivityIsOneDailySummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	ctx := context.Background()
 	day := time.Date(2026, time.September, 25, 8, 0, 0, 0, time.UTC)
 	for index := 0; index < 3; index++ {

@@ -54,7 +54,7 @@ func TestSandboxNetworkPolicyPatchStoresWhenStoppedAndSendsToAgentWhenRunning(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	record.Box.State = types.StateStopped
+	record.State = types.StateStopped
 	if err := srv.store.UpdateBox(context.Background(), record); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestSandboxNetworkPolicyPatchStoresWhenStoppedAndSendsToAgentWhenRunning(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	record.Box.State = types.StateReady
+	record.State = types.StateReady
 	if err := srv.store.UpdateBox(context.Background(), record); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,8 @@ func TestSandboxNetworkPolicyPatchStoresWhenStoppedAndSendsToAgentWhenRunning(t 
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop")
 		}
@@ -126,7 +127,7 @@ func TestSandboxNetworkPolicyPatchStoresWhenStoppedAndSendsToAgentWhenRunning(t 
 		t.Fatalf("cleared policy = %#v, want omitted", policy)
 	}
 	check, err := srv.store.GetBox(context.Background(), boxID)
-	if err != nil || check.Box.NetworkPolicy != nil {
-		t.Fatalf("stored policy after clear = %#v (err %v)", check.Box.NetworkPolicy, err)
+	if err != nil || check.NetworkPolicy != nil {
+		t.Fatalf("stored policy after clear = %#v (err %v)", check.NetworkPolicy, err)
 	}
 }

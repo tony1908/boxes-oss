@@ -98,7 +98,7 @@ func (a *Agent) serveDNSTCP(ln net.Listener) {
 }
 
 func (a *Agent) serveDNSConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	src := addrIP(conn.RemoteAddr())
 	for {
 		_ = conn.SetDeadline(time.Now().Add(dnsConnIdleTimeout))
@@ -234,7 +234,7 @@ func exchangeDNS(upstream string, query []byte, proto string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(dnsUpstreamTimeout))
 	if proto == "tcp" {
 		if err := writeDNSTCP(conn, query); err != nil {

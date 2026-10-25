@@ -67,7 +67,7 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 	server := &http.Server{Addr: *addr, Handler: service.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

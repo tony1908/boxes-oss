@@ -158,9 +158,9 @@ func routeReady(ctx context.Context, address, host string) bool {
 		return false
 	}
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-	response.Body.Close()
+	_ = response.Body.Close()
 	transport.CloseIdleConnections()
-	return !(response.StatusCode == http.StatusNotFound && strings.TrimSpace(string(body)) == "404 page not found")
+	return response.StatusCode != http.StatusNotFound || strings.TrimSpace(string(body)) != "404 page not found"
 }
 
 func validateRoutes(request routesRequest) error {
@@ -294,7 +294,7 @@ func atomicWrite(path string, content []byte, mode os.FileMode) error {
 		return err
 	}
 	temporaryName := temporary.Name()
-	defer os.Remove(temporaryName)
+	defer func() { _ = os.Remove(temporaryName) }()
 	if err := temporary.Chmod(mode); err != nil {
 		_ = temporary.Close()
 		return err

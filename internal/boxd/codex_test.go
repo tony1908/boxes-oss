@@ -42,7 +42,7 @@ func newCodexTestProcess(methods chan string) *codexTestProcess {
 	process := &codexTestProcess{stdinReader: stdinReader, stdinWriter: stdinWriter, stdoutReader: stdoutReader, stdoutWriter: stdoutWriter, done: make(chan struct{})}
 	go func() {
 		defer close(process.done)
-		defer process.stdoutWriter.Close()
+		defer func() { _ = process.stdoutWriter.Close() }()
 		scanner := bufio.NewScanner(stdinReader)
 		for scanner.Scan() {
 			var request map[string]any
@@ -96,7 +96,7 @@ func TestCodexHarnessInitializesThreadAndUsesTurnControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	if !reflect.DeepEqual(executor.argv, []string{"codex", "app-server"}) {
 		t.Fatalf("Codex argv = %#v", executor.argv)
 	}

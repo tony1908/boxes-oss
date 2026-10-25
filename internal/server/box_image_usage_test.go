@@ -54,7 +54,8 @@ func serveFakeAgent(t *testing.T, srv *Server, httpServer *httptest.Server, node
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop")
 		}
@@ -116,7 +117,7 @@ func TestForkKeepsSourceImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source.Box.Image = "ghcr.io/example/source-box:1"
+	source.Image = "ghcr.io/example/source-box:1"
 	if err := srv.store.UpdateBox(context.Background(), source); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +192,7 @@ func TestStopSucceedsWhenUsageStatsFail(t *testing.T) {
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/sandboxes/"+boxID+"/stop", token, nil, http.StatusOK, &stopped)
 	waitForCall(t, calls, http.MethodPost, "/v1/boxes/"+boxID+"/stop")
 	stored, err := srv.store.GetBox(context.Background(), boxID)
-	if err != nil || stored.Box.State != types.StateStopped || stored.TotalCPUSeconds != 0 {
-		t.Fatalf("stored box after failed stats = state %v totals %v (err %v)", stored.Box.State, stored.TotalCPUSeconds, err)
+	if err != nil || stored.State != types.StateStopped || stored.TotalCPUSeconds != 0 {
+		t.Fatalf("stored box after failed stats = state %v totals %v (err %v)", stored.State, stored.TotalCPUSeconds, err)
 	}
 }

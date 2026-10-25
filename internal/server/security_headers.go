@@ -35,7 +35,7 @@ func sanitizeHostBase(hostBase string) string {
 	hostBase = strings.ToLower(hostBase)
 	for i := 0; i < len(hostBase); i++ {
 		c := hostBase[i]
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '.' && c != '-' {
 			return ""
 		}
 	}

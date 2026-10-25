@@ -54,7 +54,7 @@ func (c *CLI) fetchArtifact(ctx context.Context, id, source, dest string) error 
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		data, _ := io.ReadAll(response.Body)
 		return &statusError{code: response.StatusCode, status: response.Status, message: strings.TrimSpace(string(data))}
@@ -67,7 +67,7 @@ func (c *CLI) fetchArtifact(ctx context.Context, id, source, dest string) error 
 		if err != nil {
 			return err
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		return extractArtifactTar(gz, dest)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
@@ -77,11 +77,11 @@ func (c *CLI) fetchArtifact(ctx context.Context, id, source, dest string) error 
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 	if _, err = io.Copy(out, response.Body); err != nil {
+		_ = out.Close()
 		return err
 	}
-	return nil
+	return out.Close()
 }
 
 func extractArtifactTar(reader io.Reader, destination string) error {
@@ -108,7 +108,7 @@ func extractArtifactTar(reader io.Reader, destination string) error {
 			if err := os.MkdirAll(name, 0o755); err != nil {
 				return err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 				return err
 			}

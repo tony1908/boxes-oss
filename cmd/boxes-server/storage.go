@@ -66,7 +66,7 @@ func runStorageSet(args []string, adminURL, accessKey, secretKey string, output 
 	if err != nil {
 		return errors.New("could not update snapshot storage; is boxes-server running locally?")
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("could not update snapshot storage (server returned HTTP %d)", response.StatusCode)
 	}

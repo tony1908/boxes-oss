@@ -158,7 +158,8 @@ func TestActivityRecordingThroughFakeAgentForEveryCategoryAndRedactsSecrets(t *t
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("fake agent tunnel did not stop")
 		}

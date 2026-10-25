@@ -43,17 +43,17 @@ func (s *Server) captureReadySnapshots(ctx context.Context, workers *sync.WaitGr
 		return
 	}
 	for _, box := range boxes {
-		if box.Box.State != types.StateReady && box.Box.State != types.StateIdle {
+		if box.State != types.StateReady && box.State != types.StateIdle {
 			continue
 		}
 		s.snapshotMu.Lock()
-		nextAt := s.snapshotNextAt[box.Box.ID]
+		nextAt := s.snapshotNextAt[box.ID]
 		s.snapshotMu.Unlock()
 		if !nextAt.IsZero() && time.Now().Before(nextAt) {
 			continue
 		}
-		client, ok := newAgentClient(s.hub, box.Box.NodeID)
-		if !ok || !s.beginSnapshot(box.Box.ID) {
+		client, ok := newAgentClient(s.hub, box.NodeID)
+		if !ok || !s.beginSnapshot(box.ID) {
 			continue
 		}
 		workers.Add(1)
@@ -75,7 +75,7 @@ func (s *Server) captureReadySnapshots(ctx context.Context, workers *sync.WaitGr
 			if err != nil && ctx.Err() == nil {
 				log.Printf("periodic snapshot for %s: %v", boxID, err)
 			}
-		}(box.Box.ID, client)
+		}(box.ID, client)
 	}
 }
 
@@ -85,7 +85,7 @@ func (s *Server) recordPeriodicSnapshot(ctx context.Context, boxID string, clien
 }
 
 func (s *Server) recordPeriodicSnapshotResult(ctx context.Context, boxID string, client *agentClient) (bool, error) {
-	if box, err := s.store.GetBox(ctx, boxID); err != nil || (box.Box.State != types.StateReady && box.Box.State != types.StateIdle) {
+	if box, err := s.store.GetBox(ctx, boxID); err != nil || (box.State != types.StateReady && box.State != types.StateIdle) {
 		return false, nil
 	}
 	var captured struct {

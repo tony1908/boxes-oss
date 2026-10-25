@@ -46,12 +46,12 @@ func TestGetStorageSettingsIsOwnerOnlyAndNeverExposesCredentials(t *testing.T) {
 		return response
 	}
 	memberResponse := request(memberToken)
-	memberResponse.Body.Close()
+	_ = memberResponse.Body.Close()
 	if memberResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("member storage settings status = %d, want forbidden", memberResponse.StatusCode)
 	}
 	ownerResponse := request(ownerToken)
-	defer ownerResponse.Body.Close()
+	defer func() { _ = ownerResponse.Body.Close() }()
 	if ownerResponse.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(ownerResponse.Body)
 		t.Fatalf("owner storage settings status = %d, body %s", ownerResponse.StatusCode, body)
@@ -176,7 +176,7 @@ func TestAdminTokenIsCreatedSecurelyAndReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	newServer := func() *Server {
 		t.Helper()
 		srv, err := New(Config{Store: st, DataDir: dataDir})

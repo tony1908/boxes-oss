@@ -19,7 +19,7 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	node, err := s.store.GetNode(r.Context(), box.Box.NodeID)
+	node, err := s.store.GetNode(r.Context(), box.NodeID)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -29,14 +29,14 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "node_host_missing", "node requires host or hostBase to expose ports")
 		return
 	}
-	hosts, err := s.store.ListHosts(r.Context(), box.Box.ID)
+	hosts, err := s.store.ListHosts(r.Context(), box.ID)
 	if err != nil {
 		s.apiError(w, err)
 		return
 	}
 	items := make([]map[string]any, 0, len(hosts))
 	for _, host := range hosts {
-		items = append(items, map[string]any{"port": host.Port, "private": host.Private, "url": hostURLFor(box.Box.ID, host.Port, base)})
+		items = append(items, map[string]any{"port": host.Port, "private": host.Private, "url": hostURLFor(box.ID, host.Port, base)})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"hosts": items})
 }
@@ -59,7 +59,7 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, err)
 		return
 	}
-	node, err := s.store.GetNode(r.Context(), box.Box.NodeID)
+	node, err := s.store.GetNode(r.Context(), box.NodeID)
 	if err != nil {
 		s.apiError(w, err)
 		return
@@ -79,18 +79,18 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) {
 		}
 		tokenHashValue = tokenHash(rawToken)
 	}
-	host := store.HostRecord{BoxID: box.Box.ID, Port: input.Port, Private: input.Private, TokenHash: tokenHashValue}
+	host := store.HostRecord{BoxID: box.ID, Port: input.Port, Private: input.Private, TokenHash: tokenHashValue}
 	if err := s.store.CreateHost(r.Context(), host); err != nil {
 		writeError(w, http.StatusConflict, "host_exists", "this port is already exposed")
 		return
 	}
 	if err := s.pushCurrentBoxRoutes(r.Context(), client, box.Box); err != nil {
-		_ = s.store.DeleteHost(r.Context(), box.Box.ID, input.Port)
+		_ = s.store.DeleteHost(r.Context(), box.ID, input.Port)
 		s.apiError(w, err)
 		return
 	}
-	s.recordActivity(r.Context(), box.Box.ID, "access", "host exposed", map[string]any{"port": input.Port, "public": !input.Private, "private": input.Private}, "ok")
-	publicURL := hostURLFor(box.Box.ID, input.Port, base)
+	s.recordActivity(r.Context(), box.ID, "access", "host exposed", map[string]any{"port": input.Port, "public": !input.Private, "private": input.Private}, "ok")
+	publicURL := hostURLFor(box.ID, input.Port, base)
 	if rawToken != "" {
 		parsed, _ := url.Parse(publicURL)
 		query := parsed.Query()
@@ -113,7 +113,7 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	private := false
-	if hosts, listErr := s.store.ListHosts(r.Context(), box.Box.ID); listErr == nil {
+	if hosts, listErr := s.store.ListHosts(r.Context(), box.ID); listErr == nil {
 		for _, host := range hosts {
 			if host.Port == port {
 				private = host.Private
@@ -121,11 +121,11 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if err := s.store.DeleteHost(r.Context(), box.Box.ID, port); err != nil {
+	if err := s.store.DeleteHost(r.Context(), box.ID, port); err != nil {
 		s.apiError(w, err)
 		return
 	}
-	s.recordActivity(r.Context(), box.Box.ID, "access", "host removed", map[string]any{"port": port, "public": !private, "private": private}, "ok")
+	s.recordActivity(r.Context(), box.ID, "access", "host removed", map[string]any{"port": port, "public": !private, "private": private}, "ok")
 	if err := s.reconcileCurrentBoxRoutes(r.Context(), client, box.Box); err != nil {
 		s.apiError(w, err)
 		return

@@ -221,7 +221,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]types.User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	users := make([]types.User, 0)
 	for rows.Next() {
 		user, err := scanUser(rows)
@@ -309,7 +309,7 @@ func (s *Store) ListAPIKeys(ctx context.Context, userID string) ([]APIKeyRecord,
 	if err != nil {
 		return nil, fmt.Errorf("list API keys: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	keys := make([]APIKeyRecord, 0)
 	for rows.Next() {
 		key, err := scanAPIKey(rows)
@@ -397,7 +397,7 @@ func (s *Store) ListNodes(ctx context.Context) ([]NodeRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	nodes := make([]NodeRecord, 0)
 	for rows.Next() {
 		node, err := scanNode(rows)
@@ -485,7 +485,7 @@ func (s *Store) ListBoxes(ctx context.Context, nodeID string) ([]BoxRecord, erro
 	if err != nil {
 		return nil, fmt.Errorf("list boxes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	boxes := make([]BoxRecord, 0)
 	for rows.Next() {
 		box, err := scanBox(rows)
@@ -558,7 +558,7 @@ func (s *Store) ListDrives(ctx context.Context) ([]types.Drive, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list drives: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	drives := make([]types.Drive, 0)
 	for rows.Next() {
 		var drive types.Drive
@@ -598,49 +598,49 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var created, tags string
 	var networkPolicy, source sql.NullString
 	var mounts string
-	err := row.Scan(&record.Box.ID, &record.Box.NodeID, &record.Box.Type, &state, &record.Box.Image,
-		&envID, &record.Box.EnvironmentVersion, &record.Box.TTLSeconds, &record.Box.IdleStopSeconds, &expires,
-		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.Box.FromSnapshot,
+	err := row.Scan(&record.ID, &record.NodeID, &record.Type, &state, &record.Image,
+		&envID, &record.EnvironmentVersion, &record.TTLSeconds, &record.IdleStopSeconds, &expires,
+		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
-		&record.Box.ErrorCode, &record.Box.Error, &tags, &networkPolicy, &source, &record.Box.KeepSnapshots, &record.RestoreSnapshotID,
+		&record.ErrorCode, &record.Error, &tags, &networkPolicy, &source, &record.KeepSnapshots, &record.RestoreSnapshotID,
 		&record.TotalCPUSeconds, &record.TotalRxBytes, &record.TotalTxBytes, &mounts)
 	if err != nil {
 		return BoxRecord{}, err
 	}
-	if err := json.Unmarshal([]byte(mounts), &record.Box.Mounts); err != nil {
+	if err := json.Unmarshal([]byte(mounts), &record.Mounts); err != nil {
 		return BoxRecord{}, fmt.Errorf("decode box mounts: %w", err)
 	}
-	if len(record.Box.Mounts) == 0 {
-		record.Box.Mounts = nil
+	if len(record.Mounts) == 0 {
+		record.Mounts = nil
 	}
 	if networkPolicy.Valid {
 		var policy types.NetworkPolicy
 		if err := json.Unmarshal([]byte(networkPolicy.String), &policy); err != nil {
 			return BoxRecord{}, fmt.Errorf("decode box network policy: %w", err)
 		}
-		record.Box.NetworkPolicy = &policy
+		record.NetworkPolicy = &policy
 	}
 	if source.Valid {
 		var boxSource types.BoxSource
 		if err := json.Unmarshal([]byte(source.String), &boxSource); err != nil {
 			return BoxRecord{}, fmt.Errorf("decode box source: %w", err)
 		}
-		record.Box.Source = &boxSource
+		record.Source = &boxSource
 	}
-	if err := json.Unmarshal([]byte(tags), &record.Box.Tags); err != nil {
+	if err := json.Unmarshal([]byte(tags), &record.Tags); err != nil {
 		return BoxRecord{}, fmt.Errorf("decode box tags: %w", err)
 	}
-	if len(record.Box.Tags) == 0 {
-		record.Box.Tags = nil
+	if len(record.Tags) == 0 {
+		record.Tags = nil
 	}
-	record.Box.State = types.BoxState(state)
+	record.State = types.BoxState(state)
 	if envID.Valid {
-		record.Box.EnvironmentID = envID.String
+		record.EnvironmentID = envID.String
 	}
 	if idempotencyKey.Valid {
 		record.IdempotencyKey = idempotencyKey.String
 	}
-	record.Box.CreatedAt, err = decodeTime(created)
+	record.CreatedAt, err = decodeTime(created)
 	if err != nil {
 		return BoxRecord{}, err
 	}
@@ -649,14 +649,14 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		if err != nil {
 			return BoxRecord{}, err
 		}
-		record.Box.ExpiresAt = &t
+		record.ExpiresAt = &t
 	}
 	if stopped.Valid {
 		t, err := decodeTime(stopped.String)
 		if err != nil {
 			return BoxRecord{}, err
 		}
-		record.Box.StoppedAt = &t
+		record.StoppedAt = &t
 	}
 	if runningSince.Valid {
 		t, err := decodeTime(runningSince.String)
@@ -745,7 +745,7 @@ func (s *Store) CreateEnvironment(ctx context.Context, env types.Environment, se
 	if err != nil {
 		return fmt.Errorf("create environment: begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO environments(id, name, version, created_at, updated_at) VALUES(?, ?, ?, ?, ?)`,
 		env.ID, env.Name, env.Version, encodeTime(env.CreatedAt), encodeTime(env.UpdatedAt)); err != nil {
 		return fmt.Errorf("create environment: %w", err)
@@ -789,7 +789,7 @@ func (s *Store) ListEnvironments(ctx context.Context) ([]types.Environment, erro
 	if err != nil {
 		return nil, fmt.Errorf("list environments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	environments := make([]types.Environment, 0)
 	for rows.Next() {
 		var env types.Environment
@@ -820,7 +820,7 @@ func (s *Store) CreateEnvironmentVersion(ctx context.Context, version Environmen
 	if err != nil {
 		return fmt.Errorf("create environment version: begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO environment_versions(environment_id, version, document, secrets_enc, created_at)
 		VALUES(?, ?, ?, ?, ?)`, version.EnvironmentID, version.Version, document, nonNilBytes(version.SecretsEnc), encodeTime(version.CreatedAt)); err != nil {
 		return fmt.Errorf("create environment version: %w", err)
@@ -890,7 +890,7 @@ func (s *Store) ListSnapshots(ctx context.Context, boxID string) ([]types.Snapsh
 	if err != nil {
 		return nil, fmt.Errorf("list snapshots: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	snapshots := make([]types.Snapshot, 0)
 	for rows.Next() {
 		snapshot, err := scanSnapshot(rows)
@@ -920,7 +920,7 @@ func (s *Store) ListSnapshotPage(ctx context.Context, beforeCreatedAt string, be
 	if err != nil {
 		return nil, fmt.Errorf("list snapshot page: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	snapshots := make([]types.Snapshot, 0, limit)
 	for rows.Next() {
 		snapshot, err := scanSnapshot(rows)
@@ -1015,7 +1015,7 @@ func (s *Store) ListNamedSnapshots(ctx context.Context) ([]types.NamedSnapshot, 
 	if err != nil {
 		return nil, fmt.Errorf("list named snapshots: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	snapshots := make([]types.NamedSnapshot, 0)
 	for rows.Next() {
 		var snapshot types.NamedSnapshot
@@ -1069,7 +1069,7 @@ func (s *Store) ListConversations(ctx context.Context, boxID string) ([]types.Co
 	if err != nil {
 		return nil, fmt.Errorf("list conversations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	conversations := make([]types.Conversation, 0)
 	for rows.Next() {
 		conversation, err := scanConversation(rows)
@@ -1166,7 +1166,7 @@ func (s *Store) ListRuns(ctx context.Context, conversationID string) ([]types.Ru
 	if err != nil {
 		return nil, fmt.Errorf("list runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	runs := make([]types.Run, 0)
 	for rows.Next() {
 		run, err := scanRun(rows)
@@ -1256,7 +1256,7 @@ func (s *Store) ListEvents(ctx context.Context, boxID string, after int64, limit
 	if err != nil {
 		return nil, fmt.Errorf("list events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	events := make([]types.Event, 0)
 	for rows.Next() {
 		var event types.Event
@@ -1328,7 +1328,7 @@ func (s *Store) ListDesktopSessions(ctx context.Context) ([]DesktopSessionRecord
 	if err != nil {
 		return nil, fmt.Errorf("list desktop sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var sessions []DesktopSessionRecord
 	for rows.Next() {
 		var item DesktopSessionRecord
@@ -1379,7 +1379,7 @@ func (s *Store) ListHosts(ctx context.Context, boxID string) ([]HostRecord, erro
 	if err != nil {
 		return nil, fmt.Errorf("list hosts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	hosts := make([]HostRecord, 0)
 	for rows.Next() {
 		host, err := scanHost(rows)
@@ -1441,7 +1441,7 @@ func (s *Store) ListWebhooks(ctx context.Context) ([]types.Webhook, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list webhooks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	webhooks := make([]types.Webhook, 0)
 	for rows.Next() {
 		webhook, err := scanWebhook(rows)

@@ -191,7 +191,7 @@ func (s *Server) upgradeEnvironment(w http.ResponseWriter, r *http.Request) {
 	}
 	upgraded := 0
 	for _, box := range boxes {
-		if box.Box.EnvironmentID != env.ID || (box.Box.State != types.StateReady && box.Box.State != types.StateIdle) {
+		if box.EnvironmentID != env.ID || (box.State != types.StateReady && box.State != types.StateIdle) {
 			continue
 		}
 		files, _, err := s.environmentFiles(r.Context(), env.ID, env.Version, false)
@@ -199,14 +199,14 @@ func (s *Server) upgradeEnvironment(w http.ResponseWriter, r *http.Request) {
 			s.apiError(w, err)
 			return
 		}
-		client, ok := newAgentClient(s.hub, box.Box.NodeID)
+		client, ok := newAgentClient(s.hub, box.NodeID)
 		if !ok {
 			continue
 		}
-		if err := s.uploadEnvironmentFiles(r.Context(), client, box.Box.ID, files); err != nil {
+		if err := s.uploadEnvironmentFiles(r.Context(), client, box.ID, files); err != nil {
 			continue
 		}
-		box.Box.EnvironmentVersion = env.Version
+		box.EnvironmentVersion = env.Version
 		if err := s.store.UpdateBox(r.Context(), box); err != nil {
 			continue
 		}
@@ -363,25 +363,6 @@ func (s *Server) uploadEnvironmentFiles(ctx context.Context, client *agentClient
 	return nil
 }
 
-func (s *Server) applyCurrentEnvironment(ctx context.Context, client *agentClient, box *store.BoxRecord) error {
-	if box.Box.EnvironmentID == "" {
-		return nil
-	}
-	environment, err := s.store.GetEnvironment(ctx, box.Box.EnvironmentID)
-	if err != nil {
-		return err
-	}
-	files, version, err := s.environmentFiles(ctx, environment.ID, environment.Version, false)
-	if err != nil {
-		return err
-	}
-	if err := s.uploadEnvironmentFiles(ctx, client, box.Box.ID, files); err != nil {
-		return err
-	}
-	box.Box.EnvironmentVersion = version
-	return s.store.UpdateBox(ctx, *box)
-}
-
 func encodedBoxFile(name string, mode int, contents []byte) map[string]any {
 	return map[string]any{"path": name, "mode": mode, "content": base64.StdEncoding.EncodeToString(contents)}
 }
@@ -398,7 +379,7 @@ func validEnvName(value string) bool {
 		return false
 	}
 	for index, char := range value {
-		if !(char == '_' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || (index > 0 && char >= '0' && char <= '9')) {
+		if char != '_' && (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && (index <= 0 || char < '0' || char > '9') {
 			return false
 		}
 	}

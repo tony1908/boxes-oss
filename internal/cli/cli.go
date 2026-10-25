@@ -247,9 +247,10 @@ func (c *CLI) defaults() {
 	if c.OpenBrowser == nil {
 		c.OpenBrowser = func(ctx context.Context, target string) error {
 			program := "xdg-open"
-			if runtime.GOOS == "darwin" {
+			switch runtime.GOOS {
+			case "darwin":
 				program = "open"
-			} else if runtime.GOOS == "windows" {
+			case "windows":
 				program = "rundll32"
 				return c.run(ctx, program, "url.dll,FileProtocolHandler", target)
 			}
@@ -318,7 +319,7 @@ func (c *CLI) saveConfig(config Config) error {
 		return fmt.Errorf("create config file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("secure config file: %w", err)
@@ -591,7 +592,7 @@ func (c *CLI) forward(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("listen for forwarded port: %w", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -612,7 +613,7 @@ func (c *CLI) forward(ctx context.Context, args []string) error {
 }
 
 func (c *CLI) bridgeForward(ctx context.Context, local net.Conn, id string, port int) {
-	defer local.Close()
+	defer func() { _ = local.Close() }()
 	u, err := url.Parse(c.client.BaseURL)
 	if err != nil {
 		return
@@ -632,9 +633,9 @@ func (c *CLI) bridgeForward(ctx context.Context, local net.Conn, id string, port
 		_, _ = fmt.Fprintf(c.Err, "forward connection: %v\n", err)
 		return
 	}
-	defer ws.Close(websocket.StatusNormalClosure, "forward closed")
+	defer func() { _ = ws.Close(websocket.StatusNormalClosure, "forward closed") }()
 	remote := websocket.NetConn(ctx, ws, websocket.MessageBinary)
-	defer remote.Close()
+	defer func() { _ = remote.Close() }()
 	done := make(chan struct{}, 2)
 	go func() {
 		_, _ = io.Copy(remote, local)
@@ -678,7 +679,7 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--mount DRIVE:PATH[:ro]]... [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+		return errors.New("usage: boxes new [--mount DRIVE:PATH[:ro]]... [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
@@ -886,7 +887,7 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 // update changes sandbox tags (--tag merges into the existing tags, --clear-tags removes them all)
 // and the outbound network policy (--network and friends).
 func (c *CLI) update(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...")
+	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]")
 	if len(args) == 0 {
 		return usage
 	}
@@ -1455,7 +1456,7 @@ func (c *CLI) proxy(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("connect TCP proxy: %w", err)
 	}
-	defer ws.Close(websocket.StatusNormalClosure, "proxy closed")
+	defer func() { _ = ws.Close(websocket.StatusNormalClosure, "proxy closed") }()
 	done := make(chan error, 1)
 	go func() {
 		buffer := make([]byte, 32*1024)
@@ -1855,31 +1856,6 @@ func (c *CLI) host(ctx context.Context, args []string) error {
 	result, err := c.client.doJSON(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(id)+"/hosts", map[string]any{"port": port, "private": *private}, nil)
 	if err != nil {
 		return err
-	}
-	return c.printValue(result)
-}
-
-func (c *CLI) action(ctx context.Context, args []string, suffix, method string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: boxes %s <id>", actionName(suffix, method))
-	}
-	id, err := c.boxID(args[0])
-	if err != nil {
-		return err
-	}
-	endpoint := "/sandboxes/" + url.PathEscape(id)
-	if suffix != "" {
-		endpoint += "/" + suffix
-	}
-	result, err := c.client.doJSON(ctx, method, endpoint, nil, nil)
-	if err != nil {
-		return err
-	}
-	if len(strings.TrimSpace(string(result))) == 0 || string(result) == "null" {
-		if c.jsonOutput {
-			return c.printJSON(map[string]any{"ok": true})
-		}
-		return nil
 	}
 	return c.printValue(result)
 }
@@ -2316,12 +2292,12 @@ func (c *CLI) snapshotPull(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	var written int64
 	progress := func(total int64) { written = total }
 	if f, ok := c.Err.(*os.File); ok {
 		if info, statErr := f.Stat(); statErr == nil && info.Mode()&os.ModeCharDevice != 0 {
-			progress = func(total int64) { written = total; fmt.Fprintf(c.Err, "\rDownloaded %d bytes", total) }
+			progress = func(total int64) { written = total; _, _ = fmt.Fprintf(c.Err, "\rDownloaded %d bytes", total) }
 		}
 	}
 	err = c.client.Download(ctx, "/snapshots/"+url.PathEscape(id)+"/download", file, progress)
@@ -2329,13 +2305,17 @@ func (c *CLI) snapshotPull(ctx context.Context, args []string) error {
 		_ = os.Remove(output)
 		return err
 	}
-	fmt.Fprintf(c.Err, "\rSaved %s (%d bytes)\n", output, written)
+	if err := file.Close(); err != nil {
+		_ = os.Remove(output)
+		return err
+	}
+	_, _ = fmt.Fprintf(c.Err, "\rSaved %s (%d bytes)\n", output, written)
 	return nil
 }
 
 func (c *CLI) environment(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes env list|create|update|delete|upgrade ...")
+		return errors.New("usage: boxes env list|create|update|delete|upgrade")
 	}
 	switch args[0] {
 	case "list":
@@ -2733,15 +2713,4 @@ func idempotencyKey() (string, error) {
 		return "", fmt.Errorf("generate idempotency key: %w", err)
 	}
 	return hex.EncodeToString(random[:]), nil
-}
-
-func actionName(suffix, method string) string {
-	switch {
-	case method == http.MethodDelete:
-		return "delete"
-	case suffix != "":
-		return suffix
-	default:
-		return "action"
-	}
 }

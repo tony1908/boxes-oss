@@ -21,19 +21,19 @@ func (s *Server) stopRuntimeBoxesFromAdmin(w http.ResponseWriter, r *http.Reques
 	stopped := make([]string, 0)
 	failed := make([]string, 0)
 	for _, box := range boxes {
-		if box.Box.State == types.StateStopped {
+		if box.State == types.StateStopped {
 			continue
 		}
-		switch box.Box.State {
+		switch box.State {
 		case types.StateProvisioning, types.StateStopping, types.StateResuming, types.StateDeleting:
-			failed = append(failed, box.Box.ID)
+			failed = append(failed, box.ID)
 			continue
 		}
 		if err := s.stopRuntimeBox(r.Context(), box); err != nil {
-			failed = append(failed, box.Box.ID)
+			failed = append(failed, box.ID)
 			continue
 		}
-		stopped = append(stopped, box.Box.ID)
+		stopped = append(stopped, box.ID)
 	}
 	status := http.StatusOK
 	if len(failed) > 0 {
@@ -43,14 +43,14 @@ func (s *Server) stopRuntimeBoxesFromAdmin(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) stopRuntimeBox(ctx context.Context, box store.BoxRecord) error {
-	box, client, err := s.loadBoxAgent(ctx, box.Box.ID)
+	box, client, err := s.loadBoxAgent(ctx, box.ID)
 	if err != nil {
 		return err
 	}
-	if err := s.waitSnapshot(ctx, box.Box.ID); err != nil {
+	if err := s.waitSnapshot(ctx, box.ID); err != nil {
 		return err
 	}
-	defer s.endSnapshot(box.Box.ID)
+	defer s.endSnapshot(box.ID)
 	var response struct {
 		Snapshot struct {
 			SnapshotID string    `json:"snapshotId"`
@@ -58,28 +58,28 @@ func (s *Server) stopRuntimeBox(ctx context.Context, box store.BoxRecord) error 
 			CreatedAt  time.Time `json:"createdAt"`
 		} `json:"snapshot"`
 	}
-	if err := client.json(ctx, http.MethodPost, agentPath("v1", "boxes", box.Box.ID, "stop"), map[string]bool{"snapshot": true}, &response); err != nil {
+	if err := client.json(ctx, http.MethodPost, agentPath("v1", "boxes", box.ID, "stop"), map[string]bool{"snapshot": true}, &response); err != nil {
 		return err
 	}
 	if response.Snapshot.SnapshotID == "" {
 		return errSnapshotRequired
 	}
 	now := time.Now().UTC()
-	box.Box.State = types.StateStopped
-	box.Box.StoppedAt = &now
+	box.State = types.StateStopped
+	box.StoppedAt = &now
 	closeRunningInterval(&box, now)
 	createdAt := response.Snapshot.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = now
 	}
-	if _, err := s.recordSnapshot(ctx, box.Box.ID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
+	if _, err := s.recordSnapshot(ctx, box.ID, response.Snapshot.SnapshotID, response.Snapshot.SizeBytes, createdAt, s.storageConfig()); err != nil {
 		return err
 	}
 	if err := s.store.UpdateBox(ctx, box); err != nil {
 		return err
 	}
 	s.queueRetentionDelete(ctx, box)
-	s.stopEventPump(box.Box.ID)
+	s.stopEventPump(box.ID)
 	s.emitWebhookEvent(context.Background(), "sandbox.stopped", map[string]any{"sandbox": box.Box})
 	return nil
 }
@@ -112,16 +112,16 @@ func (s *Server) resumeRuntimeBoxesFromAdmin(w http.ResponseWriter, r *http.Requ
 			failed = append(failed, id)
 			continue
 		}
-		if box.Box.State == types.StateReady || box.Box.State == types.StateIdle {
+		if box.State == types.StateReady || box.State == types.StateIdle {
 			resumed = append(resumed, id)
 			continue
 		}
-		if box.Box.State != types.StateStopped {
+		if box.State != types.StateStopped {
 			failed = append(failed, id)
 			continue
 		}
 		box, err = s.resumeBox(r.Context(), box, resumeSandboxRequest{})
-		if err != nil || (box.Box.State != types.StateReady && box.Box.State != types.StateIdle) {
+		if err != nil || (box.State != types.StateReady && box.State != types.StateIdle) {
 			failed = append(failed, id)
 			continue
 		}

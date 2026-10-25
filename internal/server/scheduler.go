@@ -38,7 +38,7 @@ func (s *Server) scheduleExcluding(ctx context.Context, size types.Size, boxType
 		if err != nil {
 			return store.NodeRecord{}, err
 		}
-		remaining := float64(node.Node.FreeMemoryBytes) - float64(allocated)
+		var remaining float64
 		snap, hasHealth := s.getHealth(node.Node.ID)
 		usageHealth := hasHealth && snap.Health.MemoryBytes > 0 && snap.Health.MemAvailableBytes > 0
 		if s.cfg.AdmissionMode == "reservation" || !usageHealth {
@@ -65,8 +65,8 @@ func (s *Server) scheduleExcluding(ctx context.Context, size types.Size, boxType
 				boxes, _ := s.store.ListBoxes(ctx, node.Node.ID)
 				var floor int64
 				for _, b := range boxes {
-					if b.Box.State != types.StateStopped {
-						z, e := types.SizeFor(b.Box.Type)
+					if b.State != types.StateStopped {
+						z, e := types.SizeFor(b.Type)
 						if e == nil {
 							floor += z.MemoryReservationBytes
 						}
@@ -132,10 +132,10 @@ func (s *Server) allocatedMemoryExcept(ctx context.Context, nodeID, excludedBoxI
 	}
 	var allocated int64
 	for _, box := range boxes {
-		if box.Box.State == types.StateStopped || box.Box.ID == excludedBoxID {
+		if box.State == types.StateStopped || box.ID == excludedBoxID {
 			continue
 		}
-		size, err := types.SizeFor(box.Box.Type)
+		size, err := types.SizeFor(box.Type)
 		if err != nil {
 			return 0, err
 		}
@@ -181,8 +181,8 @@ func pendingBytes(ctx context.Context, s *Server, nodeID string, now time.Time) 
 	boxes, _ := s.store.ListBoxes(ctx, nodeID)
 	var n int64
 	for _, b := range boxes {
-		if b.Box.State == types.StateProvisioning || b.Box.State == types.StateResuming || (b.Box.State == types.StateReady && now.Sub(b.Box.CreatedAt) < 60*time.Second) {
-			z, e := types.SizeFor(b.Box.Type)
+		if b.State == types.StateProvisioning || b.State == types.StateResuming || (b.State == types.StateReady && now.Sub(b.CreatedAt) < 60*time.Second) {
+			z, e := types.SizeFor(b.Type)
 			if e == nil {
 				n += expectedBox(s, z)
 			}

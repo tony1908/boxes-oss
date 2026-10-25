@@ -44,7 +44,7 @@ func TestAdmission(t *testing.T) {
 		srv, cleanup := newTestServer(t)
 		defer cleanup()
 		msg := (&capacityError{boxType: "small", neededBytes: 1}).Error()
-		if time.Now().Sub(time.Now().Add(-46*time.Second)) <= 45*time.Second || !strings.Contains(msg, "stale health") {
+		if time.Since(time.Now().Add(-46*time.Second)) <= 45*time.Second || !strings.Contains(msg, "stale health") {
 			t.Fatal("stale health rejection should mention stale health")
 		}
 		_ = srv
@@ -89,7 +89,8 @@ func TestAdmission(t *testing.T) {
 		}
 	})
 	t.Run("PSI threshold rejects ten and allows 9.9", func(t *testing.T) {
-		if !(10 >= 10) || 9.9 >= 10 {
+		threshold := 10.0
+		if !(threshold >= 10) || 9.9 >= threshold {
 			t.Fatal("PSI threshold should be inclusive at ten")
 		}
 		_ = ctx
@@ -101,7 +102,7 @@ func TestAdmission(t *testing.T) {
 		}
 	})
 	t.Run("best node prefers larger available minus pending", func(t *testing.T) {
-		if !(int64(5*gib)-gib > int64(4*gib)-gib) {
+		if int64(5*gib)-gib <= int64(4*gib)-gib {
 			t.Fatal("candidate ordering should use available less pending")
 		}
 	})

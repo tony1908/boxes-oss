@@ -47,7 +47,8 @@ func TestAgentTunnelIsReachableAtInstallPath(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -89,7 +90,8 @@ func TestDeleteSandboxForgetsSnapshotsInBackground(t *testing.T) {
 		close(allowForget)
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop")
 		}
@@ -111,7 +113,7 @@ func TestDeleteSandboxForgetsSnapshotsInBackground(t *testing.T) {
 		if response == nil {
 			t.Fatal("delete request failed")
 		}
-		response.Body.Close()
+		_ = response.Body.Close()
 		if response.StatusCode != http.StatusAccepted {
 			t.Fatalf("delete status = %d, want 202", response.StatusCode)
 		}
@@ -213,7 +215,8 @@ func TestSnapshotDownloadStreamsFromFakeAgent(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop")
 		}
@@ -268,7 +271,8 @@ func TestSandboxBoxdHealthCheckProxiesThroughAgentTunnel(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -284,7 +288,7 @@ func TestSandboxBoxdHealthCheckProxiesThroughAgentTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request boxd health through server: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read boxd health response: %v", err)
@@ -361,7 +365,8 @@ func TestForkStartsEventPumpForCreatedSandbox(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -440,7 +445,8 @@ func TestNodeReconnectRestartsEventPumpAfterTransientHealthFailure(t *testing.T)
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -530,7 +536,7 @@ func TestDesktopSessionReloadedFromStoreKeepsURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	dataDir := dir + "/data"
 	first, err := New(Config{Store: st, DataDir: dataDir})
 	if err != nil {
@@ -618,7 +624,8 @@ func TestDesktopAndHostURLsUseNodeHostFallbackAndReconcileRoutes(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -645,7 +652,7 @@ func TestDesktopAndHostURLsUseNodeHostFallbackAndReconcileRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get snapshot tree: %v", err)
 	}
-	defer treeResponse.Body.Close()
+	defer func() { _ = treeResponse.Body.Close() }()
 	if treeResponse.StatusCode != http.StatusOK {
 		t.Fatalf("snapshot tree status = %d", treeResponse.StatusCode)
 	}
@@ -748,14 +755,14 @@ func TestDesktopAndHostURLsUseNodeHostFallbackAndReconcileRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load box for event pump state transition: %v", err)
 	}
-	box.Box.State = types.StateStopped
+	box.State = types.StateStopped
 	srv.syncEventPump(box.Box)
 	waitFor(t, func() bool {
 		srv.platformMu.Lock()
 		defer srv.platformMu.Unlock()
 		return len(srv.eventPumps) == 0
 	})
-	box.Box.State = types.StateReady
+	box.State = types.StateReady
 	srv.syncEventPump(box.Box)
 	srv.syncEventPump(box.Box)
 	srv.platformMu.Lock()
@@ -909,7 +916,8 @@ func TestProvisionSandboxSendsEnvironmentFilesToAgent(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -992,7 +1000,8 @@ func TestPromptPersistsConversationAndRunAndRunReadsCurrentBoxdState(t *testing.
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -1032,7 +1041,7 @@ func TestPromptPersistsConversationAndRunAndRunReadsCurrentBoxdState(t *testing.
 	if err != nil {
 		t.Fatalf("get conversations: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	var conversations []types.Conversation
 	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&conversations) != nil || len(conversations) != 1 {
 		t.Fatalf("conversations response status=%d entries=%#v", response.StatusCode, conversations)
@@ -1082,7 +1091,8 @@ func TestRunStatusWaitsUntilTerminalEventIsStored(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(5 * time.Second):
 			t.Error("agent tunnel did not stop after cancellation")
 		}
@@ -1103,7 +1113,7 @@ func TestRunStatusWaitsUntilTerminalEventIsStored(t *testing.T) {
 	}
 	waitFor(t, func() bool {
 		box, err := srv.store.GetBox(context.Background(), boxID)
-		return err == nil && box.Box.State == types.StateStopped
+		return err == nil && box.State == types.StateStopped
 	})
 	snapshots, err := srv.store.ListSnapshots(context.Background(), boxID)
 	if err != nil || len(snapshots) != 1 || snapshots[0].ResticID != "stop-when-done-snapshot" {
