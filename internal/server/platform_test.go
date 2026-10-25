@@ -697,11 +697,11 @@ func TestDesktopAndHostURLsUseNodeHostFallbackAndReconcileRoutes(t *testing.T) {
 	}
 	var hostResponse map[string]any
 	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/sandboxes/"+boxID+"/hosts", token,
-		map[string]any{"port": 3001, "private": true}, http.StatusCreated, &hostResponse)
+		map[string]any{"port": 8081, "private": true}, http.StatusCreated, &hostResponse)
 	host, _ := hostResponse["host"].(map[string]any)
 	privateURL, _ := host["url"].(string)
 	privateParsed, err := url.Parse(privateURL)
-	if err != nil || privateParsed.Host != dnsBoxID+"-3001.203.0.113.7.sslip.io" || privateParsed.Query().Get("token") == "" {
+	if err != nil || privateParsed.Host != dnsBoxID+"-8081.203.0.113.7.sslip.io" || privateParsed.Query().Get("token") == "" {
 		t.Fatalf("private host URL = %q; err %v", privateURL, err)
 	}
 	mu.Lock()

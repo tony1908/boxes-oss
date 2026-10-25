@@ -196,8 +196,8 @@ func TestActivityRecordingThroughFakeAgentForEveryCategoryAndRedactsSecrets(t *t
 		t.Fatalf("write file: response=%v err=%v", fileResponse, err)
 	}
 	_ = fileResponse.Body.Close()
-	requestJSON(t, httpServer.Client(), http.MethodPost, base+"/hosts", token, map[string]any{"port": 3000, "private": true}, http.StatusCreated, nil)
-	requestJSON(t, httpServer.Client(), http.MethodDelete, base+"/hosts/3000", token, nil, http.StatusNoContent, nil)
+	requestJSON(t, httpServer.Client(), http.MethodPost, base+"/hosts", token, map[string]any{"port": 8080, "private": true}, http.StatusCreated, nil)
+	requestJSON(t, httpServer.Client(), http.MethodDelete, base+"/hosts/8080", token, nil, http.StatusNoContent, nil)
 	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -283,3 +283,27 @@ func TestActivityRecordingThroughFakeAgentForEveryCategoryAndRedactsSecrets(t *t
 }
 
 func stringPointer(value string) *string { return &value }
+
+func TestSafeActivityTextRedactsOnlySecretEnvironmentAssignments(t *testing.T) {
+	readable := map[string]string{
+		"PORT=8080 npm start":      "PORT=8080 npm start",
+		"NODE_ENV=production node": "NODE_ENV=production node",
+	}
+	for in, want := range readable {
+		if got := safeActivityText(in, 0); got != want {
+			t.Errorf("safeActivityText(%q) = %q, want %q", in, got, want)
+		}
+	}
+	secret := map[string]string{
+		"API_KEY=abc":         "API_KEY=[REDACTED]",
+		"GITHUB_TOKEN=x":      "GITHUB_TOKEN=[REDACTED]",
+		"DB_PASSWORD=y":       "DB_PASSWORD=[REDACTED]",
+		"SESSION_ID=z run":    "SESSION_ID=[REDACTED] run",
+		"AWS_SECRET=s deploy": "AWS_SECRET=[REDACTED] deploy",
+	}
+	for in, want := range secret {
+		if got := safeActivityText(in, 0); got != want {
+			t.Errorf("safeActivityText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

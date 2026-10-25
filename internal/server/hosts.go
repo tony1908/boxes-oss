@@ -1,12 +1,17 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 
 	"github.com/tony1908/boxes-oss/internal/store"
 )
+
+// reservedHostPorts are used inside every box: 3000/3001 serve the webtop desktop
+// and 7070 is boxd. Exposing them publicly would publish the desktop.
+var reservedHostPorts = map[int]bool{3000: true, 3001: true, 7070: true}
 
 func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 	box, err := s.store.GetBox(r.Context(), pathID(r))
@@ -43,6 +48,10 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &input); err != nil || input.Port < 1 || input.Port > 65535 {
 		writeError(w, http.StatusBadRequest, "invalid_request", "port must be between 1 and 65535")
+		return
+	}
+	if reservedHostPorts[input.Port] {
+		writeError(w, http.StatusBadRequest, "reserved_port", fmt.Sprintf("port %d is used by the box itself (3000/3001 desktop, 7070 boxd); use another port such as 8080", input.Port))
 		return
 	}
 	box, client, err := s.loadBoxAgent(r.Context(), pathID(r))

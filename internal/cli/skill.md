@@ -56,6 +56,14 @@ Use `boxes push <id> [dir] [--to path]` to copy a repo into a box. The default d
 
 SDKs: [TypeScript](../../sdk/typescript/README.md) · [Python](../../sdk/python/README.md).
 
+## Working in a box
+
+- Reuse a box: run `boxes current` or `boxes list` first and reuse the running box. Don't create a second box unless the user asks.
+- `boxes push <id> .` lands the repo in `/config/<directory name>`. For a fixed path use `boxes push <id> . --to /config/project`, and `cd` there in every `exec`.
+- Ports 3000, 3001 and 7070 are taken by the box (desktop, boxd). Serve apps on 8080 or another port, then run `boxes host <id> <port>`.
+- Long-running servers: start them with `boxes exec <id> --detach -- <command>`, then check them with `boxes ps <id>` and `boxes logs <id> <processId>`.
+- Re-run the tests after every push and report the final exit code.
+
 ## Run a repo's tests
 
 ```sh

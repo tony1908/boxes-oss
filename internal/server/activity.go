@@ -201,12 +201,20 @@ var (
 	sensitiveCommandArg = regexp.MustCompile(`(?i)(--?(?:password|token|secret|api[-_]?key|access[-_]?key|authorization))(?:\s+|=)([^\s]+)`)
 	sensitiveKeyValue   = regexp.MustCompile(`(?i)\b([a-z0-9_.-]*(?:password|token|secret|api[_-]?key|access[_-]?key|authorization|credential)[a-z0-9_.-]*\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s&,;]+)`)
 	environmentAssign   = regexp.MustCompile(`\b([A-Z_][A-Z0-9_]*=)("[^"]*"|'[^']*'|[^\s;&]+)`)
+	secretEnvName       = regexp.MustCompile(`(?i)(KEY|TOKEN|SECRET|PASS|PWD|AUTH|CREDENTIAL|COOKIE|SESSION|PRIVATE)`)
 )
 
 func safeActivityText(value string, maxRunes int) string {
 	value = diagnostics.Sanitize(value)
 	value = sensitiveKeyValue.ReplaceAllString(value, `${1}[REDACTED]`)
-	value = environmentAssign.ReplaceAllString(value, `${1}[REDACTED]`)
+	value = environmentAssign.ReplaceAllStringFunc(value, func(assign string) string {
+		// Only NAME=value pairs whose NAME looks secret are redacted; PORT=8080 stays readable.
+		name := assign[:strings.IndexByte(assign, '=')+1]
+		if !secretEnvName.MatchString(name) {
+			return assign
+		}
+		return name + "[REDACTED]"
+	})
 	value = sensitiveCommandArg.ReplaceAllString(value, `${1}=[REDACTED]`)
 	if maxRunes > 0 {
 		runes := []rune(value)

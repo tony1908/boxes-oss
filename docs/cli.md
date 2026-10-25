@@ -241,6 +241,10 @@ eight hours by default. See [desktop.md](desktop.md).
 
 `host <id> <port>` exposes a TCP port from the box through the server;
 `--private` requires authentication to reach it.
+Ports 3000, 3001 and 7070 are reserved: the box uses them for its desktop and
+boxd, so `host` rejects them with `reserved_port`. Serve apps on 8080 or another
+port. `push <id> [dir]` copies to `/config/<directory name>` by default; pass
+`--to /config/project` for a fixed destination.
 
 `forward` binds only to `127.0.0.1` and forwards each local TCP connection over
 the server's WebSocket tunnel. `dashboard [id]` opens the server root or the
