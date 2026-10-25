@@ -1,6 +1,6 @@
 ---
 name: boxes
-description: Use when the user asks to run something in a cloud box/sandbox/VM, use "my box", spin up a machine for an agent, test in an isolated Linux environment, or mentions boxes / bx_ IDs. Controls boxes-oss sandboxes (self-hosted boat.dev) through the `boxes` CLI.
+description: Use when the user asks to run something in a cloud box/sandbox/VM, use "my box", spin up a machine for an agent, test in an isolated Linux environment, or mentions boxes / bx_ IDs. Controls self-hosted boxes-oss sandboxes through the `boxes` CLI.
 ---
 
 <!-- boxes-skill-managed -->

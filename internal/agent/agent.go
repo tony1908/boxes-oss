@@ -1290,7 +1290,7 @@ func parseCommand(raw json.RawMessage) ([]string, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, errors.New("cmd is required")
 	}
-	// A string is a shell command line (like boat.dev); pass an array to skip the shell.
+	// A string is a shell command line; pass an array to skip the shell.
 	return []string{"bash", "-lc", command}, nil
 }
 
