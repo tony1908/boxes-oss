@@ -26,6 +26,8 @@ ARG PI_VERSION
 ARG PRIME_AGENT_VERSION
 ARG KIMI_CODE_VERSION
 ARG PI_MCP_EXTENSION_VERSION
+# INSTALL_KIMI=0 skips Kimi Code (its CDN blocks some cloud IPs, e.g. DigitalOcean).
+ARG INSTALL_KIMI=1
 
 ENV PATH=/opt/boxes-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -75,13 +77,15 @@ RUN set -eux; \
     rustc --version
 
 RUN set -eux; \
-    case "${TARGETARCH}" in amd64) kimi_arch=x64 ;; arm64) kimi_arch=arm64 ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac; \
-    kimi_sha="$(curl -fsSL "https://code.kimi.com/kimi-code/binaries/${KIMI_CODE_VERSION}/manifest.json" | grep -o "\"linux-${kimi_arch}\": {[^}]*}" | sed -n 's/.*"checksum": "\([a-f0-9]\{64\}\)".*/\1/p')"; \
-    test -n "${kimi_sha}"; \
-    curl -fsSL "https://code.kimi.com/kimi-code/binaries/${KIMI_CODE_VERSION}/kimi-code-linux-${kimi_arch}" -o /opt/boxes-tools/bin/kimi; \
-    echo "${kimi_sha}  /opt/boxes-tools/bin/kimi" | sha256sum -c -; \
-    chmod 0755 /opt/boxes-tools/bin/kimi; \
-    kimi --version; \
+    if [ "${INSTALL_KIMI}" = "1" ]; then \
+        case "${TARGETARCH}" in amd64) kimi_arch=x64 ;; arm64) kimi_arch=arm64 ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac; \
+        kimi_sha="$(curl -fsSL "https://code.kimi.com/kimi-code/binaries/${KIMI_CODE_VERSION}/manifest.json" | grep -o "\"linux-${kimi_arch}\": {[^}]*}" | sed -n 's/.*"checksum": "\([a-f0-9]\{64\}\)".*/\1/p')"; \
+        test -n "${kimi_sha}"; \
+        curl -fsSL "https://code.kimi.com/kimi-code/binaries/${KIMI_CODE_VERSION}/kimi-code-linux-${kimi_arch}" -o /opt/boxes-tools/bin/kimi; \
+        echo "${kimi_sha}  /opt/boxes-tools/bin/kimi" | sha256sum -c -; \
+        chmod 0755 /opt/boxes-tools/bin/kimi; \
+        kimi --version; \
+    fi; \
     apt-get purge -y --auto-remove curl; \
     rm -rf /var/lib/apt/lists/* /tmp/*
 

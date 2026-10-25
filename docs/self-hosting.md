@@ -284,3 +284,5 @@ read-only at `/opt/boxes-tools`. Boxes created later use the new digest, while
 running boxes keep their original mount. If the image is not present locally, the
 agent logs once and creates boxes without the mount. The volume is not part of
 snapshots.
+
+Build the tools image with `--build-arg INSTALL_KIMI=0` to skip Kimi Code when `code.kimi.com` is unreachable (for example, from DigitalOcean IPs); the `kimi` harness is then unavailable.
