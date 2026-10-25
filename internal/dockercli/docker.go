@@ -37,10 +37,18 @@ type Spec struct {
 
 // Container is the Docker state needed by the agent.
 type Container struct {
-	ID    string
-	Name  string
-	State string
-	IP    string
+	ID     string
+	Name   string
+	State  string
+	IP     string
+	Mounts []Mount
+}
+
+// Mount is a container mount as reported by docker inspect.
+type Mount struct {
+	Type        string
+	Destination string
+	RW          bool
 }
 
 // Change describes a path modified in a container's writable layer.
@@ -348,6 +356,7 @@ func (d *Docker) Inspect(ctx context.Context, name string) (Container, error) {
 				IPAddress string `json:"IPAddress"`
 			} `json:"Networks"`
 		} `json:"NetworkSettings"`
+		Mounts []Mount `json:"Mounts"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &results); err != nil {
 		return Container{}, fmt.Errorf("decode docker inspect output: %w", err)
@@ -357,7 +366,7 @@ func (d *Docker) Inspect(ctx context.Context, name string) (Container, error) {
 	}
 	container := results[0]
 	nameFromInspect := strings.TrimPrefix(container.Name, "/")
-	return Container{ID: container.ID, Name: nameFromInspect, State: container.State.Status, IP: container.NetworkSettings.Networks["boxes-net"].IPAddress}, nil
+	return Container{ID: container.ID, Name: nameFromInspect, State: container.State.Status, IP: container.NetworkSettings.Networks["boxes-net"].IPAddress, Mounts: container.Mounts}, nil
 }
 
 // CPUPercent returns the current container CPU use as a percentage of one core.

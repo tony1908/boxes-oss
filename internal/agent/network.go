@@ -22,6 +22,10 @@ const (
 	defaultNetworkDir      = "/var/lib/boxes/network"
 	networkRefreshInterval = 60 * time.Second
 	networkResolveTimeout  = 10 * time.Second
+	// dnsHistoryWindow keeps an IP allowed this long after a domain last resolved to it.
+	dnsHistoryWindow = 30 * time.Minute
+	// dnsHistoryCap bounds the IPs kept per domain per box; the most recently seen win.
+	dnsHistoryCap = 64
 )
 
 // networkChain returns the per-box iptables chain. Box IDs are 15 characters, so the name is 21 characters (limit 28).
@@ -236,6 +240,7 @@ func (a *Agent) setNetworkPolicy(ctx context.Context, boxID string, policy *type
 	defer a.networkMu.Unlock()
 	if policy == nil {
 		a.teardownNetworkRules(ctx, boxID)
+		delete(a.dnsHistory, boxID)
 		return a.deleteNetworkPolicyFile(boxID)
 	}
 	container, err := a.docker.Inspect(ctx, boxName(boxID))
@@ -246,10 +251,11 @@ func (a *Agent) setNetworkPolicy(ctx context.Context, boxID string, policy *type
 		if container.IP == "" {
 			return errors.New("running box has no network address")
 		}
-		resolved, err := resolveAllowedDomains(ctx, *policy)
+		fresh, err := resolveAllowedDomains(ctx, *policy)
 		if err != nil {
 			return err
 		}
+		resolved := a.mergeDNSHistory(boxID, fresh, time.Now())
 		if err := a.applyNetworkRules(ctx, boxID, container.IP, *policy, resolved); err != nil {
 			// Fail closed: a half-built chain can fall through to ACCEPT, so stop the box.
 			a.teardownNetworkRules(ctx, boxID)
@@ -265,6 +271,59 @@ func (a *Agent) setNetworkPolicy(ctx context.Context, boxID string, policy *type
 		return err
 	}
 	return nil
+}
+
+// mergeDNSHistory records the IPv4s just resolved for each domain of a box and returns, per domain, every IP
+// seen within dnsHistoryWindow (capped at dnsHistoryCap). Entries are pruned here on every refresh, and domains
+// no longer in the policy are dropped. Caller holds networkMu.
+// ponytail: in-memory, so an agent restart forgets history. Ceiling: an IP that rotates out and is needed again
+// after 30 minutes, or a domain with more than 64 live IPs, is still refused until the next refresh resolves it.
+func (a *Agent) mergeDNSHistory(boxID string, fresh map[string][]net.IP, now time.Time) map[string][]net.IP {
+	if a.dnsHistory == nil {
+		a.dnsHistory = map[string]map[string]map[string]time.Time{}
+	}
+	history := a.dnsHistory[boxID]
+	if history == nil {
+		history = map[string]map[string]time.Time{}
+		a.dnsHistory[boxID] = history
+	}
+	for domain := range history {
+		if _, ok := fresh[domain]; !ok {
+			delete(history, domain)
+		}
+	}
+	union := make(map[string][]net.IP, len(fresh))
+	for domain, ips := range fresh {
+		seen := history[domain]
+		if seen == nil {
+			seen = map[string]time.Time{}
+			history[domain] = seen
+		}
+		for _, ip := range ips {
+			if v4 := ip.To4(); v4 != nil {
+				seen[v4.String()] = now
+			}
+		}
+		for ip, at := range seen {
+			if now.Sub(at) > dnsHistoryWindow {
+				delete(seen, ip)
+			}
+		}
+		if len(seen) > dnsHistoryCap {
+			keys := make([]string, 0, len(seen))
+			for ip := range seen {
+				keys = append(keys, ip)
+			}
+			sort.Slice(keys, func(i, j int) bool { return seen[keys[i]].After(seen[keys[j]]) })
+			for _, ip := range keys[dnsHistoryCap:] {
+				delete(seen, ip)
+			}
+		}
+		for ip := range seen {
+			union[domain] = append(union[domain], net.ParseIP(ip))
+		}
+	}
+	return union
 }
 
 func (a *Agent) networkPolicyPath(boxID string) string {

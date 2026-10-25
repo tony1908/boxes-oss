@@ -85,7 +85,8 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 		return writeMCPConfigs(root)
 	}
 	if err != nil {
-		return err
+		// The config exists but cannot be read, so setup cannot run; record the failure rather than leave no status.
+		return errors.Join(err, writeSetupStatus(root, "failed"))
 	}
 	var doc setupDocument
 	if err := json.Unmarshal(data, &doc); err != nil {

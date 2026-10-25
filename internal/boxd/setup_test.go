@@ -285,3 +285,22 @@ func TestSetupSourceTokenIsUsedThenRemoved(t *testing.T) {
 		t.Fatalf("source token file still exists: %v", err)
 	}
 }
+
+func TestRunSetupUnreadableConfigPersistsFailedStatus(t *testing.T) {
+	root := t.TempDir()
+	// A directory where the config file should be fails ReadFile with a non-not-exist error.
+	setupFile := filepath.Join(root, "setup.json")
+	if err := os.Mkdir(setupFile, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunSetup(context.Background(), SetupOptions{Root: root, SetupFile: setupFile, Executor: &setupFake{}}); err == nil {
+		t.Fatal("RunSetup() succeeded for an unreadable config")
+	}
+	status, err := os.ReadFile(filepath.Join(root, ".boxd", "setup.status"))
+	if err != nil {
+		t.Fatalf("read setup status: %v", err)
+	}
+	if string(status) != "failed\n" {
+		t.Fatalf("setup status = %q, want failed", status)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tony1908/boxes-oss/internal/dockercli"
 	"github.com/tony1908/boxes-oss/internal/snapshot"
@@ -169,5 +170,37 @@ func TestCreateBoxRejectsInvalidNetworkPolicy(t *testing.T) {
 	service.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/boxes", strings.NewReader(body)))
 	if recorder.Code != 400 || !strings.Contains(recorder.Body.String(), "invalid_network_policy") {
 		t.Fatalf("status = %d body=%s, want 400 invalid_network_policy", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMergeDNSHistoryKeepsIPsSeenWithin30Minutes(t *testing.T) {
+	a := &Agent{}
+	t0 := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	ip := func(s string) []net.IP { return []net.IP{net.ParseIP(s).To4()} }
+	const domain = "api.example.test"
+	a.mergeDNSHistory("bx_dnshistory1234", map[string][]net.IP{domain: ip("192.0.2.1")}, t0)
+	// 21 minutes later the first IP is still inside the window.
+	a.mergeDNSHistory("bx_dnshistory1234", map[string][]net.IP{domain: ip("192.0.2.2")}, t0.Add(21*time.Minute))
+	// 31 minutes after the first sighting, it has aged out; the one seen 10 minutes ago stays.
+	got := a.mergeDNSHistory("bx_dnshistory1234", map[string][]net.IP{domain: ip("192.0.2.3")}, t0.Add(31*time.Minute))
+	if want := []string{"192.0.2.2", "192.0.2.3"}; !reflect.DeepEqual(resolvedIPs(got), want) {
+		t.Fatalf("allowed IPs = %v, want %v", resolvedIPs(got), want)
+	}
+	// Domains removed from the policy are dropped.
+	if got := a.mergeDNSHistory("bx_dnshistory1234", map[string][]net.IP{}, t0.Add(31*time.Minute)); len(got) != 0 {
+		t.Fatalf("removed domain still allowed: %v", got)
+	}
+}
+
+func TestMergeDNSHistoryCapsIPsPerDomain(t *testing.T) {
+	a := &Agent{}
+	t0 := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	var ips []net.IP
+	for i := 0; i < 70; i++ {
+		ips = append(ips, net.IPv4(198, 51, 100, byte(i)))
+	}
+	got := a.mergeDNSHistory("bx_dnshistory1234", map[string][]net.IP{"cap.example.test": ips}, t0)
+	if len(got["cap.example.test"]) != 64 {
+		t.Fatalf("kept %d IPs, want 64", len(got["cap.example.test"]))
 	}
 }

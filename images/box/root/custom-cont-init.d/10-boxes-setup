@@ -9,6 +9,12 @@ for dir in /config/.config /config/.local /config/.cache; do
 	fi
 done
 
+# The agent copies these files in as root with mode 0600; abc (setup and boxd serve) must read them.
+if [ -d /run/boxes ]; then
+	chown -R abc:abc /run/boxes
+	chmod 0700 /run/boxes
+fi
+
 install -d -o abc -g abc -m 0700 /config/.boxd
 touch /config/.boxd/setup.log
 chown abc:abc /config/.boxd/setup.log

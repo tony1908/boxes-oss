@@ -100,6 +100,10 @@ func (s *Server) runEventPump(ctx context.Context, boxID string) {
 			if ctx.Err() != nil {
 				return
 			}
+			// A box that is stopping closes its event store under the pump (outbox_error "database is closed"); that is a normal end.
+			if current, getErr := s.store.GetBox(ctx, boxID); getErr != nil || (current.Box.State != types.StateReady && current.Box.State != types.StateIdle) {
+				return
+			}
 			s.logEventPumpError(boxID, err)
 			if !sleepContext(ctx, time.Second) {
 				return

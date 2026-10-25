@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -69,5 +70,34 @@ func TestDriveForkFailureReturnsError(t *testing.T) {
 	service.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/drives/data/fork", strings.NewReader(`{"target":"copy","image":"boxes/box:dev"}`)))
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("fork failure = %d, want 502", response.Code)
+	}
+}
+
+func TestClaimWritableMountsChownsOnlyWritableVolumes(t *testing.T) {
+	var calls []callRecord
+	docker := dockercli.New(testExecutor{name: "docker", calls: &calls, command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
+		if len(argv) > 1 && argv[1] == "inspect" {
+			_, _ = io.WriteString(stdout, `[{"Id":"cid","Name":"/box-bx_drives1234567","State":{"Status":"running"},"Mounts":[`+
+				`{"Type":"volume","Destination":"/mnt/data","RW":true},`+
+				`{"Type":"volume","Destination":"/mnt/ref","RW":false}]}]`)
+		}
+		return 0, nil
+	}})
+	service := New(Config{}, docker, snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	if err := service.claimWritableMounts(context.Background(), "box-bx_drives1234567"); err != nil {
+		t.Fatal(err)
+	}
+	var execs [][]string
+	for _, call := range calls {
+		if len(call.argv) > 1 && call.argv[1] == "exec" {
+			execs = append(execs, call.argv)
+		}
+	}
+	if len(execs) != 1 {
+		t.Fatalf("exec calls = %d, want one for the writable drive only: %q", len(execs), execs)
+	}
+	argv := execs[0]
+	if !reflect.DeepEqual(argv[2:4], []string{"--user", "root"}) || argv[len(argv)-1] != "/mnt/data" {
+		t.Fatalf("exec argv = %q, want root exec targeting /mnt/data", argv)
 	}
 }

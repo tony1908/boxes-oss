@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -445,5 +446,51 @@ func TestPruneKeepsBoxKeepSnapshotsNewestRows(t *testing.T) {
 	}
 	if len(remaining) != 2 || remaining[0].ResticID != "keep-2" || remaining[1].ResticID != "keep-3" {
 		t.Fatalf("remaining snapshots = %#v, want the two newest", remaining)
+	}
+}
+
+func TestRepeatedCapturesKeepBoxKeepSnapshots(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+	ctx := context.Background()
+	base := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	const nodeID, boxID = "nd_keepthree", "bx_keepthree12345"
+	if err := srv.store.CreateNode(ctx, store.NodeRecord{Node: types.Node{ID: nodeID, Name: "snapshot node", Status: "healthy"}, TokenHash: "keepthree-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.store.CreateBox(ctx, store.BoxRecord{Box: types.Box{ID: boxID, NodeID: nodeID, Type: "small", State: types.StateReady, CreatedAt: base, KeepSnapshots: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	var captures int
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/boxes/"+boxID+"/snapshot":
+			captures++
+			at := base.Add(time.Duration(captures) * time.Minute).Format(time.RFC3339)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"snapshotId":"keep3-%d","sizeBytes":1,"createdAt":%q}`, captures, at))
+		case r.Method == http.MethodPost && (r.URL.Path == "/v1/snapshots/forget" || r.URL.Path == "/v1/snapshots/prune"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer agent.Close()
+	target, _ := url.Parse(agent.URL)
+	client := &agentClient{http: &http.Client{Transport: rewriteAgentTransport{target: target, base: http.DefaultTransport}}}
+	for i := 0; i < 5; i++ {
+		if err := srv.recordPeriodicSnapshot(ctx, boxID, client); err != nil {
+			t.Fatalf("capture %d: %v", i+1, err)
+		}
+	}
+	remaining, err := srv.store.ListSnapshots(ctx, boxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 3 || remaining[0].ResticID != "keep3-3" || remaining[2].ResticID != "keep3-5" {
+		var ids []string
+		for _, snapshot := range remaining {
+			ids = append(ids, snapshot.ResticID)
+		}
+		t.Fatalf("remaining snapshots = %v, want the three newest keep3-3..keep3-5", ids)
 	}
 }

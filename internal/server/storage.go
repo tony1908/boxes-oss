@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -313,6 +314,15 @@ func (s *Server) recordSnapshot(ctx context.Context, boxID, resticID string, siz
 		SizeBytes: size, CreatedAt: createdAt, Repository: config.Repository, StorageEnvEnc: encryptedEnv}
 	if err := s.store.CreateSnapshot(ctx, snapshot); err != nil {
 		return types.Snapshot{}, err
+	}
+	// Retention runs for every recorded snapshot (manual, stop, reaper, periodic). Periodic capture alone
+	// prunes only when it captures a change, so rows added here would otherwise exceed keepSnapshots.
+	if box, err := s.store.GetBox(ctx, boxID); err == nil {
+		if client, ok := newAgentClient(s.hub, box.Box.NodeID); ok {
+			if err := s.pruneSnapshots(ctx, boxID, client); err != nil {
+				log.Printf("prune snapshots for %s after recording: %v", boxID, err)
+			}
+		}
 	}
 	return snapshot, nil
 }

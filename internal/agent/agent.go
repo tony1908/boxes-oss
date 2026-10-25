@@ -80,6 +80,7 @@ type Agent struct {
 	snapshotFingerprints map[string]string
 	toolsWarning         sync.Once
 	networkMu            sync.Mutex
+	dnsHistory           map[string]map[string]map[string]time.Time // box -> domain -> IPv4 -> last resolved; guarded by networkMu
 	firewall             dockercli.Executor
 	readFile             func(string) ([]byte, error) // host file reads for box usage; faked in tests
 	usageWarned          sync.Map                     // box IDs whose usage read already failed and was logged
@@ -584,6 +585,10 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 		a.writeOperationError(w, r, http.StatusBadGateway, "box_start_failed", "cannot start box container", err)
 		return
 	}
+	if err := a.claimWritableMounts(r.Context(), containerName); err != nil {
+		a.writeOperationError(w, r, http.StatusBadGateway, "drive_permission_failed", "cannot make box drives writable", err)
+		return
+	}
 	if request.NetworkPolicy != nil {
 		if err := a.setNetworkPolicy(r.Context(), request.BoxID, request.NetworkPolicy); err != nil {
 			a.writeOperationError(w, r, http.StatusBadGateway, "network_policy_failed", "cannot apply box network policy", err)
@@ -697,6 +702,11 @@ func (a *Agent) startBox(w http.ResponseWriter, r *http.Request) {
 		a.writeOperationError(w, r, http.StatusBadGateway, "box_start_failed", "cannot start box container", err)
 		return
 	}
+	if err := a.claimWritableMounts(r.Context(), containerName); err != nil {
+		_ = a.docker.Stop(context.Background(), containerName, 10*time.Second)
+		a.writeOperationError(w, r, http.StatusBadGateway, "drive_permission_failed", "cannot make box drives writable", err)
+		return
+	}
 	policy, err := a.loadNetworkPolicy(r.PathValue("id"))
 	if err == nil && policy != nil {
 		err = a.setNetworkPolicy(r.Context(), r.PathValue("id"), policy)
@@ -711,6 +721,30 @@ func (a *Agent) startBox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// claimWritableMounts hands each writable drive root to the box user (uid 1000). Fresh volumes are root:root 755,
+// so abc cannot write to them. Only root-owned roots are changed, and non-recursively, so existing data keeps its owner.
+// ponytail: fixes only the mount root; a drive whose root was already chowned to another uid is left alone.
+func (a *Agent) claimWritableMounts(ctx context.Context, containerName string) error {
+	container, err := a.docker.Inspect(ctx, containerName)
+	if err != nil {
+		return err
+	}
+	for _, mount := range container.Mounts {
+		if mount.Type != "volume" || !mount.RW {
+			continue
+		}
+		script := `if [ "$(stat -c %u -- "$1")" = 0 ]; then chown 1000:1000 -- "$1"; fi`
+		code, err := a.docker.Exec(ctx, containerName, "root", "", nil, []string{"sh", "-c", script, "sh", mount.Destination}, nil, io.Discard, io.Discard)
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			return fmt.Errorf("chown %s exited with code %d", mount.Destination, code)
+		}
+	}
+	return nil
 }
 
 func (a *Agent) waitForBoxd(ctx context.Context, containerName string, timeout time.Duration) error {
