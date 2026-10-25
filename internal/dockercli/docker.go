@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ type Spec struct {
 	DiskQuota       bool
 	ToolsVolume     string
 	Mounts          []boxtypes.Mount
+	DNSServer       string // resolver the box uses; empty keeps Docker's default
 }
 
 // Container is the Docker state needed by the agent.
@@ -41,6 +43,7 @@ type Container struct {
 	Name   string
 	State  string
 	IP     string
+	Dns    []string // resolvers from --dns, as created
 	Mounts []Mount
 }
 
@@ -177,6 +180,12 @@ func CreateArgs(spec Spec) ([]string, error) {
 		}
 		argv = append(argv, "--mount", volume)
 	}
+	if spec.DNSServer != "" {
+		if net.ParseIP(spec.DNSServer) == nil {
+			return nil, fmt.Errorf("invalid DNS server %q", spec.DNSServer)
+		}
+		argv = append(argv, "--dns", spec.DNSServer)
+	}
 	if spec.DiskQuota {
 		argv = append(argv, "--storage-opt", "size="+strconv.FormatInt(size.DiskBytes, 10))
 	}
@@ -244,6 +253,19 @@ func (d *Docker) EnsureNetwork(ctx context.Context) error {
 	}
 	_, _, err = d.run(ctx, []string{"docker", "network", "create", "--driver", "bridge", "--opt", "com.docker.network.bridge.enable_icc=false", "boxes-net"}, nil, nil, nil, nil)
 	return err
+}
+
+// NetworkGateway returns the first IPAM gateway address of a Docker network.
+func (d *Docker) NetworkGateway(ctx context.Context, name string) (string, error) {
+	stdout, _, err := d.run(ctx, []string{"docker", "network", "inspect", name, "--format", "{{(index .IPAM.Config 0).Gateway}}"}, nil, nil, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	gateway := strings.TrimSpace(stdout)
+	if gateway == "" {
+		return "", fmt.Errorf("network %s has no gateway", name)
+	}
+	return gateway, nil
 }
 
 // NetworkSubnet returns the first IPAM subnet of a Docker network.
@@ -356,6 +378,9 @@ func (d *Docker) Inspect(ctx context.Context, name string) (Container, error) {
 				IPAddress string `json:"IPAddress"`
 			} `json:"Networks"`
 		} `json:"NetworkSettings"`
+		HostConfig struct {
+			Dns []string `json:"Dns"`
+		} `json:"HostConfig"`
 		Mounts []Mount `json:"Mounts"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &results); err != nil {
@@ -366,7 +391,7 @@ func (d *Docker) Inspect(ctx context.Context, name string) (Container, error) {
 	}
 	container := results[0]
 	nameFromInspect := strings.TrimPrefix(container.Name, "/")
-	return Container{ID: container.ID, Name: nameFromInspect, State: container.State.Status, IP: container.NetworkSettings.Networks["boxes-net"].IPAddress, Mounts: container.Mounts}, nil
+	return Container{ID: container.ID, Name: nameFromInspect, State: container.State.Status, IP: container.NetworkSettings.Networks["boxes-net"].IPAddress, Dns: container.HostConfig.Dns, Mounts: container.Mounts}, nil
 }
 
 // CPUPercent returns the current container CPU use as a percentage of one core.

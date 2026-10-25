@@ -108,12 +108,22 @@ Isolation model: a home is `/home/<name>`, mode `770`, owned by the user and tha
 - `PATCH /sandboxes/{id}` with `networkPolicy` replaces the policy; `null` clears it. A running box is updated immediately; a stopped box stores the policy and applies it when it next starts or resumes. If the node cannot apply a running box's policy, the request returns `502 network_policy_failed`, the stored policy stays unchanged, and the box is stopped so it is never left unfiltered.
 - Limits: at most 64 entries per list; `allowDomains` entries are hostnames or `*.example.com`; CIDRs must be IPv4.
 
+DNS goes through the agent. Each box is created with the agent's `boxes-net` gateway as its resolver, and that resolver is the only DNS server a box can reach in `allowlist` and `deny-all` mode. The agent answers each lookup from the box's policy:
+
+- An allowed name is forwarded upstream. Every IPv4 address in the answer is opened for that box before the answer is returned, so the box can only connect to addresses it was actually given. AAAA answers are dropped because IPv6 is not filtered.
+- A name that is not allowed is refused (`REFUSED`) without being forwarded. In `deny-all` mode every name is refused.
+- `*.example.com` allows `example.com` and every subdomain, for example `api.example.com`. Matching ignores case and a trailing dot.
+- DNS to any other resolver is blocked, so names cannot be used to leak data. This closes the DNS exfiltration channel that earlier allowlist boxes had.
+
+Host-side resolution at apply time and the 60-second refresh still run, but they only warm the rules; the forwarder is the primary path.
+
 Ceilings of the allowlist, so plan around them:
 
-- It is DNS-based. Domains are resolved on the node and the IPv4 addresses are re-resolved every 60 seconds. A CDN that rotates addresses faster than that can break connections.
-- `*.example.com` allows only `example.com`. Wildcard subdomains cannot be enumerated without an SNI proxy.
 - IPv4 only. Boxes use an IPv4 bridge network, so IPv6 is rejected rather than filtered.
-- DNS lookups (UDP and TCP port 53) are not blocked in allowlist mode, so a box can still resolve any name. The rules control destination addresses, not names.
+- `--dns` is fixed when a container is created. Boxes created before the forwarder keep their old resolver and the old unrestricted port-53 rule until they are recreated; they do not use the forwarder, so their names are not checked. Recreate them to get the forwarder.
+- DNS depends on the agent for boxes created with the forwarder. If the agent is down, those boxes cannot resolve names. If the forwarder fails to start, the agent logs an error and new boxes get Docker's default resolver with no DNS restriction.
+- On hosts whose INPUT policy drops by default, the agent adds an ACCEPT for DNS from `boxes-net` to the forwarder at startup. Per-box chains still drop DNS to any other address.
+- A forwarded IP stays open for 30 minutes after its last lookup, and the rules are rebuilt on each refresh. A domain with more than 64 live IPs is capped at the 64 most recent.
 
 ```sh
 curl -X POST "$BOXES/api/v1/sandboxes" -H "Authorization: Bearer $KEY" \

@@ -57,7 +57,7 @@ func commandString(raw json.RawMessage) string {
 		for _, part := range command {
 			parts = append(parts, fmt.Sprint(part))
 		}
-		return strings.Join(parts, " ")
+		return types.ShellJoin(parts)
 	default:
 		encoded, _ := json.Marshal(value)
 		return string(encoded)

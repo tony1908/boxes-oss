@@ -439,3 +439,44 @@ func TestCreateErrorRedactsEnvironmentSecrets(t *testing.T) {
 		t.Fatalf("Create() error did not redact environment secret: %v", err)
 	}
 }
+
+func TestCreateArgsPointsBoxAtDNSServerOnlyWhenSet(t *testing.T) {
+	base := Spec{BoxID: "bx_abcdefghijkl", Image: "boxes/box:dev", Type: "small", Runtime: "sysbox-runc"}
+	without, err := CreateArgs(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsArg(without, "--dns") {
+		t.Fatalf("CreateArgs without DNSServer has --dns: %q", without)
+	}
+	base.DNSServer = "172.18.0.1"
+	with, err := CreateArgs(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPair(with, "--dns", "172.18.0.1") {
+		t.Fatalf("CreateArgs with DNSServer = %q, want --dns 172.18.0.1", with)
+	}
+	base.DNSServer = "not-an-ip"
+	if _, err := CreateArgs(base); err == nil {
+		t.Fatal("CreateArgs accepted a non-IP DNS server")
+	}
+}
+
+func containsArg(argv []string, arg string) bool {
+	for _, value := range argv {
+		if value == arg {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPair(argv []string, flag, value string) bool {
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == flag && argv[i+1] == value {
+			return true
+		}
+	}
+	return false
+}

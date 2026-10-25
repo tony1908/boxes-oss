@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tony1908/boxes-oss/internal/types"
 	"io"
 	"net/http"
 	"os"
@@ -94,7 +95,7 @@ type execProcess struct {
 
 func newExecProcess(boxID string, argv []string, timeout time.Duration) *execProcess {
 	now := time.Now().UTC()
-	return &execProcess{BoxID: boxID, Cmd: strings.Join(argv, " "), StartedAt: now, Deadline: now.Add(timeout), done: make(chan struct{})}
+	return &execProcess{BoxID: boxID, Cmd: types.ShellJoin(argv), StartedAt: now, Deadline: now.Add(timeout), done: make(chan struct{})}
 }
 
 func (p *execProcess) finished() bool {

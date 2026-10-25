@@ -63,8 +63,17 @@ func main() {
 	}
 
 	service := agent.New(agent.Config{NodeID: *nodeID, Runtime: *runtimeName, TraefikDir: *traefikDir, NetworkDir: *networkDir, ForwardAuthURL: forwardAuthURL, StoragePath: *storagePath}, docker, engine)
+	// Must run before RestoreNetworkPolicies so restored chains and new boxes use the forwarder.
+	if gateway, err := docker.NetworkGateway(ctx, "boxes-net"); err != nil {
+		log.Printf("ERROR DNS forwarder not started, boxes use Docker's default resolver: read boxes-net gateway: %v", err)
+	} else if err := service.StartDNS(ctx, gateway); err != nil {
+		log.Printf("ERROR DNS forwarder not started, boxes use Docker's default resolver: %v", err)
+	}
 	if err := service.EnsureMetadataBlock(ctx); err != nil {
 		log.Printf("block cloud metadata for boxes: %v", err) // keep the agent running; boxes stay up without this rule
+	}
+	if err := service.EnsureDNSInput(ctx); err != nil {
+		log.Printf("ERROR allow box DNS to the forwarder in INPUT, boxes may lose DNS on hosts with a default-drop INPUT policy: %v", err)
 	}
 	service.RestoreNetworkPolicies(ctx)
 	go service.RunNetworkRefresh(ctx)

@@ -81,6 +81,9 @@ type Agent struct {
 	toolsWarning         sync.Once
 	networkMu            sync.Mutex
 	dnsHistory           map[string]map[string]map[string]time.Time // box -> domain -> IPv4 -> last resolved; guarded by networkMu
+	dnsSources           map[string]dnsSource                       // container IP -> box policy, for DNS; guarded by networkMu
+	dnsGateway           string                                     // DNS forwarder address boxes use; empty when not serving; guarded by networkMu
+	dnsUpstream          []string                                   // host resolvers the forwarder asks; set once by StartDNS
 	firewall             dockercli.Executor
 	readFile             func(string) ([]byte, error) // host file reads for box usage; faked in tests
 	usageWarned          sync.Map                     // box IDs whose usage read already failed and was logged
@@ -532,10 +535,13 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 			a.warnToolsUnavailable(fmt.Sprintf("tools image %q is unavailable; skipping shared tools volume", image))
 		}
 	}
+	a.networkMu.Lock()
+	dnsGateway := a.dnsGateway
+	a.networkMu.Unlock()
 	spec := dockercli.Spec{
 		BoxID: request.BoxID, Image: request.Image, Type: request.Type, Runtime: runtimeName,
 		DesktopPassword: request.DesktopPassword, BoxdToken: request.BoxdToken, Env: request.Env, ToolsVolume: toolsVolume,
-		Mounts: request.Mounts,
+		Mounts: request.Mounts, DNSServer: dnsGateway,
 	}
 	containerID, err := a.docker.Create(r.Context(), spec)
 	if isImageContentCorruption(err) {

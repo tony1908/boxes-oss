@@ -38,8 +38,9 @@ func iptablesArgv(args ...string) []string {
 
 // networkRules returns the argv lists that (re)build the box's chain and hook it into DOCKER-USER
 // (and INPUT unless allow-all). The chain is flushed first, so re-running is safe.
+// dnsGateway is the agent's DNS forwarder address; when set, DNS is allowed only to it. Empty means no DNS restriction.
 // ponytail: flush-then-rebuild leaves a few-millisecond window where the chain is empty; swap to iptables-restore if that matters.
-func networkRules(boxID, containerIP string, policy types.NetworkPolicy, resolved map[string][]net.IP) [][]string {
+func networkRules(boxID, containerIP string, policy types.NetworkPolicy, resolved map[string][]net.IP, dnsGateway string) [][]string {
 	if containerIP == "" {
 		return nil
 	}
@@ -60,13 +61,15 @@ func networkRules(boxID, containerIP string, policy types.NetworkPolicy, resolve
 	rules = append(rules, rule("-d", types.MetadataCIDR, "-j", "DROP"))
 	switch mode {
 	case types.NetworkDenyAll:
+		if dnsGateway != "" { // without a forwarder, deny-all keeps DNS closed as before
+			rules = append(rules, dnsRules(rule, dnsGateway)...)
+		}
 		rules = append(rules, rule("-j", "DROP"))
 	case types.NetworkAllowlist:
 		for _, cidr := range policy.AllowCIDRs {
 			rules = append(rules, rule("-d", cidr, "-j", "RETURN"))
 		}
-		// ponytail: DNS port 53 is left open so names can resolve; any resolver is reachable, so DNS is an exfiltration channel.
-		rules = append(rules, rule("-p", "udp", "--dport", "53", "-j", "RETURN"), rule("-p", "tcp", "--dport", "53", "-j", "RETURN"))
+		rules = append(rules, dnsRules(rule, dnsGateway)...)
 		for _, ip := range resolvedIPs(resolved) {
 			rules = append(rules, rule("-d", ip+"/32", "-j", "RETURN"))
 		}
@@ -79,6 +82,18 @@ func networkRules(boxID, containerIP string, policy types.NetworkPolicy, resolve
 		rules = append(rules, iptablesArgv("-I", "INPUT", "-s", containerIP+"/32", "-j", chain))
 	}
 	return rules
+}
+
+// dnsRules lets the box reach DNS. With a forwarder, only the forwarder is reachable, so no other resolver can be used.
+// ponytail: without a forwarder (dnsGateway empty) any resolver is reachable, so DNS is an exfiltration channel.
+func dnsRules(rule func(...string) []string, dnsGateway string) [][]string {
+	if dnsGateway == "" {
+		return [][]string{rule("-p", "udp", "--dport", "53", "-j", "RETURN"), rule("-p", "tcp", "--dport", "53", "-j", "RETURN")}
+	}
+	return [][]string{
+		rule("-p", "udp", "-d", dnsGateway+"/32", "--dport", "53", "-j", "RETURN"),
+		rule("-p", "tcp", "-d", dnsGateway+"/32", "--dport", "53", "-j", "RETURN"),
+	}
 }
 
 // resolvedIPs returns the sorted, de-duplicated IPv4 addresses from resolved.
@@ -165,8 +180,8 @@ func (a *Agent) listJumps(ctx context.Context) string {
 
 // applyNetworkRules installs the box's rules. Caller holds networkMu.
 // It hooks the chain first and removes stale jumps afterwards, so the box is never unhooked during a change.
-func (a *Agent) applyNetworkRules(ctx context.Context, boxID, containerIP string, policy types.NetworkPolicy, resolved map[string][]net.IP) error {
-	for _, argv := range networkRules(boxID, containerIP, policy, resolved) {
+func (a *Agent) applyNetworkRules(ctx context.Context, boxID, containerIP string, policy types.NetworkPolicy, resolved map[string][]net.IP, dnsGateway string) error {
+	for _, argv := range networkRules(boxID, containerIP, policy, resolved, dnsGateway) {
 		op := argv[3]
 		if op == "-I" {
 			check := append([]string(nil), argv...)
@@ -183,6 +198,7 @@ func (a *Agent) applyNetworkRules(ctx context.Context, boxID, containerIP string
 			return fmt.Errorf("iptables %s failed with exit code %d", op, code)
 		}
 	}
+	a.setDNSSource(boxID, containerIP, policy)
 	for _, argv := range jumpDeleteRules(networkChain(boxID), a.listJumps(ctx), containerIP) {
 		_, _, _ = a.runIptables(ctx, argv)
 	}
@@ -192,6 +208,7 @@ func (a *Agent) applyNetworkRules(ctx context.Context, boxID, containerIP string
 // teardownNetworkRules removes every jump to the box's chain, then the chain. Caller holds networkMu.
 // Missing rules are not errors, so this is idempotent.
 func (a *Agent) teardownNetworkRules(ctx context.Context, boxID string) {
+	a.forgetDNSSource(boxID)
 	for _, argv := range jumpDeleteRules(networkChain(boxID), a.listJumps(ctx), "") {
 		_, _, _ = a.runIptables(ctx, argv)
 	}
@@ -256,7 +273,7 @@ func (a *Agent) setNetworkPolicy(ctx context.Context, boxID string, policy *type
 			return err
 		}
 		resolved := a.mergeDNSHistory(boxID, fresh, time.Now())
-		if err := a.applyNetworkRules(ctx, boxID, container.IP, *policy, resolved); err != nil {
+		if err := a.applyNetworkRules(ctx, boxID, container.IP, *policy, resolved, a.boxDNSGateway(container.Dns)); err != nil {
 			// Fail closed: a half-built chain can fall through to ACCEPT, so stop the box.
 			a.teardownNetworkRules(ctx, boxID)
 			_ = a.docker.Stop(context.Background(), boxName(boxID), 10*time.Second)
@@ -430,6 +447,37 @@ func (a *Agent) putNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// EnsureDNSInput accepts DNS from boxes-net to the forwarder in INPUT, so boxes can reach it on hosts whose INPUT
+// policy drops by default. Per-box chains still drop DNS to any other address. No-op without a forwarder. Idempotent.
+func (a *Agent) EnsureDNSInput(ctx context.Context) error {
+	a.networkMu.Lock()
+	gateway := a.dnsGateway
+	a.networkMu.Unlock()
+	if gateway == "" {
+		return nil
+	}
+	subnet, err := a.docker.NetworkSubnet(ctx, "boxes-net")
+	if err != nil {
+		return fmt.Errorf("read boxes-net subnet: %w", err)
+	}
+	a.networkMu.Lock()
+	defer a.networkMu.Unlock()
+	for _, proto := range []string{"udp", "tcp"} {
+		rule := []string{"INPUT", "-s", subnet, "-d", gateway + "/32", "-p", proto, "--dport", "53", "-j", "ACCEPT"}
+		if _, code, err := a.runIptables(ctx, iptablesArgv(append([]string{"-C"}, rule...)...)); err == nil && code == 0 {
+			continue
+		}
+		_, code, err := a.runIptables(ctx, iptablesArgv(append([]string{"-I"}, rule...)...))
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			return fmt.Errorf("iptables -I INPUT failed with exit code %d", code)
+		}
+	}
+	return nil
 }
 
 // EnsureMetadataBlock installs one DOCKER-USER rule that drops traffic from the boxes-net subnet to the

@@ -1795,3 +1795,14 @@ func TestListPruningKeepsRunningAndRecentAndCapsBox(t *testing.T) {
 		t.Fatal("oldest finished process was kept over the cap")
 	}
 }
+
+func TestExecProcessCmdIsShellQuoted(t *testing.T) {
+	process := newExecProcess("bx_abcdefghijkl", []string{"sh", "-c", "for i in 1 2 3; do echo $i; done", "it's", ""}, time.Minute)
+	want := `sh -c 'for i in 1 2 3; do echo $i; done' 'it'\''s' ''`
+	if process.Cmd != want {
+		t.Fatalf("Cmd = %s, want %s", process.Cmd, want)
+	}
+	if got := newExecProcess("bx_abcdefghijkl", []string{"ls", "-la", "/tmp/a.b_c:d=e,f+g@h%i"}, time.Minute).Cmd; got != "ls -la /tmp/a.b_c:d=e,f+g@h%i" {
+		t.Fatalf("plain args were quoted: %s", got)
+	}
+}

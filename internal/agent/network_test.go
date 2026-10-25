@@ -20,7 +20,7 @@ const netBoxID = "bx_netabcdefgh2"
 func ipt(args ...string) []string { return append([]string{"iptables", "-w", "5"}, args...) }
 
 func TestNetworkRulesDenyAll(t *testing.T) {
-	got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil)
+	got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil, "")
 	want := [][]string{
 		ipt("-N", "BOXES-"+netBoxID),
 		ipt("-F", "BOXES-"+netBoxID),
@@ -39,7 +39,7 @@ func TestNetworkRulesAllowlistResolvesDomainsAndDenyWins(t *testing.T) {
 	policy := boxtypes.NetworkPolicy{Mode: boxtypes.NetworkAllowlist, AllowDomains: []string{"api.github.com"},
 		AllowCIDRs: []string{"10.0.0.0/8"}, DenyCIDRs: []string{"10.1.0.0/16"}}
 	resolved := map[string][]net.IP{"api.github.com": {net.ParseIP("140.82.112.5")}}
-	got := networkRules(netBoxID, "172.18.0.7", policy, resolved)
+	got := networkRules(netBoxID, "172.18.0.7", policy, resolved, "")
 	chain := "BOXES-" + netBoxID
 	want := [][]string{
 		ipt("-N", chain),
@@ -62,7 +62,7 @@ func TestNetworkRulesAllowlistResolvesDomainsAndDenyWins(t *testing.T) {
 
 func TestNetworkRulesAllowAllSkipsInputJumpAndDefaultsEmptyMode(t *testing.T) {
 	for _, mode := range []string{boxtypes.NetworkAllowAll, ""} {
-		got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: mode}, nil)
+		got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: mode}, nil, "")
 		last := got[len(got)-1]
 		if !reflect.DeepEqual(last, ipt("-I", "DOCKER-USER", "-s", "172.18.0.7/32", "-j", "BOXES-"+netBoxID)) {
 			t.Fatalf("mode %q: last rule = %q, want only the DOCKER-USER jump", mode, last)
@@ -74,7 +74,7 @@ func TestNetworkRulesAllowAllSkipsInputJumpAndDefaultsEmptyMode(t *testing.T) {
 }
 
 func TestNetworkRulesWithoutIPProducesNothing(t *testing.T) {
-	if got := networkRules(netBoxID, "", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil); got != nil {
+	if got := networkRules(netBoxID, "", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil, ""); got != nil {
 		t.Fatalf("rules without container IP = %q, want nil", got)
 	}
 }
@@ -155,7 +155,7 @@ func TestCreateBoxWithDenyAllPolicyAppliesFirewallRules(t *testing.T) {
 		got = append(got, strings.Join(call.argv, " "))
 	}
 	want := []string{}
-	for _, argv := range networkRules(netBoxID, "127.0.0.1", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil) {
+	for _, argv := range networkRules(netBoxID, "127.0.0.1", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil, "") {
 		want = append(want, strings.Join(argv, " "))
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -203,4 +203,36 @@ func TestMergeDNSHistoryCapsIPsPerDomain(t *testing.T) {
 	if len(got["cap.example.test"]) != 64 {
 		t.Fatalf("kept %d IPs, want 64", len(got["cap.example.test"]))
 	}
+}
+
+func TestNetworkRulesDNSOnlyToForwarderWhenGatewaySet(t *testing.T) {
+	chain := "BOXES-" + netBoxID
+	gateway := "172.18.0.1"
+	unrestricted := ipt("-A", chain, "-p", "udp", "--dport", "53", "-j", "RETURN")
+	for _, mode := range []string{boxtypes.NetworkAllowlist, boxtypes.NetworkDenyAll} {
+		got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: mode}, nil, gateway)
+		for _, rule := range [][]string{
+			ipt("-A", chain, "-p", "udp", "-d", gateway+"/32", "--dport", "53", "-j", "RETURN"),
+			ipt("-A", chain, "-p", "tcp", "-d", gateway+"/32", "--dport", "53", "-j", "RETURN"),
+		} {
+			if !containsArgv(got, rule) {
+				t.Fatalf("%s: rules %q lack forwarder-only DNS rule %q", mode, got, rule)
+			}
+		}
+		if containsArgv(got, unrestricted) {
+			t.Fatalf("%s: unrestricted DNS rule present with forwarder set", mode)
+		}
+		if last := got[len(got)-3]; !reflect.DeepEqual(last, ipt("-A", chain, "-j", "DROP")) {
+			t.Fatalf("%s: chain does not end in DROP: %q", mode, last)
+		}
+	}
+}
+
+func containsArgv(list [][]string, want []string) bool {
+	for _, argv := range list {
+		if reflect.DeepEqual(argv, want) {
+			return true
+		}
+	}
+	return false
 }
