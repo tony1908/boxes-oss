@@ -1,6 +1,6 @@
 # Self-hosting
 
-Boxes runs as a single VM: one `boxes-server` control plane, one `boxes-agent`
+Boxes runs as a single VPS: one `boxes-server` control plane, one `boxes-agent`
 that manages the local Docker and Sysbox runtime, and Traefik as the public
 edge. The installer provisions all of it on Ubuntu or Debian.
 
@@ -17,7 +17,7 @@ are not yet verified. The local `runc` end-to-end path is covered by
   `iptables` package if `iptables` is missing.
 - Ports **80** and **443** open to the internet. Traefik binds them on the host
   network. Port 80 serves the Let's Encrypt HTTP-01 challenge.
-- A DNS name that resolves to the VM for `--domain`. You can use your own domain
+- A DNS name that resolves to the VPS for `--domain`. You can use your own domain
   or a sslip.io name such as `boxes.203.0.113.10.sslip.io`.
 - Enough RAM for the boxes you plan to run. Each box size caps at 1, 2, 4, 8, or 16
   CPUs and 2, 4, 8, 16, or 32 GiB of RAM. The server admits a new box only when
@@ -45,7 +45,7 @@ Flags:
 | `--domain DOMAIN` | Public hostname. Required. Traefik requests its certificate for this name. |
 | `--email EMAIL` | Contact address for the Let's Encrypt account. Required. |
 | `--public-url URL` | Must be `https://` plus the `--domain` host, so it is effectively optional. |
-| `--host-base HOST_BASE` | Hostname suffix for box URLs. Defaults to `<public IPv4>.sslip.io`, detected from the VM. |
+| `--host-base HOST_BASE` | Hostname suffix for box URLs. Defaults to `<public IPv4>.sslip.io`, detected from the VPS. |
 | `--image IMAGE` | Box image. Defaults to `ghcr.io/tony1908/boxes-box:latest`. |
 | `--memory-overcommit N` | Positive number, default `1.0`. Memory reservation headroom. |
 | `--s3-endpoint URL --s3-bucket NAME` | Use S3-compatible snapshot storage (see below). |

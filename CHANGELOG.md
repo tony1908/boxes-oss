@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Initial single-VM open-source release.
+- Initial single-VPS open-source release.
 - Box tags: key/value `tags` on create, update, and fork, with `boxes list --tag` and `GET /sandboxes?tag=` filters.
 - Per-box outbound network policy: `allow-all`, `deny-all`, or an allowlist of domains (including `*.example.com`) and IPv4 CIDRs, plus `denyCidrs` that win over every mode. Changes apply to a running box at once.
 - Agent DNS forwarder on the `boxes-net` gateway. Allowed names are forwarded and each returned IPv4 address is opened for that box; other resolvers are blocked.

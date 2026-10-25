@@ -3,227 +3,354 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Boxes OSS: sandboxes for AI agents, on your own server</title>
-  <meta name="description" content="Boxes OSS is a free, self-hosted way to run Linux desktop sandboxes for AI agents on a single VM you control.">
+  <title>boxes: one VPS, a sandbox for every agent</title>
+  <meta name="description" content="boxes splits one VPS you own into isolated Linux machines for AI agents. Free and open source, MIT licensed.">
+  <meta name="color-scheme" content="light dark">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112,100..800&family=Atkinson+Hyperlegible+Next:wght@200..800&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main">Skip to main content</a>
 
-  <header class="site-header shell">
-    <a class="brand" href="#top" aria-label="Boxes OSS home">
-      <span class="brand-mark" aria-hidden="true"><i></i></span>
-      <span>Boxes OSS</span>
-    </a>
-    <nav class="nav-links" aria-label="Primary">
-      <a href="#features">Features</a>
-      <a href="#install">Install</a>
-      <a href="https://github.com/tony1908/boxes-oss/tree/main/docs">Docs</a>
-      <a href="https://github.com/tony1908/boxes-oss">GitHub</a>
-    </nav>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="wordmark" href="./">boxes</a>
+      <nav aria-label="Primary">
+        <ul class="nav">
+          <li><a href="#docs">Docs</a></li>
+          <li><a href="#install">Install</a></li>
+          <li><a href="https://github.com/tony1908/boxes-oss">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
   </header>
 
-  <main id="main">
-    <section class="hero shell" id="top" aria-labelledby="hero-title">
+  <main id="main" tabindex="-1">
+    <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow">Open source · self-hosted</p>
-        <h1 id="hero-title">Sandboxes for AI agents, on your own server.</h1>
-        <p class="lede">
-          Create Ubuntu boxes with a desktop, Docker, and SSH access. Set their
-          network rules, keep their state in snapshots, and drive them from the
-          CLI, HTTP API, or SDKs. Everything runs on one VM you control.
-        </p>
-        <div class="actions">
-          <a class="button" href="#install">Install on a VM</a>
-          <a class="button secondary" href="https://github.com/tony1908/boxes-oss">View on GitHub</a>
+        <h1 id="hero-title">One VPS. A sandbox for every agent.</h1>
+        <p class="lede">boxes runs isolated Ubuntu machines with a desktop, Docker and snapshots on a server you own. Your agents drive them from the CLI, the API or the SDKs.</p>
+        <div class="codeblock">
+          <button class="copy copy-primary" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com">Copy</button>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
+  | sudo bash -s -- \
+  --domain boxes.example.com --email you@example.com</code></pre>
         </div>
+        <p class="note">Free and open source (MIT). Ubuntu or Debian VPS, ports 80 and 443.</p>
+        <p><a href="#docs">Read the quickstart</a></p>
       </div>
 
-      <figure class="terminal" aria-label="Terminal showing boxes CLI commands to create a network-restricted box, run a background dev server, capture the desktop, and roll back to a snapshot">
-        <figcaption class="terminal-head">
-          <span class="window-lights" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>boxes · current box</span>
-        </figcaption>
-        <pre><code><span class="comment"># Create a box that can reach only GitHub and npm, auto-stop after an hour</span>
-<span class="prompt">$</span> boxes new --type small --network allowlist --allow-domain github.com --allow-domain '*.npmjs.org' --ttl 3600
-<span class="comment"># Start a dev server in the background and follow its log</span>
-<span class="prompt">$</span> boxes exec current --detach -- npm run dev
-<span class="prompt">$</span> boxes logs current &lt;processId&gt; -f
-<span class="comment"># Capture the desktop, then roll back to an earlier snapshot</span>
-<span class="prompt">$</span> boxes screenshot current -o desktop.png
-<span class="prompt">$</span> boxes restore current &lt;snapshotId&gt;</code></pre>
-      </figure>
+      <div class="diagram">
+        <p class="prompt"><span class="typed">$ boxes new --type small</span></p>
+        <section class="vps" aria-label="your-vps (Ubuntu, 4 vCPU, 8 GB): four boxes">
+          <p class="vps-title">your-vps  (Ubuntu, 4 vCPU, 8 GB)</p>
+          <div class="vps-grid">
+            <div class="vps-box" style="--d:0">
+              <p>bx_k7m2qfwt4nca</p>
+              <p>agent  claude</p>
+              <p><span class="tag">ready</span></p>
+            </div>
+            <div class="vps-box" style="--d:1">
+              <p>bx_r3d7ptx2lyv6</p>
+              <p>agent  codex</p>
+              <p>network: allowlist</p>
+            </div>
+            <div class="vps-box" style="--d:2">
+              <p>bx_w5nhcq4ma7ej</p>
+              <p>agent  opencode</p>
+              <p><span class="deny">network: deny-all</span></p>
+            </div>
+            <div class="vps-box" style="--d:3">
+              <p>bx_b2jt6kzsf4uq</p>
+              <p>agent  pi</p>
+              <p>drive: /mnt/cache</p>
+            </div>
+          </div>
+        </section>
+      </div>
     </section>
 
-    <section class="section shell" id="features" aria-labelledby="features-title">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">What you get</p>
-          <h2 id="features-title">A full machine for every task.</h2>
-        </div>
-        <p>Each box is an isolated Ubuntu machine. Choose its size, its lifetime, and what state to keep.</p>
+    <section class="section" id="box" aria-labelledby="box-title">
+      <div class="wrap">
+        <h2 id="box-title">What's in a box</h2>
+        <dl class="spec">
+          <div>
+            <dt>Desktop</dt>
+            <dd>An Ubuntu XFCE desktop you open with <code>boxes desktop</code>. Run GUI apps on it with <code>boxes exec --desktop</code> and capture it with <code>boxes screenshot</code>.</dd>
+          </div>
+          <div>
+            <dt>Docker</dt>
+            <dd>Docker runs inside the box, through Sysbox.</dd>
+          </div>
+          <div>
+            <dt>Snapshots</dt>
+            <dd>Saved every minute and on stop. Stop, resume, fork, or roll back to a snapshot with <code>boxes restore</code>.</dd>
+          </div>
+          <div>
+            <dt>Network</dt>
+            <dd>Allow all, deny all, or an allowlist of domains and CIDRs, changeable on a running box. Cloud metadata is always blocked.</dd>
+          </div>
+          <div>
+            <dt>Drives</dt>
+            <dd>Folders under <code>/mnt</code> that outlive the boxes using them. A drive mounts read-write into one box at a time, or read-only into many.</dd>
+          </div>
+          <div>
+            <dt>Users</dt>
+            <dd>Isolated Linux users with private homes, and shared group folders under <code>/shared</code>.</dd>
+          </div>
+          <div>
+            <dt>Agents</dt>
+            <dd>Claude Code, Codex, OpenCode, Pi, Prime and Kimi are preinstalled. Send a task with <code>boxes prompt</code>.</dd>
+          </div>
+          <div>
+            <dt>Access</dt>
+            <dd>SSH and scp into the box, and public HTTPS URLs for its ports with <code>boxes host</code>.</dd>
+          </div>
+          <div>
+            <dt>Control</dt>
+            <dd>A dashboard, an HTTP API, TypeScript and Python SDKs, webhooks, and API keys.</dd>
+          </div>
+        </dl>
       </div>
-
-      <ul class="feature-grid">
-        <li class="feature">
-          <h3>A real Linux desktop</h3>
-          <p>Ubuntu with XFCE, served through a browser. Open it with <code>boxes desktop</code>, or share a public URL.</p>
-        </li>
-        <li class="feature">
-          <h3>GUI apps and screenshots</h3>
-          <p>Launch an app on the desktop with <code>boxes exec --desktop --detach</code>, then capture the screen with <code>boxes screenshot</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Docker inside boxes</h3>
-          <p>Boxes run on Sysbox, so agents can build and run containers inside an isolated box.</p>
-        </li>
-        <li class="feature">
-          <h3>Start from code</h3>
-          <p>Clone a git repository or extract a <code>.tar.gz</code> on first boot with <code>--git</code> or <code>--tarball</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Network rules</h3>
-          <p>Allow everything, deny everything, or allow only the domains and CIDRs you list, such as <code>*.npmjs.org</code>. DNS goes through the agent, and cloud metadata is always blocked.</p>
-        </li>
-        <li class="feature">
-          <h3>Long-running commands</h3>
-          <p>Run detached commands, follow their output with <code>boxes logs -f</code>, send stdin, and stop them with <code>boxes kill</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Snapshots, rollback, and fork</h3>
-          <p><code>boxes stop</code> snapshots a box and <code>boxes resume</code> brings it back. <code>boxes restore</code> rolls back to an earlier snapshot, <code>--keep-snapshots</code> sets retention, and <code>boxes fork</code> copies a box for parallel work.</p>
-        </li>
-        <li class="feature">
-          <h3>Drives that persist</h3>
-          <p>Named volumes that outlive any box. Mount one under <code>/mnt</code> with <code>--mount</code>, read-only or read-write.</p>
-        </li>
-        <li class="feature">
-          <h3>Users and shared groups</h3>
-          <p>Give each agent its own Linux user, and share files through groups under <code>/shared</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Timers and limits</h3>
-          <p>Set a time to live with <code>--ttl</code>, an inactivity stop with <code>--idle-stop</code>, or extend a box with <code>boxes extend</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Tags, images, and usage</h3>
-          <p>Tag boxes and filter them with <code>boxes list --tag</code>, pick a container image per box, and read CPU and network totals with <code>boxes usage</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Agent harnesses</h3>
-          <p>Run prompts through Claude Code, Codex, OpenCode, Pi, Prime, or Kimi Code with <code>boxes prompt</code>.</p>
-        </li>
-        <li class="feature">
-          <h3>Computer-use tools</h3>
-          <p>An MCP server gives agents screenshots, mouse and keyboard input, windows, and app launching on the desktop.</p>
-        </li>
-        <li class="feature">
-          <h3>SSH, scp, and ports</h3>
-          <p><code>boxes ssh</code>, <code>boxes scp</code>, and <code>boxes forward</code> reach a box. <code>boxes host</code> exposes a port at its own URL, public or private.</p>
-        </li>
-        <li class="feature">
-          <h3>Dashboard, API, and SDKs</h3>
-          <p>Use the web dashboard, the <code>/api/v1</code> HTTP API, or the TypeScript and Python SDKs.</p>
-        </li>
-      </ul>
-
-      <p class="feature-extras">
-        Save reusable setup as environments with <code>boxes env</code>, receive
-        box events through webhooks, and manage access with API keys.
-      </p>
-      <p class="harness-note"><span>Agent harnesses</span> Claude Code · Codex · OpenCode · Pi · Prime · Kimi Code</p>
     </section>
 
-    <section class="section shell" id="install" aria-labelledby="install-title">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Self-hosted install</p>
-          <h2 id="install-title">Install on one VM.</h2>
-        </div>
-        <p>One script installs Docker, Sysbox, the box image, and the Boxes server behind HTTPS.</p>
-      </div>
+    <section class="section" id="install" aria-labelledby="install-title">
+      <div class="wrap">
+        <h2 id="install-title">Install</h2>
+        <p>Run the installer on a VPS you control, then install the CLI on your laptop.</p>
+        <ol class="steps">
+          <li>
+            <p>Point a domain at your VPS. Or skip DNS and use <code>&lt;your-ip&gt;.sslip.io</code>, which resolves to the VPS IP.</p>
+          </li>
+          <li>
+            <p>Run the installer on the VPS. Replace the domain and email with your own.</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com">Copy</button>
+              <pre><code>curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
+  | sudo bash -s -- \
+  --domain boxes.example.com --email you@example.com</code></pre>
+            </div>
+          </li>
+          <li>
+            <p>Open the one-time owner setup link the installer prints, and create the owner account. The setup token is also in <code>/var/lib/boxes/admin.token</code>.</p>
+          </li>
+          <li>
+            <p>Install the CLI on your laptop, then log in with the owner account.</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command">Copy</button>
+              <pre><code>curl -fsSL https://boxes.example.com/install/cli.sh | sh
+boxes login --server https://boxes.example.com --email you@example.com</code></pre>
+            </div>
+          </li>
+        </ol>
 
-      <div class="install-grid">
-        <div>
-          <h3>Requirements</h3>
-          <ul class="requirements">
-            <li>Ubuntu or Debian, on amd64 or arm64</li>
-            <li>Root access, for example through <code>sudo</code></li>
-            <li>A domain pointing at the VM, with ports 80 and 443 reachable for Let's Encrypt</li>
-            <li>A contact email for the certificate</li>
+        <h3>Requirements</h3>
+        <ul>
+          <li>Ubuntu or Debian, on amd64 or arm64, with root access.</li>
+          <li>Ports 80 and 443 open to the internet. Port 80 serves the Let's Encrypt challenge.</li>
+          <li>A DNS name that points at the VPS, or a sslip.io name.</li>
+          <li>CPU and RAM sized for the boxes you run. The installer sets no minimum.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="docs" aria-labelledby="docs-title">
+      <div class="wrap">
+        <h2 id="docs-title">Docs</h2>
+        <p>Each recipe is a few commands you can copy and run. For every flag, run <code>boxes help &lt;command&gt;</code>.</p>
+
+        <div class="docs">
+          <nav class="toc" aria-label="Recipes">
+            <ul>
+              <li><a href="#create">Create a box and run a command</a></li>
+              <li><a href="#repo">Work on your repo</a></li>
+              <li><a href="#long-job">Run a long job</a></li>
+              <li><a href="#agent-task">Give an agent a task</a></li>
+              <li><a href="#network">Lock down the network</a></li>
+              <li><a href="#from-repo">Start from a repo</a></li>
+              <li><a href="#drives">Keep data between boxes</a></li>
+              <li><a href="#snapshots">Undo with snapshots</a></li>
+              <li><a href="#gui">Run a GUI app and see it</a></li>
+              <li><a href="#port">Share a port</a></li>
+              <li><a href="#skill">Let your coding agent use boxes</a></li>
+            </ul>
+          </nav>
+
+          <div class="recipes">
+            <section class="recipe" id="create" aria-labelledby="create-title">
+              <h3 id="create-title">Create a box and run a command</h3>
+              <p>Create a box, which becomes <code>current</code>, then run a command in it.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes new --type small --ttl 3600
+boxes exec current -- uname -a</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="repo" aria-labelledby="repo-title">
+              <h3 id="repo-title">Work on your repo</h3>
+              <p>Copy a local project into the box, then run its tests there.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes push current . --to /config/project
+boxes exec current -- bash -lc 'cd /config/project &amp;&amp; npm test'</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="long-job" aria-labelledby="long-job-title">
+              <h3 id="long-job-title">Run a long job</h3>
+              <p>Start a command in the background, check its output, and stop it when you need to.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes exec current --detach -- npm run build
+boxes ps current
+boxes logs current &lt;processId&gt; -f
+boxes kill current &lt;processId&gt;</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="agent-task" aria-labelledby="agent-task-title">
+              <h3 id="agent-task-title">Give an agent a task</h3>
+              <p>Send a prompt to a coding agent that runs inside the box.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes prompt current "Fix the failing tests in /config/project" --provider opencode</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="network" aria-labelledby="network-title">
+              <h3 id="network-title">Lock down the network</h3>
+              <p>Allow only the domains a box needs when you create it, or cut its network off on a running box.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes new --network allowlist --allow-domain api.github.com
+boxes update current --network deny-all</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="from-repo" aria-labelledby="from-repo-title">
+              <h3 id="from-repo-title">Start from a repo</h3>
+              <p>Clone a Git repository into the box on first boot.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes new --git https://github.com/you/repo --revision main</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="drives" aria-labelledby="drives-title">
+              <h3 id="drives-title">Keep data between boxes</h3>
+              <p>Create a drive, mount it into a box at <code>/mnt/cache</code>, and it keeps its files after the box is deleted.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes drive create cache
+boxes new --mount cache:/mnt/cache</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="snapshots" aria-labelledby="snapshots-title">
+              <h3 id="snapshots-title">Undo with snapshots</h3>
+              <p>List a box's snapshots, then roll the box back to one of them.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes snapshots current
+boxes restore current &lt;snapshotId&gt;</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="gui" aria-labelledby="gui-title">
+              <h3 id="gui-title">Run a GUI app and see it</h3>
+              <p>Start an app on the box desktop, then save a screenshot of the desktop.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes exec current --desktop --detach -- ./my-app
+boxes screenshot current -o shot.png</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="port" aria-labelledby="port-title">
+              <h3 id="port-title">Share a port</h3>
+              <p>Give a port inside the box its own public HTTPS URL. Ports 3000, 3001 and 7070 are taken by the box, so serve your app on another port.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes host current 8080</code></pre>
+              </div>
+            </section>
+
+            <section class="recipe" id="skill" aria-labelledby="skill-title">
+              <h3 id="skill-title">Let your coding agent use boxes</h3>
+              <p>Install the boxes skill for Claude Code, so the agent knows the CLI. Codex has its own <code>--codex</code> flag. OpenCode reads ~/.claude/skills too, so the same install works for it.</p>
+              <div class="codeblock">
+                <button class="copy" type="button" aria-label="Copy command">Copy</button>
+                <pre><code>boxes skill install --claude</code></pre>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div class="reference">
+          <h3>Full reference</h3>
+          <ul>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/cli.md">docs/cli.md</a>, every command and flag</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/api.md">docs/api.md</a>, the HTTP API</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/self-hosting.md">docs/self-hosting.md</a>, installing and configuring the server</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/snapshots.md">docs/snapshots.md</a>, snapshots, resume and restore</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/desktop.md">docs/desktop.md</a>, desktop sessions</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/lifecycle.md">docs/lifecycle.md</a>, box states and auto-stop timers</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/sdk/typescript/README.md">sdk/typescript/README.md</a>, the TypeScript SDK</li>
+            <li><a href="https://github.com/tony1908/boxes-oss/blob/main/sdk/python/README.md">sdk/python/README.md</a>, the Python SDK</li>
           </ul>
-          <p class="note">Optional flags: <code>--host-base</code> sets the host for box URLs, and <code>--s3-endpoint</code> with <code>--s3-bucket</code> stores snapshots in S3-compatible storage.</p>
-        </div>
-
-        <div class="install-steps">
-          <h3>1. Run the installer on the VM</h3>
-          <div class="command">
-            <pre><code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com</code></pre>
-            <button type="button" class="copy" data-copy="#install-cmd">Copy</button>
-          </div>
-          <p class="status" role="status" id="copy-status"></p>
-
-          <h3>2. Install the CLI on your laptop</h3>
-          <div class="command">
-            <pre><code id="cli-cmd">curl -fsSL https://&lt;your-server&gt;/install/cli.sh | sh</code></pre>
-            <button type="button" class="copy" data-copy="#cli-cmd">Copy</button>
-          </div>
-          <p class="note">Then run <code>boxes login</code> against your server to create boxes.</p>
         </div>
       </div>
-    </section>
-
-    <section class="section shell" id="how-it-works" aria-labelledby="how-title">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">How it works</p>
-          <h2 id="how-title">Three steps from VM to agent.</h2>
-        </div>
-      </div>
-
-      <ol class="steps">
-        <li>
-          <span class="step-num" aria-hidden="true">1</span>
-          <h3>Install on one VM</h3>
-          <p>Run the installer once. The server, agent, and box image are set up on that machine.</p>
-        </li>
-        <li>
-          <span class="step-num" aria-hidden="true">2</span>
-          <h3>Create boxes</h3>
-          <p>Start boxes from the dashboard, with <code>boxes new</code>, or through the HTTP API.</p>
-        </li>
-        <li>
-          <span class="step-num" aria-hidden="true">3</span>
-          <h3>Work in isolated desktops</h3>
-          <p>Agents run in their own desktops. State is saved in snapshots when you stop a box and on a regular interval.</p>
-        </li>
-      </ol>
     </section>
   </main>
 
-  <footer class="footer">
-    <div class="shell footer-inner">
-      <p>MIT License. Boxes OSS is free to use and self-host.</p>
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>MIT licensed.</p>
       <nav aria-label="Footer">
-        <a href="https://github.com/tony1908/boxes-oss">GitHub</a>
-        <a href="https://github.com/tony1908/boxes-oss/tree/main/docs">Docs</a>
+        <ul>
+          <li><a href="https://github.com/tony1908/boxes-oss">GitHub</a></li>
+          <li><a href="https://github.com/tony1908/boxes-oss/releases">Releases</a></li>
+          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/SECURITY.md">Security policy</a></li>
+        </ul>
       </nav>
     </div>
   </footer>
 
+  <p class="sr-only" role="status" aria-live="polite" id="copy-status"></p>
+
   <script>
-    document.querySelectorAll('[data-copy]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var text = document.querySelector(btn.dataset.copy).textContent.trim();
-        var status = document.getElementById('copy-status');
-        if (!navigator.clipboard) { status.textContent = 'Copy is unavailable here; select the command and copy it.'; return; }
-        navigator.clipboard.writeText(text).then(
-          function () { status.textContent = 'Copied to clipboard.'; },
-          function () { status.textContent = 'Copy failed; select the command and copy it.'; }
-        );
+    // Copy buttons: copy the code block they sit in and announce it.
+    const status = document.getElementById("copy-status");
+    document.querySelectorAll("button.copy").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const text = btn.dataset.copy ?? btn.parentElement.querySelector("code").textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (err) {
+          return;
+        }
+        btn.textContent = "Copied";
+        status.textContent = "";
+        setTimeout(() => (status.textContent = "Copied"), 50);
+        setTimeout(() => (btn.textContent = "Copy"), 1600);
       });
     });
+
+    // Table of contents: mark the recipe currently in view.
+    const links = new Map();
+    document.querySelectorAll(".toc a").forEach((a) => links.set(a.hash.slice(1), a));
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        links.forEach((a) => a.removeAttribute("aria-current"));
+        links.get(entry.target.id)?.setAttribute("aria-current", "true");
+      });
+    }, { rootMargin: "0px 0px -70% 0px" });
+    document.querySelectorAll(".recipe").forEach((s) => observer.observe(s));
   </script>
 </body>
 </html>

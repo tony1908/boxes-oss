@@ -5,7 +5,7 @@ Guidance for coding agents and human contributors working in this repository.
 ## What this is
 
 boxes-oss is a self-hosted sandbox platform for AI agents. Each box is a full
-Linux sandbox (sudo, Docker inside, optional desktop) that runs on a single VM
+Linux sandbox (sudo, Docker inside, optional desktop) that runs on a single VPS
 you control. This edition has no extra nodes, node management, autoscaling, or
 cloud providers.
 

@@ -3,7 +3,7 @@
 Website: https://tony1908.github.io/boxes-oss/
 
 Boxes is a self-hosted sandbox service for AI agents. It runs on a single Ubuntu
-or Debian VM and gives each agent a full Linux box: an XFCE desktop, sudo, Docker
+or Debian VPS and gives each agent a full Linux box: an XFCE desktop, sudo, Docker
 inside the box (via Sysbox), SSH, and preinstalled coding-agent tooling. Boxes
 can be created, stopped with a snapshot, resumed, forked, and deleted through a
 web UI, a CLI, or the HTTP API.
@@ -32,10 +32,10 @@ web UI, a CLI, or the HTTP API.
 
 ## Requirements
 
-- Ubuntu or Debian VM, `amd64` or `arm64`, with root access.
+- Ubuntu or Debian VPS, `amd64` or `arm64`, with root access.
 - Ports **80** and **443** open to the internet (Traefik serves HTTPS and the
   Let's Encrypt HTTP-01 challenge on port 80).
-- A DNS name that points at the VM for `--domain`: your own domain, or a sslip.io
+- A DNS name that points at the VPS for `--domain`: your own domain, or a sslip.io
   name such as `boxes.203.0.113.10.sslip.io`.
 - CPU and RAM sized for the boxes you run. The installer sets no hard minimum.
   The server admits a box only with headroom of the larger of 15% of RAM or 1 GiB,
