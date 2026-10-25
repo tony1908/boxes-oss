@@ -710,6 +710,8 @@ paths:
                   processId: {type: string}
         "400":
           $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: desktop_not_running, the box desktop session is not up (desktop requests only)
     get:
       summary: List detached commands for a sandbox
       description: Lists commands the agent still remembers. Finished commands are kept for one hour, up to 100 per sandbox. The list is lost if the agent restarts.
@@ -1250,6 +1252,10 @@ components:
           type: boolean
           default: false
           description: Detached commands only (400 otherwise). Write to stdin with POST /sandboxes/{id}/commands/{pid}/stdin.
+        desktop:
+          type: boolean
+          default: false
+          description: Run inside the box desktop session (DISPLAY=:1 plus the session's bus and runtime variables) so GUI apps appear on the desktop. Runs as user abc only (400 with another user). Returns 409 desktop_not_running when no session is up. Use with detached to keep an app running.
     Snapshot:
       type: object
       required: [id, boxId, resticId, sizeBytes, createdAt]

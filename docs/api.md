@@ -34,7 +34,7 @@ Public routes (no bearer token):
 
 ## Detached commands
 
-`POST /sandboxes/{id}/commands` with `detached: true` returns `202` and a `processId`. Detached commands allow `timeoutSeconds` up to 86400 (default 3600); sync commands allow 600. Add `stdin: true` to write to stdin later.
+`POST /sandboxes/{id}/commands` with `detached: true` returns `202` and a `processId`. Detached commands allow `timeoutSeconds` up to 86400 (default 3600); sync commands allow 600. Add `stdin: true` to write to stdin later. Add `desktop: true` to run the command inside the box desktop session (`DISPLAY=:1` plus the session's bus and runtime variables) so GUI apps appear on the desktop; it runs as `abc` only and returns `409 desktop_not_running` when no session is up.
 
 - Output: `GET .../commands/{pid}` returns output so far. Each stream keeps its last 1 MiB; `stdoutOffset`/`stderrOffset` count all bytes written.
 - Logs: `GET .../commands/{pid}/logs?stdoutOffset=N&stderrOffset=N[&follow=1]` streams NDJSON lines `{stream,data,offset}`. With `follow=1` it ends with `{exit:true,exitCode:N}` when the command exits.
@@ -42,12 +42,15 @@ Public routes (no bearer token):
 - Stdin: `POST .../commands/{pid}/stdin` with a raw body (at most 1 MiB); `?close=1` closes stdin after the write. Returns `409` without stdin or after close, and `504` if the write does not drain within 30 seconds.
 - List: `GET /sandboxes/{id}/commands` returns `{commands: [...]}`, oldest first. Finished commands are kept for one hour, up to 100 per sandbox. The agent keeps this state in memory, so it is lost on agent restart.
 
+## Hosts and reserved ports
+
+`POST /sandboxes/{id}/hosts` with `{"port", "private"}` exposes a box port at its own URL. Ports `3000`, `3001`, and `7070` are reserved because the box uses them for its desktop and boxd; the request returns `400 reserved_port`. Use another port such as `8080`. `GET /sandboxes/{id}/hosts` lists the exposed ports and `DELETE /sandboxes/{id}/hosts/{port}` removes one.
+
 ## Sandbox tags
 
 Sandboxes accept up to 10 key/value `tags`. Keys must match `^[a-z0-9][a-z0-9_.-]{0,62}$`; values are at most 255 characters with no control characters. Invalid tags return `400 invalid_tags`.
 
 - `POST /sandboxes` takes `tags` in the body.
-- `POST /sandboxes` takes `source` to place project files on first boot: `{"type":"git","url":"https://...","revision":"main","depth":1,"token":"...","path":"app"}` or `{"type":"tarball","url":"https://...","path":"app"}`. The source runs once, before `setupScript`; `path` defaults to `project` under `/config`. Only https URLs are accepted (no `git@`/ssh URLs or embedded credentials). `token` is for private git repositories and is never returned or stored; the response reports `source` without it. Tarballs must be `.tar.gz`. Invalid sources return `400 invalid_source`; `POST /sandboxes/{id}/fork` rejects `source` because the fork already has the files.
 - `PATCH /sandboxes/{id}` with `tags` replaces the whole map; `{}` clears all tags; omitting `tags` leaves them unchanged.
 - `GET /sandboxes?tag=key=value` returns sandboxes whose tag equals the value; `?tag=key` matches any value of that key. Repeat `tag` to require several matches (AND).
 - `POST /sandboxes/{id}/fork` copies the source sandbox's tags unless the body sets `tags`.
@@ -57,6 +60,10 @@ curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
   -d '{"tags":{"team":"agents"}}'
 curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bearer $KEY"
 ```
+
+## Sources
+
+- `POST /sandboxes` takes `source` to place project files on first boot: `{"type":"git","url":"https://...","revision":"main","depth":1,"token":"...","path":"app"}` or `{"type":"tarball","url":"https://...","path":"app"}`. The source runs once, before `setupScript`; `path` defaults to `project` under `/config`. Only https URLs are accepted (no `git@`/ssh URLs or embedded credentials). `token` is for private git repositories and is never returned or stored; the response reports `source` without it. Tarballs must be `.tar.gz`. Invalid sources return `400 invalid_source`; `POST /sandboxes/{id}/fork` rejects `source` because the fork already has the files.
 
 ## Box image
 
@@ -154,7 +161,7 @@ curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
 }
 ```
 
-`durationMs` and `outcome` are omitted when they do not apply. `nextCursor` is an empty string on the last page. Activity detail stores short command and prompt previews plus non-sensitive metadata; it omits environment values, tokens, credentials, file contents, and full prompts. Rows older than 90 days are pruned daily. Activity rows are kept in `box_activity` without a foreign key to the box, so they remain readable after the sandbox is deleted.
+`durationMs` and `outcome` are omitted when they do not apply. `nextCursor` is an empty string on the last page. Activity detail stores short command and prompt previews plus non-sensitive metadata; it omits file contents, full prompts, and credentials. In command previews only `NAME=value` pairs whose name looks secret (for example `API_TOKEN=`) are redacted, so `PORT=8080` stays readable. Rows older than 90 days are pruned daily. Activity rows are kept in `box_activity` without a foreign key to the box, so they remain readable after the sandbox is deleted.
 
 ## Usage and cost
 

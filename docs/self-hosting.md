@@ -12,6 +12,9 @@ are not yet verified. The local `runc` end-to-end path is covered by
 
 - Ubuntu or Debian (the installer exits on other distributions), `amd64` or `arm64`.
 - Root access (`sudo`).
+- The `iptables` command on the host. The agent (root) manages per-box egress
+  chains and DNS rules with it. The installer does not install it, so add the
+  `iptables` package if `iptables` is missing.
 - Ports **80** and **443** open to the internet. Traefik binds them on the host
   network. Port 80 serves the Let's Encrypt HTTP-01 challenge.
 - A DNS name that resolves to the VM for `--domain`. You can use your own domain
@@ -121,6 +124,25 @@ only. To change the other admission flags listed below, add them to
 `ExecStart` in `/etc/systemd/system/boxes-server.service`, then run
 `sudo systemctl daemon-reload && sudo systemctl restart boxes-server`. An
 upgrade rewrites the unit file, so re-apply the change afterwards.
+
+## Network policy and DNS
+
+Each box on `boxes-net` gets an outbound policy (see [api.md](api.md#outbound-network-policy)),
+enforced by the agent with host `iptables`. Boxes resolve names through the agent's
+DNS forwarder, which listens on the `boxes-net` gateway at UDP and TCP port 53. New
+boxes are created with that gateway as their resolver, so an allowlist or deny-all
+box can only send DNS to the forwarder. The forwarder answers from the box's policy,
+and each IPv4 address it returns is opened for that box before the answer is sent.
+
+- At startup the agent logs `DNS forwarder listening on ...`. Check
+  `sudo journalctl -u boxes-agent` after an install or upgrade.
+- If the forwarder fails to start, the agent logs an error and keeps running. New
+  boxes then get Docker's default resolver with no DNS restriction.
+- The agent adds an `INPUT` ACCEPT for DNS from `boxes-net` to the gateway. If your
+  firewall tooling (for example ufw or nftables) drops port 53 from `boxes-net`,
+  allow it there as well, or allowlist boxes will not resolve names.
+- Boxes created before the forwarder keep their old resolver and are not
+  filtered by name. Recreate them to use the forwarder.
 
 ## Host settings
 

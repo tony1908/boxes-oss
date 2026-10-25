@@ -30,9 +30,9 @@
         <p class="eyebrow">Open source · self-hosted</p>
         <h1 id="hero-title">Sandboxes for AI agents, on your own server.</h1>
         <p class="lede">
-          Create Ubuntu boxes with a desktop, Docker, and SSH access, drive them
-          from the CLI, HTTP API, or SDKs, and keep their state in snapshots.
-          Everything runs on one VM you control.
+          Create Ubuntu boxes with a desktop, Docker, and SSH access. Set their
+          network rules, keep their state in snapshots, and drive them from the
+          CLI, HTTP API, or SDKs. Everything runs on one VM you control.
         </p>
         <div class="actions">
           <a class="button" href="#install">Install on a VM</a>
@@ -40,19 +40,19 @@
         </div>
       </div>
 
-      <figure class="terminal" aria-label="Terminal showing boxes CLI commands to create a box, run tests, open its desktop, and snapshot it">
+      <figure class="terminal" aria-label="Terminal showing boxes CLI commands to create a network-restricted box, run a background dev server, capture the desktop, and roll back to a snapshot">
         <figcaption class="terminal-head">
           <span class="window-lights" aria-hidden="true"><i></i><i></i><i></i></span>
           <span>boxes · current box</span>
         </figcaption>
-        <pre><code><span class="comment"># Create a box that auto-stops after an hour</span>
-<span class="prompt">$</span> boxes new --type small --ttl 3600
-<span class="comment"># Run a command inside it</span>
-<span class="prompt">$</span> boxes exec current -- bash -lc 'npm test'
-<span class="comment"># Open its Linux desktop in your browser</span>
-<span class="prompt">$</span> boxes desktop current
-<span class="comment"># Snapshot and stop it; resume later with state intact</span>
-<span class="prompt">$</span> boxes stop current</code></pre>
+        <pre><code><span class="comment"># Create a box that can reach only GitHub and npm, auto-stop after an hour</span>
+<span class="prompt">$</span> boxes new --type small --network allowlist --allow-domain github.com --allow-domain '*.npmjs.org' --ttl 3600
+<span class="comment"># Start a dev server in the background and follow its log</span>
+<span class="prompt">$</span> boxes exec current --detach -- npm run dev
+<span class="prompt">$</span> boxes logs current &lt;processId&gt; -f
+<span class="comment"># Capture the desktop, then roll back to an earlier snapshot</span>
+<span class="prompt">$</span> boxes screenshot current -o desktop.png
+<span class="prompt">$</span> boxes restore current &lt;snapshotId&gt;</code></pre>
       </figure>
     </section>
 
@@ -71,16 +71,44 @@
           <p>Ubuntu with XFCE, served through a browser. Open it with <code>boxes desktop</code>, or share a public URL.</p>
         </li>
         <li class="feature">
+          <h3>GUI apps and screenshots</h3>
+          <p>Launch an app on the desktop with <code>boxes exec --desktop --detach</code>, then capture the screen with <code>boxes screenshot</code>.</p>
+        </li>
+        <li class="feature">
           <h3>Docker inside boxes</h3>
           <p>Boxes run on Sysbox, so agents can build and run containers inside an isolated box.</p>
         </li>
         <li class="feature">
-          <h3>Snapshots, stop, resume, fork</h3>
-          <p><code>boxes stop</code> snapshots a box. <code>boxes resume</code> brings it back and <code>boxes fork</code> copies it for parallel work.</p>
+          <h3>Start from code</h3>
+          <p>Clone a git repository or extract a <code>.tar.gz</code> on first boot with <code>--git</code> or <code>--tarball</code>.</p>
+        </li>
+        <li class="feature">
+          <h3>Network rules</h3>
+          <p>Allow everything, deny everything, or allow only the domains and CIDRs you list, such as <code>*.npmjs.org</code>. DNS goes through the agent, and cloud metadata is always blocked.</p>
+        </li>
+        <li class="feature">
+          <h3>Long-running commands</h3>
+          <p>Run detached commands, follow their output with <code>boxes logs -f</code>, send stdin, and stop them with <code>boxes kill</code>.</p>
+        </li>
+        <li class="feature">
+          <h3>Snapshots, rollback, and fork</h3>
+          <p><code>boxes stop</code> snapshots a box and <code>boxes resume</code> brings it back. <code>boxes restore</code> rolls back to an earlier snapshot, <code>--keep-snapshots</code> sets retention, and <code>boxes fork</code> copies a box for parallel work.</p>
+        </li>
+        <li class="feature">
+          <h3>Drives that persist</h3>
+          <p>Named volumes that outlive any box. Mount one under <code>/mnt</code> with <code>--mount</code>, read-only or read-write.</p>
+        </li>
+        <li class="feature">
+          <h3>Users and shared groups</h3>
+          <p>Give each agent its own Linux user, and share files through groups under <code>/shared</code>.</p>
         </li>
         <li class="feature">
           <h3>Timers and limits</h3>
           <p>Set a time to live with <code>--ttl</code>, an inactivity stop with <code>--idle-stop</code>, or extend a box with <code>boxes extend</code>.</p>
+        </li>
+        <li class="feature">
+          <h3>Tags, images, and usage</h3>
+          <p>Tag boxes and filter them with <code>boxes list --tag</code>, pick a container image per box, and read CPU and network totals with <code>boxes usage</code>.</p>
         </li>
         <li class="feature">
           <h3>Agent harnesses</h3>

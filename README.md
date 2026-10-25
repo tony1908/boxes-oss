@@ -11,21 +11,21 @@ web UI, a CLI, or the HTTP API.
 - Full Ubuntu boxes with a web desktop, SSH access, and Docker-in-box (Sysbox).
 - Box sizes from `xsmall` (1 CPU, 2 GiB) to `xlarge` (16 CPU, 32 GiB).
 - Auto-stop timers (`--ttl`, `--no-auto-stop`) and idle stop (`--idle-stop`).
-- Filesystem snapshots taken periodically and on stop, with `resume` and `fork`.
+- Filesystem snapshots taken periodically and on stop, with `resume`, `fork`, and `restore` (rollback). Retention per box with `--keep-snapshots`.
 - Named snapshots, snapshot download, and a local or S3-compatible restic repository.
 - Agent prompts (`boxes prompt`) for claude, codex, opencode, pi, prime, and kimi,
   with steering, interrupt, event streaming, and optional stop-when-done.
-- Desktop sessions, public or private host ports (`boxes host`), and local port
+- Desktop sessions, GUI apps on the box desktop (`exec --desktop`), screenshots (`boxes screenshot`), public or private host ports (`boxes host`), and local port
   forwarding (`boxes forward`).
-- File push/pull, command execution, and detached processes (`exec --detach`, `ps`, `logs -f`, `kill`).
+- File push/pull, command execution, and detached processes with live logs, stdin, and kill (`exec --detach`, `ps`, `logs -f`, `kill`).
 - Box tags (`--tag`), filterable with `boxes list --tag`.
-- Outbound network policy (`allow-all`, `deny-all`, or a domain/CIDR allowlist), changeable on a running box.
+- Outbound network policy (`allow-all`, `deny-all`, or a domain/CIDR allowlist), changeable on a running box. DNS goes through the agent, and cloud metadata is always blocked.
 - Git repository or tarball sources extracted on first boot (`--git`, `--tarball`).
-- Snapshot rollback with `restore`, and configurable snapshot retention (`--keep-snapshots`).
+- `--help` on every command, and `boxes help <command>`.
 - Named drives that persist across boxes and mount into them (`boxes drive`, `--mount`).
 - Isolated Linux users and shared groups inside a box (`boxes user`, `boxes group`).
 - Versioned environments (named documents applied at box creation), webhooks, and API keys.
-- Activity log, per-box usage, and optional cost estimates from hourly pricing.
+- Per-box container image (`--image`), activity log, per-box usage totals, and optional cost estimates from hourly pricing.
 - Owner and user accounts, with owners creating later accounts.
 
 ## Requirements
@@ -163,12 +163,12 @@ GoReleaser (`.goreleaser.yaml`).
 
 ## Docs
 
-- [HTTP API](docs/api.md): routes, activity, usage, and pricing.
+- [HTTP API](docs/api.md): routes, commands, drives, users and groups, network policy, sources, tags, activity, usage, and pricing.
 - [CLI](docs/cli.md): authentication, commands, and environment overrides.
 - [Desktop sessions](docs/desktop.md): session lifetime, storage, and forward-auth.
 - [Lifecycle](docs/lifecycle.md): states, auto-stop timers, prompts, and CLI installation.
 - [Snapshots](docs/snapshots.md): capture, restore, and repositories.
-- [Self-hosting](docs/self-hosting.md): requirements, install, upgrades, storage, and capacity.
+- [Self-hosting](docs/self-hosting.md): requirements, install, upgrades, storage, DNS forwarder, and capacity.
 
 Landing page: [site/index.html](site/index.html).
 

@@ -60,10 +60,10 @@ run without a config file:
 Run `boxes --help` for the command list. Every command accepts `--help` or `-h` anywhere in its arguments (after a `--` separator the arguments belong to the remote command) and prints its usage without calling the server; `boxes help <command>` does the same. The full set of top-level commands is:
 
 ```
-login logout whoami new list get info status current exec ps logs kill ssh proxy scp user group
-push pull prompt events steer interrupt conversations snapshots snapshot usage
-limits desktop browser host stop resume restore extend fork delete dashboard forward
-skill env drive
+login logout whoami new list get info status current exec ps logs kill ssh proxy scp
+push pull screenshot prompt events steer interrupt conversations snapshots restore usage limits
+desktop browser host stop resume extend update fork snapshot delete dashboard forward
+skill env drive user group help
 ```
 
 Common forms:
@@ -75,6 +75,7 @@ boxes new [--type SIZE] [--image REF] [--ttl SECONDS | --no-auto-stop] [--idle-s
           [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]]
 boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
 boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
+boxes get <id>
 boxes info <id|current>
 boxes current
 boxes exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]
@@ -87,6 +88,7 @@ boxes interrupt <id> [--conversation ID]
 boxes events <id> [--follow]
 boxes conversations <id|current>
 boxes snapshots <id|current>
+boxes snapshots rm <boxId> <snapshotId>
 boxes usage <id|current>
 boxes desktop <id> [--public] [--profile NAME]
 boxes screenshot <id|current> [-o file.png]  # capture the desktop to a PNG
