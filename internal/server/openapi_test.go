@@ -46,10 +46,10 @@ func TestOpenAPIRoutesMatchPublicMuxRoutes(t *testing.T) {
 
 	// These routes support installation or internal agent workflows rather than the public REST API.
 	excluded := map[string]bool{
-		"GET /agent/connect":           true,
-		"GET /provider-models":         true,
-		"GET /install/cli.ps1":         true,
-		"GET /install/cli/{binary}":    true,
+		"GET /agent/connect":        true,
+		"GET /provider-models":      true,
+		"GET /install/cli.ps1":      true,
+		"GET /install/cli/{binary}": true,
 	}
 	for route := range excluded {
 		delete(registered, route)

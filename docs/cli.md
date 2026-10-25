@@ -77,7 +77,7 @@ boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
 boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
 boxes info <id|current>
 boxes current
-boxes exec <id|current> [--user NAME] [--detach] [--status PID] -- <command> [arguments]
+boxes exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]
 boxes ps <id|current>                               # detached commands for a box
 boxes logs <id|current> <processId> [-f]             # output; -f follows and exits with the command status
 boxes kill <id|current> <processId> [--signal TERM]  # signal a detached command
@@ -127,8 +127,10 @@ seconds and `--no-auto-stop` disables the timer; the two are mutually exclusive.
 `extend --ttl` sets an explicit timer and `extend --no-auto-stop` turns it off.
 
 `prompt --stop-when-done` asks the server to stop and snapshot the box once the
-run reaches a terminal state. `delete` requires `--yes` when stdin is not a
-terminal.
+run reaches a terminal state.
+
+`boxes delete <id|current>` permanently deletes a box. It prompts for
+confirmation on a terminal; when stdin is not a terminal it requires `--yes`.
 
 ### Tags
 
@@ -140,21 +142,30 @@ combined). `boxes list --tag KEY=VALUE` keeps boxes with that exact value, and
 `--tag KEY` keeps boxes that have the key; repeated filters must all match. Tags
 appear in the `tags` field of `boxes info` and `boxes get` output.
 
-### Outbound network policy
+### Images
 
 `boxes new --image REF` runs the box in a specific container image. The image must be built `FROM ghcr.io/tony1908/boxes-box` so boxd is present; otherwise the box never becomes ready (`box_not_ready`). Without the flag the server default image is used.
 
+### Usage
+
 `boxes usage <id|current>` prints the usage JSON from `GET /sandboxes/{id}/usage`, including `totals` (`cpuSeconds`, `rxBytes`, `txBytes`) and `live` while the box runs. See [api.md](api.md#usage-and-cost).
 
-`boxes new` and `boxes update <id|current>` take the same network flags:
+### Sources
 
-- `--git URL` clones an https repository into `/config/<path>` once on first boot, before `--setup-file` runs. `--revision` takes a branch, tag, or commit SHA; `--depth N` makes a shallow clone (1 to 1000); `--path` picks the directory (default `project`).
+`boxes new` takes one source, either a git repository or a tarball, which is fetched once on first boot before `--setup-file` runs:
+
+- `--git URL` clones an https repository into `/config/<path>`. `--revision` takes a branch, tag, or commit SHA; `--depth N` makes a shallow clone (1 to 1000); `--path` picks the directory (default `project`).
 - `--git-token-env VAR` reads the git token from the environment variable `VAR` for private repositories. The token is never passed as a flag value and is not stored.
 - `--tarball URL` downloads a `.tar.gz` and extracts it into `/config/<path>`. It cannot be combined with `--git`, and `--revision`, `--depth`, and `--git-token-env` apply only to `--git`.
 
 ```sh
 boxes new --git https://github.com/acme/app.git --revision v2.1.0 --depth 1 --git-token-env GITHUB_TOKEN --path app
 ```
+
+### Outbound network policy
+
+`boxes new` and `boxes update <id|current>` take the same network flags:
+
 - `--network allow-all|deny-all|allowlist` sets the mode (`allow-all` is the default for new boxes).
 - `--allow-domain HOST` (repeatable) allows a hostname or `*.example.com`; `--allow-cidr CIDR` (repeatable) allows an IPv4 range. Both require `--network allowlist`.
 - `--deny-cidr CIDR` (repeatable) blocks an IPv4 range in every mode and wins over allows. `169.254.169.254/32` is always blocked.
@@ -166,6 +177,18 @@ boxes update current --network deny-all
 
 `update` applies to a running box at once and to a stopped box on its next start.
 Allowlists are DNS-based and IPv4 only; see the limits in the API reference.
+
+### Exec and detached commands
+
+`boxes exec <id|current> [flags] -- <command> [arguments]` runs a command in the box.
+Flags may appear before or after the box ID, but must come before `--`:
+
+- `--user NAME` runs as a box user (default `abc`).
+- `--cwd DIR` sets the working directory inside the box.
+- `--env KEY=VALUE` (repeatable) sets environment variables for the command.
+- `--detach` starts the command in the background and prints its processId. `boxes ps <id>` lists detached commands, `boxes exec <id> --status PID` shows one, `boxes logs <id> PID [-f]` prints its output (`-f` follows until it exits), and `boxes kill <id> PID [--signal TERM]` signals it.
+
+`exec` exits with the command's exit code, so `boxes exec` works in shell conditions and CI. `logs -f` does the same once the command has exited. Other CLI failures exit with 1.
 
 ### Drives
 

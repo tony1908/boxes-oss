@@ -17,7 +17,13 @@ web UI, a CLI, or the HTTP API.
   with steering, interrupt, event streaming, and optional stop-when-done.
 - Desktop sessions, public or private host ports (`boxes host`), and local port
   forwarding (`boxes forward`).
-- File push/pull, command execution, and detached processes.
+- File push/pull, command execution, and detached processes (`exec --detach`, `ps`, `logs -f`, `kill`).
+- Box tags (`--tag`), filterable with `boxes list --tag`.
+- Outbound network policy (`allow-all`, `deny-all`, or a domain/CIDR allowlist), changeable on a running box.
+- Git repository or tarball sources extracted on first boot (`--git`, `--tarball`).
+- Snapshot rollback with `restore`, and configurable snapshot retention (`--keep-snapshots`).
+- Named drives that persist across boxes and mount into them (`boxes drive`, `--mount`).
+- Isolated Linux users and shared groups inside a box (`boxes user`, `boxes group`).
 - Versioned environments (named documents applied at box creation), webhooks, and API keys.
 - Activity log, per-box usage, and optional cost estimates from hourly pricing.
 - Owner and user accounts, with owners creating later accounts.

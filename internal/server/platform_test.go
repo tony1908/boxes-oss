@@ -1270,3 +1270,20 @@ func TestPlatformRoutesAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestForkWithSourceReturnsInvalidSource(t *testing.T) {
+	srv, cleanup := newTestServer(t)
+	defer cleanup()
+	const nodeID, sourceID, nodeToken = "nd_forksrc", "bx_forksrc1234", "fork-source-token"
+	seedPlatformBox(t, srv, nodeID, sourceID, nodeToken, "", "")
+	token := addPlatformSession(t, srv)
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+
+	var rejected map[string]any
+	requestJSON(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/v1/sandboxes/"+sourceID+"/fork", token,
+		map[string]any{"source": map[string]any{"type": "git", "url": "https://example.test/repo.git"}}, http.StatusBadRequest, &rejected)
+	if code := rejected["error"].(map[string]any)["code"]; code != "invalid_source" {
+		t.Fatalf("fork with source error code = %v, want invalid_source", code)
+	}
+}

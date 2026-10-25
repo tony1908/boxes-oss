@@ -25,7 +25,16 @@ boxes list [--filter r|s|e...] [--all]
 boxes new [--type xsmall|small|default|large|xlarge] [--ttl SECONDS|--no-auto-stop] [--idle-stop DURATION] [-e K=V]... [--setup-file FILE] [--from NAME] [--environment NAME] [--no-env]
 boxes info <id|current>
 boxes extend <id|current> --hours N|--ttl SECONDS|--no-auto-stop|--idle-stop DURATION|off
-boxes exec <id|current> -- bash -lc '<command>'
+boxes exec <id|current> [--user NAME] [--cwd DIR] [--env K=V]... -- bash -lc '<command>'
+boxes exec <id|current> --detach -- <command>
+boxes ps <id|current>
+boxes logs <id|current> <processId> [-f]
+boxes kill <id|current> <processId> [--signal TERM]
+boxes restore <id|current> <snapshotId>
+boxes drive create|list|rm|fork
+boxes user add|list|rm <id|current> [name]
+boxes group add <id|current> <group>
+boxes group member add|rm <id|current> <group> <user>
 boxes push <id> [dir] [--to path]
 boxes prompt [id|current] "task" --provider claude|codex|opencode|pi|prime|kimi [--stop-when-done]
 boxes conversations <id|current>
@@ -58,6 +67,30 @@ boxes exec <id> -- bash -lc 'cd /config/<name> && <install> && <test>'
 
 Run `boxes --help` for all commands. Add `--json` before a command for
 machine-readable output; JSON output is automatic when stdout is not a TTY.
+
+## Tags, network, and sources
+
+- `boxes new --tag KEY=VALUE` tags a box; `boxes list --tag KEY=VALUE` (or `--tag KEY` for any value) filters, and all filters must match. `boxes update <id|current> --tag K=V` merges tags; `--clear-tags` removes them.
+- `boxes new --network allow-all|deny-all|allowlist` sets outbound policy. `--allow-domain HOST` and `--allow-cidr CIDR` (repeatable) need `allowlist`; `--deny-cidr CIDR` blocks in every mode. `boxes update <id|current> --network ...` applies the same policy to a live box.
+- `boxes new --git URL [--revision REF] [--depth N] [--git-token-env VAR] [--path DIR]` clones a repo on first boot; `--tarball URL` extracts a `.tar.gz` instead. The two are mutually exclusive.
+
+## Detached commands
+
+- `boxes exec <id|current> --detach -- <command>` starts a background process and prints its processId. `boxes ps <id>` lists them; `boxes exec <id> --status PID` shows one.
+- `boxes logs <id> <processId> [-f]` prints output; `-f` follows until the command exits.
+- `boxes kill <id> <processId> [--signal TERM|KILL|INT|HUP|QUIT|USR1|USR2]` signals it.
+- `exec` and `logs -f` exit with the remote command's exit code; other failures exit 1.
+
+## Snapshots, images, usage
+
+- `boxes new --keep-snapshots N` (or `update`) sets how many automatic snapshots to keep (1 to 50, default 5). `boxes snapshots <id>` lists them; `boxes restore <id> <snapshotId>` rolls the box back to one.
+- `boxes new --image REF` picks a container image, which must be built `FROM ghcr.io/tony1908/boxes-box`.
+- `boxes usage <id|current>` prints CPU and network usage totals.
+
+## Drives and users
+
+- Drives are named volumes that survive box deletion: `boxes drive create|list|rm|fork`. Mount one with `boxes new --mount DRIVE:/mnt/x[:ro]` (path under `/mnt`). `drive rm` fails while a box mounts it.
+- `boxes user add <id> <name>`, `user list <id>`, `user rm <id> <name>` manage isolated users; `boxes group add <id> <group>` and `boxes group member add|rm <id> <group> <user>` manage shared groups. Run as a user with `boxes exec <id> --user NAME -- <command>`.
 
 ## Usage notes
 

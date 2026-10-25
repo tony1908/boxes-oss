@@ -331,3 +331,49 @@ func TestProviderErrorEventsKeepRealReasonAndRedactKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestOpencodeMessageReplyErrorBecomesTurnFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/session":
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "ses-test"})
+		case r.Method == http.MethodGet && r.URL.Path == "/event":
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		case r.Method == http.MethodPost && r.URL.Path == "/session/ses-test/message":
+			// Provider failures arrive in info.error with a 200 reply, not as an HTTP error.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"info":{"error":{"name":"APIError","data":{"message":"bad key sk-proj-abcdefgh123456"}}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	harness := NewOpencodeHarness(t.TempDir())
+	harness.baseURL = server.URL
+	harness.client = server.Client()
+	session, err := harness.Start(context.Background(), ConvSpec{ConversationID: "cv_test", Provider: "opencode"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if err := session.Send("hello"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-session.Events():
+			if event.Type == "turn.failed" {
+				if event.Data["error"] != "APIError: bad key [redacted]" {
+					t.Fatalf("turn.failed error = %#v, want redacted APIError text", event.Data["error"])
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("info.error reply did not produce turn.failed")
+		}
+	}
+}
