@@ -1,5 +1,7 @@
 # boxes-oss
 
+Website: https://tony1908.github.io/boxes-oss/
+
 Boxes is a self-hosted sandbox service for AI agents. It runs on a single Ubuntu
 or Debian VM and gives each agent a full Linux box: an XFCE desktop, sudo, Docker
 inside the box (via Sysbox), SSH, and preinstalled coding-agent tooling. Boxes
