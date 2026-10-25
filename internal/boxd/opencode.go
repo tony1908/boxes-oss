@@ -224,12 +224,21 @@ func (s *opencodeSession) send(prompt string) error {
 		}
 	}
 	go func() {
+		// OpenCode returns the assistant message; a provider failure (expired key,
+		// unknown model) is carried in info.error rather than as an HTTP error.
+		var reply struct {
+			Info struct {
+				Error map[string]any `json:"error"`
+			} `json:"info"`
+		}
 		target := s.baseURL + "/session/" + url.PathEscape(s.sessionID) + "/message"
-		if err := requestJSON(s.ctx, s.client, http.MethodPost, target, body, nil); err != nil {
+		if err := requestJSON(s.ctx, s.client, http.MethodPost, target, body, &reply); err != nil {
 			if s.ctx.Err() != nil {
 				return
 			}
-			s.emit(HarnessEvent{Type: "turn.failed", SessionID: s.sessionID, Data: map[string]any{"error": err.Error()}})
+			s.emit(HarnessEvent{Type: "turn.failed", SessionID: s.sessionID, Data: map[string]any{"error": harnessErrorText("", err.Error(), "OpenCode request failed")}})
+		} else if reply.Info.Error != nil {
+			s.emit(HarnessEvent{Type: "turn.failed", SessionID: s.sessionID, Data: map[string]any{"error": opencodeErrorText(reply.Info.Error)}})
 		}
 	}()
 	return nil
@@ -445,15 +454,30 @@ func (m *opencodeEventMapper) mapEvent(line []byte) []HarnessEvent {
 	case "session.idle":
 		return []HarnessEvent{{Type: "turn.completed", SessionID: sessionID}}
 	case "session.error", "error":
-		message := "OpenCode reported an error"
-		if detail, ok := properties["error"].(map[string]any); ok {
-			if text, ok := detail["message"].(string); ok && text != "" {
-				message = text
-			}
-		} else if text, ok := value["error"].(string); ok && text != "" {
-			message = text
+		detail, _ := properties["error"].(map[string]any)
+		if detail == nil {
+			detail, _ = value["error"].(map[string]any)
 		}
-		return []HarnessEvent{{Type: "turn.failed", SessionID: sessionID, Data: map[string]any{"error": message}}}
+		text := "OpenCode reported an error"
+		if detail != nil {
+			text = opencodeErrorText(detail)
+		} else if message, ok := value["error"].(string); ok {
+			text = harnessErrorText("", message, text)
+		}
+		return []HarnessEvent{{Type: "turn.failed", SessionID: sessionID, Data: map[string]any{"error": text}}}
 	}
 	return nil
+}
+
+// opencodeErrorText renders an OpenCode error object ({name, data: {message}}
+// or {name, message}) as "name: message" via harnessErrorText.
+func opencodeErrorText(detail map[string]any) string {
+	name, _ := detail["name"].(string)
+	message, _ := detail["message"].(string)
+	if data, ok := detail["data"].(map[string]any); ok {
+		if text, ok := data["message"].(string); ok && text != "" {
+			message = text
+		}
+	}
+	return harnessErrorText(name, message, "OpenCode reported an error")
 }

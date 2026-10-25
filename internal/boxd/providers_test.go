@@ -261,3 +261,73 @@ func TestOpencodeSessionUsesHTTPAPIAndConsumesSSE(t *testing.T) {
 		t.Fatal("OpenCode abort request was not sent")
 	}
 }
+
+func TestProviderErrorEventsKeepRealReasonAndRedactKeys(t *testing.T) {
+	longMessage := strings.Repeat("x", 600)
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{
+			name: "opencode api error with name and data message",
+			line: `{"type":"session.error","properties":{"sessionID":"ses-1","error":{"name":"APIError","data":{"message":"AI_APICallError: This API key has expired"}}}}`,
+			want: "APIError: AI_APICallError: This API key has expired",
+		},
+		{
+			name: "opencode model not found",
+			line: `{"type":"session.error","properties":{"sessionID":"ses-1","error":{"name":"ProviderModelNotFoundError","data":{"message":"Model not found: openai/gpt-5. Did you mean: gpt-5.4?"}}}}`,
+			want: "ProviderModelNotFoundError: Model not found: openai/gpt-5. Did you mean: gpt-5.4?",
+		},
+		{
+			name: "opencode redacts sk key and long hex token",
+			line: `{"type":"session.error","properties":{"sessionID":"ses-1","error":{"name":"APIError","data":{"message":"bad key sk-proj-abcdefgh123456 and token 0123456789abcdef0123456789abcdef"}}}}`,
+			want: "APIError: bad key [redacted] and token [redacted]",
+		},
+		{
+			name: "opencode keeps long pure-letter identifiers",
+			line: `{"type":"session.error","properties":{"sessionID":"ses-1","error":{"name":"ProviderAuthenticationUnsuccessfulError","data":{"message":"nope"}}}}`,
+			want: "ProviderAuthenticationUnsuccessfulError: nope",
+		},
+		{
+			name: "opencode truncates to 500 characters",
+			line: `{"type":"session.error","properties":{"sessionID":"ses-1","error":{"name":"APIError","data":{"message":"` + longMessage + `"}}}}`,
+			want: ("APIError: " + longMessage)[:500],
+		},
+		{
+			name: "opencode without detail falls back to generic text",
+			line: `{"type":"session.error","properties":{"sessionID":"ses-1"}}`,
+			want: "OpenCode reported an error",
+		},
+		{
+			name: "codex turn error message passes through",
+			line: `{"method":"turn/completed","params":{"turn":{"status":"failed","error":{"message":"You exceeded your current quota"}}}}`,
+			want: "You exceeded your current quota",
+		},
+		{
+			name: "codex turn failed without detail falls back",
+			line: `{"method":"turn/failed","params":{"turn":{}}}`,
+			want: "Codex turn failed",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var got []HarnessEvent
+			if strings.Contains(test.line, `"method"`) {
+				var message map[string]any
+				if err := json.Unmarshal([]byte(test.line), &message); err != nil {
+					t.Fatal(err)
+				}
+				got = mapCodexNotification(message["method"].(string), message["params"].(map[string]any))
+			} else {
+				got = mapOpencodeEvent([]byte(test.line))
+			}
+			if len(got) != 1 || got[0].Type != "turn.failed" {
+				t.Fatalf("events = %#v, want one turn.failed", got)
+			}
+			if text := got[0].Data["error"].(string); text != test.want {
+				t.Fatalf("error = %q, want %q", text, test.want)
+			}
+		})
+	}
+}

@@ -383,20 +383,22 @@ func mapCodexNotification(method string, params map[string]any) []HarnessEvent {
 		turn, _ := params["turn"].(map[string]any)
 		status := turn["status"]
 		if method == "turn/failed" || status == "failed" {
-			return []HarnessEvent{{Type: "turn.failed", Data: map[string]any{"error": "Codex turn failed"}}}
+			message := ""
+			if detail, ok := turn["error"].(map[string]any); ok {
+				message, _ = detail["message"].(string)
+			}
+			return []HarnessEvent{{Type: "turn.failed", Data: map[string]any{"error": harnessErrorText("", message, "Codex turn failed")}}}
 		}
 		if status == "interrupted" {
 			return []HarnessEvent{{Type: "turn.failed", Data: map[string]any{"error": "Codex turn interrupted", "interrupted": true}}}
 		}
 		if value, ok := status.(map[string]any); ok {
 			if failure, exists := value["failed"]; exists {
-				message := "Codex turn failed"
+				reason := ""
 				if detail, ok := failure.(map[string]any); ok {
-					if reason, ok := detail["reason"].(string); ok && reason != "" {
-						message = reason
-					}
+					reason, _ = detail["reason"].(string)
 				}
-				return []HarnessEvent{{Type: "turn.failed", Data: map[string]any{"error": message}}}
+				return []HarnessEvent{{Type: "turn.failed", Data: map[string]any{"error": harnessErrorText("", reason, "Codex turn failed")}}}
 			}
 		}
 		return []HarnessEvent{{Type: "turn.completed"}}
