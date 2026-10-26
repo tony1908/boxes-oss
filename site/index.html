@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>boxes: one VPS, a sandbox for every agent</title>
-  <meta name="description" content="boxes splits one VPS you own into isolated Linux machines for AI agents. Free and open source, MIT licensed.">
+  <title>boxes: computers and sandboxes for your agents</title>
+  <meta name="description" content="boxes gives each AI agent its own Linux computer or a locked-down sandbox, on one VPS you own. Free and open source, MIT licensed.">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,8 +31,8 @@
   <main id="main" tabindex="-1">
     <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <h1 id="hero-title">One VPS. A sandbox for every agent.</h1>
-        <p class="lede">boxes runs isolated Ubuntu machines with a desktop, Docker and snapshots on a server you own. Your agents drive them from the CLI, the API or the SDKs.</p>
+        <h1 id="hero-title">Computers and sandboxes for your agents.</h1>
+        <p class="lede">Give each agent its own Linux computer, with a desktop for GUI apps and screenshots, or a locked-down sandbox that runs code and gets thrown away. boxes runs them all on one VPS you own.</p>
         <div class="codeblock">
           <button class="copy copy-primary" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com">Copy</button>
           <pre><code>curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
@@ -70,6 +70,34 @@
             </div>
           </div>
         </section>
+      </div>
+    </section>
+
+    <section class="section" id="modes" aria-labelledby="modes-title">
+      <div class="wrap">
+        <h2 id="modes-title">One box, two ways to use it</h2>
+        <div class="modes">
+          <div class="mode">
+            <h3>A computer for your agent</h3>
+            <p>A long-lived Ubuntu machine with a desktop, sudo and Docker. The agent installs what it needs, runs GUI apps, takes screenshots, and picks up where it left off after a stop.</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command" data-copy="boxes new --no-auto-stop --tag role=assistant">Copy</button>
+              <pre><code>boxes new --no-auto-stop --tag role=assistant
+boxes exec current --desktop --detach -- boxes-browser
+boxes screenshot current -o shot.png</code></pre>
+            </div>
+          </div>
+          <div class="mode">
+            <h3>A sandbox for each task</h3>
+            <p>A short-lived box with the network locked down and a run limit. Run untrusted code or a risky change, roll back to a snapshot if it goes wrong, and delete the box when the task is done.</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command" data-copy="boxes new --ttl 3600 --network deny-all --tag task=run-tests">Copy</button>
+              <pre><code>boxes new --ttl 3600 --network deny-all --tag task=run-tests
+boxes exec current -- npm test
+boxes delete current --yes</code></pre>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 

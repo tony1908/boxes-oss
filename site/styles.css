@@ -409,6 +409,26 @@ li {
   }
 }
 
+/* Modes: one box, two ways to use it */
+
+.modes {
+  display: grid;
+  gap: 2rem;
+}
+
+.mode {
+  min-width: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--steel);
+}
+
+@media (min-width: 800px) {
+  .modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5rem;
+  }
+}
+
 /* Install */
 
 .steps {
