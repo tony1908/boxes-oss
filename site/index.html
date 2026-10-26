@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>boxes: computers and sandboxes for your agents</title>
   <meta name="description" content="boxes gives each AI agent its own Linux computer or a locked-down sandbox, on one VPS you own. Free and open source, MIT licensed.">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark light">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112,100..800&family=Atkinson+Hyperlegible+Next:wght@200..800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400;500;600&family=Funnel+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -22,7 +22,7 @@
         <ul class="nav">
           <li><a href="#docs">Docs</a></li>
           <li><a href="#install">Install</a></li>
-          <li><a href="https://github.com/tony1908/boxes-oss">GitHub</a></li>
+          <li><a class="nav-button" href="https://github.com/tony1908/boxes-oss">GitHub</a></li>
         </ul>
       </nav>
     </div>
@@ -33,20 +33,26 @@
       <div class="hero-copy">
         <h1 id="hero-title">Computers and sandboxes for your agents.</h1>
         <p class="lede">Give each agent its own Linux computer, with a desktop for GUI apps and screenshots, or a locked-down sandbox that runs code and gets thrown away. boxes runs them all on one VPS you own.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#install">Install</a>
+          <a class="btn btn-ghost" href="#docs">Read the docs</a>
+        </div>
         <div class="codeblock">
-          <button class="copy copy-primary" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com">Copy</button>
+          <button class="copy" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com">Copy</button>
           <pre><code>curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
   | sudo bash -s -- \
   --domain boxes.example.com --email you@example.com</code></pre>
         </div>
         <p class="note">Free and open source (MIT). Ubuntu or Debian VPS, ports 80 and 443.</p>
-        <p><a href="#docs">Read the quickstart</a></p>
       </div>
 
       <div class="diagram">
-        <p class="prompt"><span class="typed">$ boxes new --tag task=fix-login-bug</span></p>
+        <div class="vps-bar" aria-hidden="true">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <p class="vps-title">your-vps (Ubuntu, 4 vCPU, 8 GB)</p>
+        </div>
         <section class="vps" aria-label="your-vps (Ubuntu, 4 vCPU, 8 GB) running four tasks: fix-login-bug with Claude Code, ready; run-tests with Codex, network allowlist; scrape-docs with OpenCode, network denied; nightly-build with Pi, drive /mnt/cache mounted">
-          <p class="vps-title">your-vps  (Ubuntu, 4 vCPU, 8 GB)</p>
+          <p class="prompt"><span class="typed">$ boxes new --tag task=fix-login-bug</span></p>
           <div class="vps-grid">
             <div class="vps-box" style="--d:0">
               <p class="box-name">fix-login-bug</p>
@@ -75,7 +81,7 @@
 
     <section class="section" id="modes" aria-labelledby="modes-title">
       <div class="wrap">
-        <h2 id="modes-title">One box, two ways to use it</h2>
+        <h2 id="modes-title">One box, two ways to use it<span class="sub">Keep a computer running for days, or open a sandbox for one task.</span></h2>
         <div class="modes">
           <div class="mode">
             <h3>A computer for your agent</h3>
@@ -103,7 +109,7 @@ boxes delete current --yes</code></pre>
 
     <section class="section" id="box" aria-labelledby="box-title">
       <div class="wrap">
-        <h2 id="box-title">What's in a box</h2>
+        <h2 id="box-title">What's in a box<span class="sub">Everything an agent needs, inside one isolated machine.</span></h2>
         <dl class="spec">
           <div>
             <dt>Desktop</dt>
@@ -147,7 +153,7 @@ boxes delete current --yes</code></pre>
 
     <section class="section" id="install" aria-labelledby="install-title">
       <div class="wrap">
-        <h2 id="install-title">Install</h2>
+        <h2 id="install-title">Install<span class="sub">One script on your VPS, one binary on your laptop.</span></h2>
         <p>Run the installer on a VPS you control, then install the CLI on your laptop.</p>
         <ol class="steps">
           <li>
@@ -187,7 +193,7 @@ boxes login --server https://boxes.example.com --email you@example.com</code></p
 
     <section class="section" id="docs" aria-labelledby="docs-title">
       <div class="wrap">
-        <h2 id="docs-title">Docs</h2>
+        <h2 id="docs-title">Docs<span class="sub">Recipes for the things agents do most.</span></h2>
         <p>Each recipe is a few commands you can copy and run. For every flag, run <code>boxes help &lt;command&gt;</code>.</p>
 
         <div class="docs">
