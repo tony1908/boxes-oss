@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
 ### Changed
 
 - Renamed the project from boxes to Paddock: the CLI is `paddock`, the binaries are `paddock-server` and `paddock-agent`, environment variables use the `PADDOCK_` prefix, and host paths moved to `/etc/paddock`, `/var/lib/paddock` and `/run/paddock`.
+- New website and docs page at https://tony1908.github.io/paddock/.
 
 ## [0.1.0] - 2026-10-25
 
