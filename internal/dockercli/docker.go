@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	boxtypes "github.com/tony1908/boxes-oss/internal/types"
+	boxtypes "github.com/tony1908/paddock/internal/types"
 )
 
 // Executor runs an external command without invoking a shell.
@@ -85,11 +85,11 @@ func New(executor Executor) *Docker {
 }
 
 // DriveVolume returns the Docker volume name that backs a drive.
-func DriveVolume(drive string) string { return "boxes-drive-" + drive }
+func DriveVolume(drive string) string { return "paddock-drive-" + drive }
 
 // CreateDriveVolume creates the Docker volume for a drive. It is idempotent.
 func (d *Docker) CreateDriveVolume(ctx context.Context, drive string) error {
-	_, _, err := d.run(ctx, []string{"docker", "volume", "create", "--label", "boxes.drive=" + drive, DriveVolume(drive)}, nil, nil, nil, nil)
+	_, _, err := d.run(ctx, []string{"docker", "volume", "create", "--label", "paddock.drive=" + drive, DriveVolume(drive)}, nil, nil, nil, nil)
 	return err
 }
 
@@ -146,14 +146,14 @@ func CreateArgs(spec Spec) ([]string, error) {
 		"--name", "box-" + spec.BoxID,
 		"--hostname", spec.BoxID,
 		"--runtime", spec.Runtime,
-		"--label", "boxes.managed=true",
-		"--label", "boxes.box-id=" + spec.BoxID,
+		"--label", "paddock.managed=true",
+		"--label", "paddock.box-id=" + spec.BoxID,
 		"--cpus", strconv.Itoa(size.CPUs),
 		"--memory", strconv.FormatInt(size.MemoryBytes, 10),
 		"--memory-reservation", strconv.FormatInt(size.MemoryReservationBytes, 10),
 		"--pids-limit", "4096",
 		"--shm-size", "1g",
-		"--network", "boxes-net",
+		"--network", "paddock-net",
 		"--restart", "unless-stopped",
 		"-e", "PUID=1000",
 		"-e", "PGID=1000",
@@ -168,7 +168,7 @@ func CreateArgs(spec Spec) ([]string, error) {
 		if strings.ContainsAny(spec.ToolsVolume, ":/,\x00") {
 			return nil, fmt.Errorf("invalid tools volume name %q", spec.ToolsVolume)
 		}
-		argv = append(argv, "--mount", "type=volume,source="+spec.ToolsVolume+",target=/opt/boxes-tools,readonly")
+		argv = append(argv, "--mount", "type=volume,source="+spec.ToolsVolume+",target=/opt/paddock-tools,readonly")
 	}
 	if err := boxtypes.ValidateMounts(spec.Mounts); err != nil {
 		return nil, err
@@ -226,7 +226,7 @@ func (d *Docker) EnsureToolsVolume(ctx context.Context, image string) (string, b
 			return "", false, fmt.Errorf("docker image %q returned an invalid image ID", image)
 		}
 	}
-	volume := "boxes-tools-" + digest[:12]
+	volume := "paddock-tools-" + digest[:12]
 
 	_, code, err = d.runMode(ctx, []string{"docker", "volume", "inspect", volume}, nil, nil, nil, nil, false)
 	if err != nil {
@@ -238,20 +238,20 @@ func (d *Docker) EnsureToolsVolume(ctx context.Context, image string) (string, b
 	if _, _, err := d.run(ctx, []string{"docker", "volume", "create", volume}, nil, nil, nil, nil); err != nil {
 		return "", false, err
 	}
-	if _, _, err := d.run(ctx, []string{"docker", "run", "--rm", "-v", volume + ":/dst", image, "cp", "-a", "/opt/boxes-tools/.", "/dst/"}, nil, nil, nil, nil); err != nil {
+	if _, _, err := d.run(ctx, []string{"docker", "run", "--rm", "-v", volume + ":/dst", image, "cp", "-a", "/opt/paddock-tools/.", "/dst/"}, nil, nil, nil, nil); err != nil {
 		_, _, _ = d.run(ctx, []string{"docker", "volume", "rm", volume}, nil, nil, nil, nil)
 		return "", false, err
 	}
 	return volume, true, nil
 }
 
-// EnsureNetwork ensures boxes-net exists with inter-container communication disabled.
+// EnsureNetwork ensures paddock-net exists with inter-container communication disabled.
 func (d *Docker) EnsureNetwork(ctx context.Context) error {
-	_, code, err := d.run(ctx, []string{"docker", "network", "inspect", "boxes-net"}, nil, nil, nil, nil)
+	_, code, err := d.run(ctx, []string{"docker", "network", "inspect", "paddock-net"}, nil, nil, nil, nil)
 	if code == 0 {
 		return err
 	}
-	_, _, err = d.run(ctx, []string{"docker", "network", "create", "--driver", "bridge", "--opt", "com.docker.network.bridge.enable_icc=false", "boxes-net"}, nil, nil, nil, nil)
+	_, _, err = d.run(ctx, []string{"docker", "network", "create", "--driver", "bridge", "--opt", "com.docker.network.bridge.enable_icc=false", "paddock-net"}, nil, nil, nil, nil)
 	return err
 }
 
@@ -361,7 +361,7 @@ func (d *Docker) Remove(ctx context.Context, name string, force bool) error {
 	return err
 }
 
-// Inspect returns the current Docker ID, state, and boxes-net IP address.
+// Inspect returns the current Docker ID, state, and paddock-net IP address.
 func (d *Docker) Inspect(ctx context.Context, name string) (Container, error) {
 	stdout, _, err := d.run(ctx, []string{"docker", "inspect", name}, nil, nil, nil, nil)
 	if err != nil {
@@ -391,7 +391,7 @@ func (d *Docker) Inspect(ctx context.Context, name string) (Container, error) {
 	}
 	container := results[0]
 	nameFromInspect := strings.TrimPrefix(container.Name, "/")
-	return Container{ID: container.ID, Name: nameFromInspect, State: container.State.Status, IP: container.NetworkSettings.Networks["boxes-net"].IPAddress, Dns: container.HostConfig.Dns, Mounts: container.Mounts}, nil
+	return Container{ID: container.ID, Name: nameFromInspect, State: container.State.Status, IP: container.NetworkSettings.Networks["paddock-net"].IPAddress, Dns: container.HostConfig.Dns, Mounts: container.Mounts}, nil
 }
 
 // CPUPercent returns the current container CPU use as a percentage of one core.

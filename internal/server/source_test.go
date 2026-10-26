@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/tunnel"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/tunnel"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestValidateSandboxSource(t *testing.T) {
@@ -155,7 +155,7 @@ func TestCreateSandboxSourceSendsSetupWithoutPersistingToken(t *testing.T) {
 				TokenSecret string `json:"tokenSecret"`
 			} `json:"repos"`
 		}
-		if err := json.Unmarshal([]byte(contents["/run/boxes/setup.json"]), &setup); err != nil {
+		if err := json.Unmarshal([]byte(contents["/run/paddock/setup.json"]), &setup); err != nil {
 			t.Fatalf("decode setup.json: %v", err)
 		}
 		if len(setup.Repos) != 1 || setup.Repos[0].Name != "project" || setup.Repos[0].URL != "https://example.test/private.git" || setup.Repos[0].Revision != "v2" || setup.Repos[0].Depth != 1 || setup.Repos[0].TokenSecret != sourceTokenSecret {

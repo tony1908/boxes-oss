@@ -11,17 +11,17 @@ for command in curl jq go ssh ssh-keygen; do
 	}
 done
 
-: "${BOXES_URL:?set BOXES_URL to the live deployment URL}"
-: "${BOXES_EMAIL:?set BOXES_EMAIL to the deployment account email}"
-if [[ -n "${BOXES_PASSWORD_FILE:-}" ]]; then
-	[[ -r "$BOXES_PASSWORD_FILE" ]] || { printf 'BOXES_PASSWORD_FILE is not readable\n' >&2; exit 1; }
-	BOXES_PASSWORD="$(<"$BOXES_PASSWORD_FILE")"
+: "${PADDOCK_URL:?set PADDOCK_URL to the live deployment URL}"
+: "${PADDOCK_EMAIL:?set PADDOCK_EMAIL to the deployment account email}"
+if [[ -n "${PADDOCK_PASSWORD_FILE:-}" ]]; then
+	[[ -r "$PADDOCK_PASSWORD_FILE" ]] || { printf 'PADDOCK_PASSWORD_FILE is not readable\n' >&2; exit 1; }
+	PADDOCK_PASSWORD="$(<"$PADDOCK_PASSWORD_FILE")"
 fi
-: "${BOXES_PASSWORD:?set BOXES_PASSWORD or BOXES_PASSWORD_FILE}"
-[[ "$BOXES_URL" == https://* ]] || { printf 'BOXES_URL must use HTTPS\n' >&2; exit 1; }
-BOXES_URL="${BOXES_URL%/}"
-if [[ -n "${BOXES_SSH_HOST:-}" && ! "$BOXES_SSH_HOST" =~ ^root@[A-Za-z0-9.-]+$ ]]; then
-	printf 'BOXES_SSH_HOST must be root@<ip-or-hostname>\n' >&2
+: "${PADDOCK_PASSWORD:?set PADDOCK_PASSWORD or PADDOCK_PASSWORD_FILE}"
+[[ "$PADDOCK_URL" == https://* ]] || { printf 'PADDOCK_URL must use HTTPS\n' >&2; exit 1; }
+PADDOCK_URL="${PADDOCK_URL%/}"
+if [[ -n "${PADDOCK_SSH_HOST:-}" && ! "$PADDOCK_SSH_HOST" =~ ^root@[A-Za-z0-9.-]+$ ]]; then
+	printf 'PADDOCK_SSH_HOST must be root@<ip-or-hostname>\n' >&2
 	exit 1
 fi
 if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" && ( ! -f "$E2E_OPENCODE_AUTH_FILE" || ! -s "$E2E_OPENCODE_AUTH_FILE" ) ]]; then
@@ -30,14 +30,14 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" && ( ! -f "$E2E_OPENCODE_AUTH_FILE" || ! 
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/boxes-e2e-remote.XXXXXX")"
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/paddock-e2e-remote.XXXXXX")"
 mkdir -m 0700 "$TEMP_DIR/home" "$TEMP_DIR/bin"
 mkdir -m 0700 "$TEMP_DIR/home/.config"
 export HOME="$TEMP_DIR/home"
 export XDG_CONFIG_HOME="$TEMP_DIR/home/.config"
 export PATH="$TEMP_DIR/bin:$PATH"
-export BOXES_PASSWORD
-API="$BOXES_URL/api/v1"
+export PADDOCK_PASSWORD
+API="$PADDOCK_URL/api/v1"
 SESSION_TOKEN=""
 AUTH_HEADER=""
 BOX_IDS=()
@@ -82,12 +82,12 @@ trap on_error ERR
 trap cleanup EXIT
 
 cd "$ROOT_DIR"
-CURRENT_STEP="build temporary boxes CLI"
-go build -o "$TEMP_DIR/bin/boxes" ./cmd/boxes
+CURRENT_STEP="build temporary paddock CLI"
+go build -o "$TEMP_DIR/bin/paddock" ./cmd/paddock
 
 CURRENT_STEP="login and check machine health"
-login_status="$(BOXES_PASSWORD="$BOXES_PASSWORD" jq -cn --arg email "$BOXES_EMAIL" \
-	'{email:$email,password:env.BOXES_PASSWORD}' | \
+login_status="$(PADDOCK_PASSWORD="$PADDOCK_PASSWORD" jq -cn --arg email "$PADDOCK_EMAIL" \
+	'{email:$email,password:env.PADDOCK_PASSWORD}' | \
 	curl --connect-timeout 5 --max-time 30 -sS -o "$TEMP_DIR/login.json" -w '%{http_code}' \
 		-H 'Content-Type: application/json' --data-binary @- "$API/auth/login" || true)"
 [[ "$login_status" == 200 ]] || fail "login returned HTTP ${login_status:-none}"
@@ -148,8 +148,8 @@ create_box() {
 
 create_cli_ttl_box() {
 	local description="$1" id
-	if ! boxes new --type small --ttl 1800 >"$TEMP_DIR/new-box.json"; then
-		fail "$description could not be created with boxes new"
+	if ! paddock new --type small --ttl 1800 >"$TEMP_DIR/new-box.json"; then
+		fail "$description could not be created with paddock new"
 	fi
 	id="$(jq -er '.id' "$TEMP_DIR/new-box.json")" || fail "$description response did not contain an ID"
 	BOX_IDS+=("$id")
@@ -190,7 +190,7 @@ assert_persisted_state() {
 		-o "$TEMP_DIR/note.txt" "$API/sandboxes/$box_id/files?path=%2Fconfig%2Fnote.txt" 2>/dev/null || \
 		fail "$description lost /config/note.txt"
 	note="$(<"$TEMP_DIR/note.txt")"
-	[[ "$note" == 'boxes remote e2e snapshot note' ]] || fail "$description changed /config/note.txt"
+	[[ "$note" == 'paddock remote e2e snapshot note' ]] || fail "$description changed /config/note.txt"
 	run_box_command "$box_id" "$description system-state assertion" \
 		'command -v hello >/dev/null && test ! -e /etc/issue && test -d /usr/share/doc/bash && test -f /usr/share/doc/bash/only-this && test "$(find /usr/share/doc/bash -mindepth 1 -maxdepth 1 -printf "%f\n" | sort)" = only-this' 120
 }
@@ -205,7 +205,7 @@ box_ssh_host_key() {
 	printf '%s\n' "$key"
 }
 
-printf 'boxes remote e2e snapshot note\n' >"$TEMP_DIR/note.txt"
+printf 'paddock remote e2e snapshot note\n' >"$TEMP_DIR/note.txt"
 
 CURRENT_STEP="stop immediately after new"
 create_box 'immediate-stop sandbox'
@@ -274,7 +274,7 @@ printf 'desktop TLS and token authentication verified\n'
 
 CURRENT_STEP="expose a live HTTP host over HTTPS"
 run_box_command "$BOX_ID" 'prepare known HTTP response' \
-	'mkdir -p /config/e2e-http && printf "boxes-remote-e2e-host-ok\\n" > /config/e2e-http/index.html'
+	'mkdir -p /config/e2e-http && printf "paddock-remote-e2e-host-ok\\n" > /config/e2e-http/index.html'
 host_body="$(jq -cn \
 	'{user:"abc",cmd:["python3","-m","http.server","8000","--directory","/config/e2e-http"],detached:true}')"
 host_exec_status="$(curl --connect-timeout 5 --max-time 30 -sS -o "$TEMP_DIR/host-process.json" -w '%{http_code}' \
@@ -292,28 +292,28 @@ while (( SECONDS < host_deadline )); do
 		"$HOST_URL" 2>/dev/null || true)"
 	if [[ "$host_status" == 200 ]]; then
 		host_content="$(<"$TEMP_DIR/host-response")"
-		[[ "$host_content" == 'boxes-remote-e2e-host-ok' ]] && break
+		[[ "$host_content" == 'paddock-remote-e2e-host-ok' ]] && break
 	fi
 	sleep 3
 done
-[[ "$host_status" == 200 && "$host_content" == 'boxes-remote-e2e-host-ok' ]] || \
+[[ "$host_status" == 200 && "$host_content" == 'paddock-remote-e2e-host-ok' ]] || \
 	fail 'public host did not return the expected body over valid TLS within 2 minutes'
 printf 'public host returned the expected response over valid TLS\n'
 
-CURRENT_STEP="SSH through the boxes CLI proxy"
-ssh-keygen -q -t ed25519 -N '' -C boxes-remote-e2e -f "$TEMP_DIR/ssh-key"
+CURRENT_STEP="SSH through the paddock CLI proxy"
+ssh-keygen -q -t ed25519 -N '' -C paddock-remote-e2e -f "$TEMP_DIR/ssh-key"
 ssh_public_key="$(<"$TEMP_DIR/ssh-key.pub")"
 ssh_key_body="$(jq -cn --arg publicKey "$ssh_public_key" '{publicKey:$publicKey}')"
 api_json POST "/sandboxes/$BOX_ID/ssh-key" 204 "$ssh_key_body" 60
-if ! boxes login --server "$BOXES_URL" --email "$BOXES_EMAIL" >/dev/null 2>&1; then
-	fail 'host boxes CLI login failed'
+if ! paddock login --server "$PADDOCK_URL" --email "$PADDOCK_EMAIL" >/dev/null 2>&1; then
+	fail 'host paddock CLI login failed'
 fi
-unset BOXES_PASSWORD
-ssh_output="$(ssh -i "$TEMP_DIR/ssh-key" -o IdentitiesOnly=yes -o "ProxyCommand=boxes proxy $BOX_ID" -o BatchMode=yes -o ConnectTimeout=30 \
+unset PADDOCK_PASSWORD
+ssh_output="$(ssh -i "$TEMP_DIR/ssh-key" -o IdentitiesOnly=yes -o "ProxyCommand=paddock proxy $BOX_ID" -o BatchMode=yes -o ConnectTimeout=30 \
 	-o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new \
-	-o "UserKnownHostsFile=$TEMP_DIR/known_hosts" "abc@$BOX_ID" echo ssh-ok 2>/dev/null)" || fail 'SSH through boxes proxy failed'
-[[ "$ssh_output" == ssh-ok ]] || fail 'SSH through boxes proxy returned an unexpected response'
-printf 'SSH key authentication through boxes proxy verified\n'
+	-o "UserKnownHostsFile=$TEMP_DIR/known_hosts" "abc@$BOX_ID" echo ssh-ok 2>/dev/null)" || fail 'SSH through paddock proxy failed'
+[[ "$ssh_output" == ssh-ok ]] || fail 'SSH through paddock proxy returned an unexpected response'
+printf 'SSH key authentication through paddock proxy verified\n'
 
 if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 	CURRENT_STEP="OpenCode computer screenshot prompt"
@@ -321,7 +321,7 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 		"$E2E_OPENCODE_AUTH_FILE" 204
 	run_box_command "$BOX_ID" 'OpenCode auth file mode check' \
 		'test "$(stat -c %a /config/.local/share/opencode/auth.json)" = 600'
-	prompt_text='Call the computer_screenshot tool once, then reply with exactly: boxes-ok'
+	prompt_text='Call the computer_screenshot tool once, then reply with exactly: paddock-ok'
 	prompt_body="$(jq -cn --arg prompt "$prompt_text" \
 		'{provider:"opencode",model:"opencode-go/gpt-6-luna",prompt:$prompt}')"
 	api_json POST "/sandboxes/$BOX_ID/prompt" 202 "$prompt_body" 60
@@ -363,7 +363,7 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 			[.[] | select(.type == "tool.call" and .data.name == "computer_screenshot")] as $calls |
 			[.[] | select(.type == "message")] as $messages |
 			($calls | length) == 1 and ($messages | length) > 0 and
-			($messages[-1].data.text == "boxes-ok")
+			($messages[-1].data.text == "paddock-ok")
 		' "$TEMP_DIR/all-events.json" >/dev/null 2>&1; then
 			events_valid=1
 			break
@@ -372,16 +372,16 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 	done
 	if [[ "$events_valid" != 1 ]]; then
 		jq -r '"events=\(length) tool.calls=\([.[] | select(.type=="tool.call") | .data.name] | join(",")) last_message=\([.[] | select(.type=="message")] | last | .data.text // "none" | .[0:120])"' "$TEMP_DIR/all-events.json" >&2 || true
-		fail 'expected exactly one computer_screenshot tool.call and final message boxes-ok'
+		fail 'expected exactly one computer_screenshot tool.call and final message paddock-ok'
 	fi
 	printf 'OpenCode completed with one screenshot tool call and exact final message\n'
 fi
 
-if [[ -n "${BOXES_SSH_HOST:-}" ]]; then
+if [[ -n "${PADDOCK_SSH_HOST:-}" ]]; then
 	CURRENT_STEP="60-second Xvfb socket and container-log health check"
-	remote_command="set -eu; box_id='$BOX_ID'; container=\$(docker ps -q --filter label=boxes.box-id=\$box_id); test -n \"\$container\"; i=0; while [ \"\$i\" -lt 12 ]; do count=\$(docker exec \"\$container\" sh -c 'test -d /tmp/.X11-unix && find /tmp/.X11-unix -maxdepth 1 -type s -name \"X*\" | wc -l'); test \"\$count\" -lt 64 || { printf 'Xvfb socket count exceeded 63: %s\\n' \"\$count\" >&2; exit 1; }; sleep 5; i=\$((i + 1)); done; count=\$(docker exec \"\$container\" sh -c 'test -d /tmp/.X11-unix && find /tmp/.X11-unix -maxdepth 1 -type s -name \"X*\" | wc -l'); test \"\$count\" -lt 64 || { printf 'Xvfb socket count exceeded 63 after 60 seconds: %s\\n' \"\$count\" >&2; exit 1; }; logs=\$(docker logs \"\$container\" 2>&1); case \"\$logs\" in *Aborted*) printf 'box container logs contain Aborted\\n' >&2; exit 1;; esac"
+	remote_command="set -eu; box_id='$BOX_ID'; container=\$(docker ps -q --filter label=paddock.box-id=\$box_id); test -n \"\$container\"; i=0; while [ \"\$i\" -lt 12 ]; do count=\$(docker exec \"\$container\" sh -c 'test -d /tmp/.X11-unix && find /tmp/.X11-unix -maxdepth 1 -type s -name \"X*\" | wc -l'); test \"\$count\" -lt 64 || { printf 'Xvfb socket count exceeded 63: %s\\n' \"\$count\" >&2; exit 1; }; sleep 5; i=\$((i + 1)); done; count=\$(docker exec \"\$container\" sh -c 'test -d /tmp/.X11-unix && find /tmp/.X11-unix -maxdepth 1 -type s -name \"X*\" | wc -l'); test \"\$count\" -lt 64 || { printf 'Xvfb socket count exceeded 63 after 60 seconds: %s\\n' \"\$count\" >&2; exit 1; }; logs=\$(docker logs \"\$container\" 2>&1); case \"\$logs\" in *Aborted*) printf 'box container logs contain Aborted\\n' >&2; exit 1;; esac"
 	if ! ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
-		"$BOXES_SSH_HOST" "$remote_command" >/dev/null; then
+		"$PADDOCK_SSH_HOST" "$remote_command" >/dev/null; then
 		fail 'remote Xvfb socket or container-log health check failed'
 	fi
 	printf 'Xvfb socket count stayed below 64 for 60 seconds; no Aborted in container logs\n'
@@ -411,18 +411,18 @@ for box_id in "$LIFECYCLE_A_ID" "$LIFECYCLE_B_ID"; do
 	api_no_body POST "/sandboxes/$box_id/stop" 200
 	wait_box_state "$box_id" stopped 240
 done
-if ! boxes list --filter s >"$TEMP_DIR/stopped-boxes.json"; then
-	fail 'boxes list --filter s failed'
+if ! paddock list --filter s >"$TEMP_DIR/stopped-boxes.json"; then
+	fail 'paddock list --filter s failed'
 fi
 jq -e --arg a "$LIFECYCLE_A_ID" --arg b "$LIFECYCLE_B_ID" \
 	'any(.[]; .id == $a and .state == "stopped") and any(.[]; .id == $b and .state == "stopped")' \
-	"$TEMP_DIR/stopped-boxes.json" >/dev/null || fail 'boxes list --filter s did not show both stopped lifecycle boxes'
+	"$TEMP_DIR/stopped-boxes.json" >/dev/null || fail 'paddock list --filter s did not show both stopped lifecycle boxes'
 
-if ! boxes resume "$LIFECYCLE_B_ID" >/dev/null; then
+if ! paddock resume "$LIFECYCLE_B_ID" >/dev/null; then
 	fail 'could not resume lifecycle box B'
 fi
 wait_box_state "$LIFECYCLE_B_ID" ready 300
-if ! boxes resume "$LIFECYCLE_A_ID" >/dev/null; then
+if ! paddock resume "$LIFECYCLE_A_ID" >/dev/null; then
 	fail 'could not resume lifecycle box A'
 fi
 wait_box_state "$LIFECYCLE_A_ID" ready 300
@@ -431,26 +431,26 @@ run_box_command "$LIFECYCLE_A_ID" 'verify box A data isolation' \
 run_box_command "$LIFECYCLE_B_ID" 'verify box B data isolation' \
 	'test "$(cat /config/important.txt)" = box-b-config && test "$(stat -c %u:%g /opt/proj/tool)" = 0:0 && test -x /opt/proj/tool && test "$(/opt/proj/tool)" = tool-b'
 
-if ! boxes extend "$LIFECYCLE_A_ID" --no-auto-stop >/dev/null; then
-	fail 'boxes extend --no-auto-stop failed for lifecycle box A'
+if ! paddock extend "$LIFECYCLE_A_ID" --no-auto-stop >/dev/null; then
+	fail 'paddock extend --no-auto-stop failed for lifecycle box A'
 fi
-if ! boxes info "$LIFECYCLE_A_ID" >"$TEMP_DIR/lifecycle-a-info.json" || \
+if ! paddock info "$LIFECYCLE_A_ID" >"$TEMP_DIR/lifecycle-a-info.json" || \
 	! jq -e '.autoStop == false' "$TEMP_DIR/lifecycle-a-info.json" >/dev/null; then
 	fail 'lifecycle box A autoStop did not become false'
 fi
-if ! boxes extend "$LIFECYCLE_A_ID" --hours 1 >/dev/null; then
-	fail 'boxes extend --hours 1 failed for lifecycle box A'
+if ! paddock extend "$LIFECYCLE_A_ID" --hours 1 >/dev/null; then
+	fail 'paddock extend --hours 1 failed for lifecycle box A'
 fi
-if ! boxes info "$LIFECYCLE_A_ID" >"$TEMP_DIR/lifecycle-a-info.json" || \
+if ! paddock info "$LIFECYCLE_A_ID" >"$TEMP_DIR/lifecycle-a-info.json" || \
 	! jq -e '.autoStop == true and .ttlRemainingSeconds >= 3500 and .ttlRemainingSeconds <= 3600' \
 		"$TEMP_DIR/lifecycle-a-info.json" >/dev/null; then
 	fail 'lifecycle box A did not receive an approximately one-hour TTL'
 fi
 
-if ! boxes delete "$LIFECYCLE_A_ID" --yes >/dev/null; then
+if ! paddock delete "$LIFECYCLE_A_ID" --yes >/dev/null; then
 	fail 'could not delete lifecycle box A'
 fi
-if ! boxes delete "$LIFECYCLE_B_ID" --yes >/dev/null; then
+if ! paddock delete "$LIFECYCLE_B_ID" --yes >/dev/null; then
 	fail 'could not delete lifecycle box B'
 fi
 printf 'multi-box lifecycle, isolated persistence, and TTL extensions verified\n'

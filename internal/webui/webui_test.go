@@ -17,7 +17,7 @@ func TestHandlerServesEmbeddedUIAndFallsBackForApplicationRoutes(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 			}
-			if !strings.Contains(response.Body.String(), "Boxes") {
+			if !strings.Contains(response.Body.String(), "Paddock") {
 				t.Fatalf("response body does not contain embedded UI: %q", response.Body.String())
 			}
 		})

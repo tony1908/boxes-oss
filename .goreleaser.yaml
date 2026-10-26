@@ -1,29 +1,29 @@
 version: 2
 
-project_name: boxes
+project_name: paddock
 
 before:
   hooks:
     - make web
 
 builds:
-  - id: boxes-server
-    main: ./cmd/boxes-server
-    binary: boxes-server
+  - id: paddock-server
+    main: ./cmd/paddock-server
+    binary: paddock-server
     env:
       - CGO_ENABLED=0
     goos: [linux]
     goarch: [amd64, arm64]
-  - id: boxes-agent
-    main: ./cmd/boxes-agent
-    binary: boxes-agent
+  - id: paddock-agent
+    main: ./cmd/paddock-agent
+    binary: paddock-agent
     env:
       - CGO_ENABLED=0
     goos: [linux]
     goarch: [amd64, arm64]
-  - id: boxes
-    main: ./cmd/boxes
-    binary: boxes
+  - id: paddock
+    main: ./cmd/paddock
+    binary: paddock
     env:
       - CGO_ENABLED=0
     goos: [darwin, linux, windows]

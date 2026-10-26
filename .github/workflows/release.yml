@@ -54,8 +54,8 @@ jobs:
           platforms: linux/amd64 # ponytail: amd64 only, add arm64 via QEMU/buildx when needed
           push: true
           tags: |
-            ghcr.io/tony1908/boxes-box:latest
-            ghcr.io/tony1908/boxes-box:${{ github.ref_name }}
+            ghcr.io/tony1908/paddock-box:latest
+            ghcr.io/tony1908/paddock-box:${{ github.ref_name }}
       - uses: docker/build-push-action@v6
         with:
           context: images/tools
@@ -63,5 +63,5 @@ jobs:
           platforms: linux/amd64 # ponytail: amd64 only, add arm64 via QEMU/buildx when needed
           push: true
           tags: |
-            ghcr.io/tony1908/boxes-tools:latest
-            ghcr.io/tony1908/boxes-tools:${{ github.ref_name }}
+            ghcr.io/tony1908/paddock-tools:latest
+            ghcr.io/tony1908/paddock-tools:${{ github.ref_name }}

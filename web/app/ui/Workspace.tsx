@@ -115,7 +115,7 @@ export function Workspace({ view }: { view: View }) {
     if (requestedTab && tabNames[requestedTab]) setTab(tabNames[requestedTab]);
     if (requestedTab === 'conversations') { query.set('tab', 'activity'); window.history.replaceState({}, '', `${window.location.pathname}?${query.toString()}`); }
     setOrigin(window.location.origin);
-    const savedTheme = window.localStorage.getItem('boxes-theme');
+    const savedTheme = window.localStorage.getItem('paddock-theme');
     if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.dataset.theme = savedTheme;
     setTheme(savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   }, []);
@@ -131,7 +131,7 @@ export function Workspace({ view }: { view: View }) {
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const updateTheme = (event: MediaQueryListEvent) => {
-      if (!window.localStorage.getItem('boxes-theme')) setTheme(event.matches ? 'dark' : 'light');
+      if (!window.localStorage.getItem('paddock-theme')) setTheme(event.matches ? 'dark' : 'light');
     };
     media.addEventListener('change', updateTheme);
     return () => media.removeEventListener('change', updateTheme);
@@ -184,7 +184,7 @@ export function Workspace({ view }: { view: View }) {
       }
     } catch (cause) {
       setItems([]);
-      setProblem(cause instanceof Error ? cause.message : 'Could not reach the Boxes API.');
+      setProblem(cause instanceof Error ? cause.message : 'Could not reach the Paddock API.');
     } finally {
       setLoading(false);
     }
@@ -221,7 +221,7 @@ export function Workspace({ view }: { view: View }) {
     const next = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     setTheme(next);
-    window.localStorage.setItem('boxes-theme', next);
+    window.localStorage.setItem('paddock-theme', next);
   }
 
   async function signOut() {
@@ -353,7 +353,7 @@ export function Workspace({ view }: { view: View }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <Link className="brand" href="/"><BrandMark size={18} animated={loading} /><span>boxes</span></Link>
+        <Link className="brand" href="/"><BrandMark size={18} animated={loading} /><span>paddock</span></Link>
         <nav aria-label="Workspace">
           {links.map((item) => <Link className={`nav-item ${activeNav === item.view ? 'active' : ''}`} href={item.href} key={item.view}><Icon name={item.icon} className="nav-icon" />{item.label}</Link>)}
           {settingsLinks.map((item) => <Link className={`nav-item ${activeNav === item.view ? 'active' : ''}`} href={item.href} key={item.view}><Icon name={item.icon as any} className="nav-icon" />{item.label}</Link>)}
@@ -361,7 +361,7 @@ export function Workspace({ view }: { view: View }) {
         <div className="sidebar-bottom"><button className="theme-toggle" onClick={toggleTheme}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button><div className="sidebar-account"><strong>{account?.email ?? ''}</strong><button type="button" className="text-link" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? 'Signing out...' : 'Sign out'}</button></div></div>
       </aside>
       <main className="main-area">
-        <header className="topbar"><Link className="brand mobile-brand" href="/"><BrandMark size={20} animated={loading} /><span>boxes</span></Link><button className="menu-toggle" onClick={() => document.body.classList.toggle('nav-open')}><Icon name="menu" size={18} />Menu</button></header>
+        <header className="topbar"><Link className="brand mobile-brand" href="/"><BrandMark size={20} animated={loading} /><span>paddock</span></Link><button className="menu-toggle" onClick={() => document.body.classList.toggle('nav-open')}><Icon name="menu" size={18} />Menu</button></header>
         <div className="page-content">
           <div className="page-heading"><div>{view === 'sandbox' && sandbox ? <><h1 className="box-title"><code>{sandbox.id}</code><button className="copy-button" aria-label="Copy box ID" title="Copy box ID" onClick={() => { void navigator.clipboard?.writeText(sandbox.id); setCopiedID(true); window.setTimeout(() => setCopiedID(false), 1200); }}>{copiedID ? <Icon name="check" /> : <Icon name="copy" />}</button></h1><div className="box-meta"><StateBadge state={sandbox.state}/><span>{sizeLabel(sandbox.type)}</span><span>{detailAutoStopLabel(sandbox, now)}</span>{sandbox.idleStopSeconds ? <span>{idleStopLabel(sandbox.idleStopSeconds)}</span> : null}<button className="text-link" onClick={() => { setTimerSelection(sandbox.autoStop === false ? 'always' : String(sandbox.ttlSeconds ?? 3600)); setTimerDialog(true); }}>Change</button></div></> : <h1>{heading.title}</h1>}</div><div className="heading-actions">{view === 'sandbox' && sandbox && <><button className="button button-primary" onClick={() => changeTab('Desktop')}>Open desktop</button><button className="button button-secondary" onClick={() => void sandboxAction(sandbox.state === 'stopped' ? 'resume' : 'stop')}>{sandbox.state === 'stopped' ? 'Resume' : 'Stop'}</button><button className="button button-secondary danger-link" onClick={() => setConfirmDelete(true)}>Delete</button></>}{view === 'sandboxes' && <button className="button button-primary" onClick={() => setDialog(true)}><Icon name="plus" size={14} />New sandbox</button>}{view === 'templates' && <button className="button button-primary" onClick={() => setDialog(true)}><Icon name="plus" size={14} />Save template</button>}{view === 'environments' && <button className="button button-primary" onClick={() => setDialog(true)}><Icon name="plus" size={14} />New environment</button>}{view === 'api-keys' && <button className="button button-primary" onClick={() => setDialog(true)}><Icon name="plus" size={14} />Create key</button>}{view === 'webhooks' && <button className="button button-primary" onClick={() => setDialog(true)}><Icon name="plus" size={14} />Add endpoint</button>}</div></div>
 

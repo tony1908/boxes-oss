@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
 )
 
 const usageContainerID = "0123456789abcdef"
@@ -104,7 +104,7 @@ func TestBoxStatsReportsCumulativeUsageAndKeepsCPUPercent(t *testing.T) {
 
 func TestEnsureMetadataBlockAddsOneRuleAndIsIdempotent(t *testing.T) {
 	docker := dockercli.New(testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
-		if len(argv) > 3 && argv[1] == "network" && argv[2] == "inspect" && argv[3] == "boxes-net" {
+		if len(argv) > 3 && argv[1] == "network" && argv[2] == "inspect" && argv[3] == "paddock-net" {
 			_, _ = io.WriteString(stdout, "172.18.0.0/16\n")
 			return 0, nil
 		}
@@ -147,6 +147,6 @@ func TestEnsureMetadataBlockFailsWithoutSubnet(t *testing.T) {
 		return 0, nil
 	}}
 	if err := service.EnsureMetadataBlock(context.Background()); err == nil {
-		t.Fatal("EnsureMetadataBlock without boxes-net subnet = nil, want error")
+		t.Fatal("EnsureMetadataBlock without paddock-net subnet = nil, want error")
 	}
 }

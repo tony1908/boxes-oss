@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/boxd"
-	"github.com/tony1908/boxes-oss/internal/computer"
+	"github.com/tony1908/paddock/internal/boxd"
+	"github.com/tony1908/paddock/internal/computer"
 )
 
 func main() {
@@ -89,7 +89,7 @@ func serve(args []string) error {
 func setup(args []string) error {
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	root := flags.String("root", "/config", "box config directory")
-	setupFile := flags.String("file", "/run/boxes/setup.json", "setup configuration file")
+	setupFile := flags.String("file", "/run/paddock/setup.json", "setup configuration file")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

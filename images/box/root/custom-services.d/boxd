@@ -2,5 +2,5 @@
 set -e
 
 export HOME=/config
-export PATH="/opt/boxes-tools/bin:$PATH"
+export PATH="/opt/paddock-tools/bin:$PATH"
 exec s6-setuidgid abc boxd serve

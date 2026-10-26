@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${BOXES_GITHUB_REPO:-tony1908/boxes-oss}"
+REPO="${PADDOCK_GITHUB_REPO:-tony1908/paddock}"
 SYSBOX_VERSION="${SYSBOX_VERSION:-0.7.1}"
 DOMAIN=""
 EMAIL=""
 PUBLIC_URL=""
-IMAGE="ghcr.io/tony1908/boxes-box:latest"
+IMAGE="ghcr.io/tony1908/paddock-box:latest"
 IMAGE_CUSTOM=0
 HOST_BASE=""
 MEMORY_OVERCOMMIT="1.0"
-TOOLS_IMAGE="${BOXES_TOOLS_IMAGE:-}"
+TOOLS_IMAGE="${PADDOCK_TOOLS_IMAGE:-}"
 S3_ENDPOINT=""
 S3_BUCKET=""
-S3_PREFIX="boxes"
+S3_PREFIX="paddock"
 S3_REGION=""
 UPGRADE=0
 ALLOW_RUNTIME_RESTART=0
@@ -53,19 +53,19 @@ check_os() {
 
 configure_userns() {
   local setting=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
-  if [[ -e "$setting" && ! -e /etc/sysctl.d/99-boxes.conf ]]; then
-    cat > /etc/sysctl.d/99-boxes.conf <<'SYSCTL'
+  if [[ -e "$setting" && ! -e /etc/sysctl.d/99-paddock.conf ]]; then
+    cat > /etc/sysctl.d/99-paddock.conf <<'SYSCTL'
 # Boxes are the only workload on this host; Sysbox uses user namespaces itself,
-# and this restriction prevents bwrap inside Boxes from creating its uid map.
+# and this restriction prevents bwrap inside Paddock from creating its uid map.
 kernel.apparmor_restrict_unprivileged_userns = 0
 SYSCTL
     sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-    printf 'Boxes: relaxed the host AppArmor user-namespace restriction for Sysbox workloads.\n'
+    printf 'Paddock: relaxed the host AppArmor user-namespace restriction for Sysbox workloads.\n'
   fi
 }
 
 configure_swap() {
-  local swapfile=/var/lib/boxes/swapfile total_kib size_mib created=0
+  local swapfile=/var/lib/paddock/swapfile total_kib size_mib created=0
   if ! swapon --show --noheadings | awk 'NF { found=1 } END { exit !found }'; then
     total_kib="$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo)"
     size_mib=$((total_kib / 1024))
@@ -79,10 +79,10 @@ configure_swap() {
     chmod 0600 "$swapfile"
     if ((created)); then mkswap -f "$swapfile"; fi
     swapon "$swapfile"
-    printf 'Boxes: enabled %s MiB of host swap.\n' "$size_mib"
+    printf 'Paddock: enabled %s MiB of host swap.\n' "$size_mib"
   fi
-  if [[ ! -e /etc/sysctl.d/99-boxes-swap.conf ]]; then
-    cat > /etc/sysctl.d/99-boxes-swap.conf <<'SYSCTL'
+  if [[ ! -e /etc/sysctl.d/99-paddock-swap.conf ]]; then
+    cat > /etc/sysctl.d/99-paddock-swap.conf <<'SYSCTL'
 vm.swappiness = 10
 SYSCTL
     sysctl -w vm.swappiness=10
@@ -111,10 +111,10 @@ install_sysbox() {
 }
 
 install_traefik() {
-  local config=/etc/boxes/traefik/traefik.yml
-  install -d -m 0755 /etc/boxes/traefik/dynamic
-  if [[ ! -e /etc/boxes/traefik/acme.json ]]; then
-    install -m 0600 /dev/null /etc/boxes/traefik/acme.json
+  local config=/etc/paddock/traefik/traefik.yml
+  install -d -m 0755 /etc/paddock/traefik/dynamic
+  if [[ ! -e /etc/paddock/traefik/acme.json ]]; then
+    install -m 0600 /dev/null /etc/paddock/traefik/acme.json
   fi
   local script_dir
   script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -126,29 +126,29 @@ install_traefik() {
   fi
   chmod 0644 "$config"
   docker pull traefik:v3.3
-  docker rm -f boxes-traefik >/dev/null 2>&1 || true
-  docker run -d --name boxes-traefik --restart unless-stopped \
+  docker rm -f paddock-traefik >/dev/null 2>&1 || true
+  docker run -d --name paddock-traefik --restart unless-stopped \
     --network host \
-    -v /etc/boxes/traefik:/etc/boxes/traefik \
-    traefik:v3.3 --configFile=/etc/boxes/traefik/traefik.yml
+    -v /etc/paddock/traefik:/etc/paddock/traefik \
+    traefik:v3.3 --configFile=/etc/paddock/traefik/traefik.yml
 }
 
 
 release_asset() {
   local name=$1 tag version tmp archive
-  if [[ -n "${BOXES_BINARIES_DIR:-}" ]]; then
-    if [[ ! -f "${BOXES_BINARIES_DIR}/${name}" ]]; then
-      printf 'Local binary not found: %s/%s (BOXES_BINARIES_DIR is set).\n' "$BOXES_BINARIES_DIR" "$name" >&2
+  if [[ -n "${PADDOCK_BINARIES_DIR:-}" ]]; then
+    if [[ ! -f "${PADDOCK_BINARIES_DIR}/${name}" ]]; then
+      printf 'Local binary not found: %s/%s (PADDOCK_BINARIES_DIR is set).\n' "$PADDOCK_BINARIES_DIR" "$name" >&2
       exit 1
     fi
-    install -m 0755 "${BOXES_BINARIES_DIR}/${name}" "/usr/local/bin/${name}"
+    install -m 0755 "${PADDOCK_BINARIES_DIR}/${name}" "/usr/local/bin/${name}"
     return
   fi
   tag="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${REPO}/releases/latest" | jq -er '.tag_name')"
   version="${tag#v}"
   tmp="$(mktemp -d)"
-  archive="${tmp}/boxes_${version}_linux_${ARCH}.tar.gz"
-  curl -fsSL "https://github.com/${REPO}/releases/download/${tag}/boxes_${version}_linux_${ARCH}.tar.gz" -o "$archive"
+  archive="${tmp}/paddock_${version}_linux_${ARCH}.tar.gz"
+  curl -fsSL "https://github.com/${REPO}/releases/download/${tag}/paddock_${version}_linux_${ARCH}.tar.gz" -o "$archive"
   tar -xzf "$archive" -C "$tmp" "$name"
   install -m 0755 "${tmp}/${name}" "/usr/local/bin/${name}"
   rm -rf "$tmp"
@@ -156,20 +156,20 @@ release_asset() {
 
 
 install_cli_binaries() {
-  local strict=${1:-0} destination=/var/lib/boxes/cli name
+  local strict=${1:-0} destination=/var/lib/paddock/cli name
   install -d -m 0755 "$destination"
   local -a platforms=(darwin-arm64 darwin-amd64 linux-amd64 linux-arm64 windows-amd64 windows-arm64)
   local tag="" version="" tmp="" platform goos goarch archive binary
-  if [[ -n "${BOXES_BINARIES_DIR:-}" ]]; then
+  if [[ -n "${PADDOCK_BINARIES_DIR:-}" ]]; then
     for platform in "${platforms[@]}"; do
-      name="boxes-${platform}"
+      name="paddock-${platform}"
       [[ "$platform" == windows-* ]] && name+=".exe"
-      if [[ ! -f "${BOXES_BINARIES_DIR}/${name}" ]]; then
+      if [[ ! -f "${PADDOCK_BINARIES_DIR}/${name}" ]]; then
         if ((strict == 0)); then continue; fi
-        printf 'Local CLI binary not found: %s/%s (BOXES_BINARIES_DIR is set).\n' "$BOXES_BINARIES_DIR" "$name" >&2
+        printf 'Local CLI binary not found: %s/%s (PADDOCK_BINARIES_DIR is set).\n' "$PADDOCK_BINARIES_DIR" "$name" >&2
         exit 1
       fi
-      install -m 0755 "${BOXES_BINARIES_DIR}/${name}" "${destination}/${name}"
+      install -m 0755 "${PADDOCK_BINARIES_DIR}/${name}" "${destination}/${name}"
     done
     return
   fi
@@ -178,19 +178,19 @@ install_cli_binaries() {
   version="${tag#v}"
   tmp="$(mktemp -d)"
   for platform in "${platforms[@]}"; do
-    name="boxes-${platform}"
+    name="paddock-${platform}"
     goos="${platform%-*}"
     goarch="${platform##*-}"
     if [[ "$goos" == windows ]]; then
-      archive="${tmp}/boxes_${version}_${goos}_${goarch}.zip"
-      curl -fsSL "https://github.com/${REPO}/releases/download/${tag}/boxes_${version}_${goos}_${goarch}.zip" -o "$archive"
-      unzip -p "$archive" boxes.exe > "${tmp}/boxes.exe"
-      binary="${tmp}/boxes.exe"
+      archive="${tmp}/paddock_${version}_${goos}_${goarch}.zip"
+      curl -fsSL "https://github.com/${REPO}/releases/download/${tag}/paddock_${version}_${goos}_${goarch}.zip" -o "$archive"
+      unzip -p "$archive" paddock.exe > "${tmp}/paddock.exe"
+      binary="${tmp}/paddock.exe"
     else
-      archive="${tmp}/boxes_${version}_${goos}_${goarch}.tar.gz"
-      curl -fsSL "https://github.com/${REPO}/releases/download/${tag}/boxes_${version}_${goos}_${goarch}.tar.gz" -o "$archive"
-      tar -xzf "$archive" -C "$tmp" boxes
-      binary="${tmp}/boxes"
+      archive="${tmp}/paddock_${version}_${goos}_${goarch}.tar.gz"
+      curl -fsSL "https://github.com/${REPO}/releases/download/${tag}/paddock_${version}_${goos}_${goarch}.tar.gz" -o "$archive"
+      tar -xzf "$archive" -C "$tmp" paddock
+      binary="${tmp}/paddock"
     fi
     [[ "$goos" == windows ]] && name+=".exe"
     install -m 0755 "$binary" "${destination}/${name}"
@@ -240,36 +240,36 @@ ensure_box_image() {
 }
 
 write_systemd_units() {
-  cat > /etc/systemd/system/boxes-server.service <<'UNIT'
+  cat > /etc/systemd/system/paddock-server.service <<'UNIT'
 [Unit]
-Description=Boxes control plane server
+Description=Paddock control plane server
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=BOXES_MEMORY_OVERCOMMIT=1.0
-EnvironmentFile=/etc/boxes/server.env
-ExecStart=/usr/local/bin/boxes-server --addr :8080 --data-dir /var/lib/boxes --public-url ${BOXES_PUBLIC_URL} --image ${BOXES_IMAGE} --snapshot-interval ${BOXES_SNAPSHOT_INTERVAL} --memory-overcommit ${BOXES_MEMORY_OVERCOMMIT}
+Environment=PADDOCK_MEMORY_OVERCOMMIT=1.0
+EnvironmentFile=/etc/paddock/server.env
+ExecStart=/usr/local/bin/paddock-server --addr :8080 --data-dir /var/lib/paddock --public-url ${PADDOCK_PUBLIC_URL} --image ${PADDOCK_IMAGE} --snapshot-interval ${PADDOCK_SNAPSHOT_INTERVAL} --memory-overcommit ${PADDOCK_MEMORY_OVERCOMMIT}
 Restart=on-failure
 RestartSec=5
-StateDirectory=boxes
+StateDirectory=paddock
 UMask=0077
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 
-  cat > /etc/systemd/system/boxes-agent.service <<'UNIT'
+  cat > /etc/systemd/system/paddock-agent.service <<'UNIT'
 [Unit]
-Description=Boxes local agent
-After=network-online.target docker.service boxes-server.service
+Description=Paddock local agent
+After=network-online.target docker.service paddock-server.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/boxes/agent.env
-ExecStart=/usr/local/bin/boxes-agent
+EnvironmentFile=/etc/paddock/agent.env
+ExecStart=/usr/local/bin/paddock-agent
 Restart=always
 RestartSec=5
 UMask=0077
@@ -342,15 +342,15 @@ upgrade_sysbox_if_needed() {
     printf 'Sysbox version change required (installed: %s, requested: %s). Refusing to restart the runtime; rerun with --upgrade --allow-runtime-restart during a maintenance window.\n' "${installed_version:-not installed}" "$SYSBOX_VERSION" >&2
     return 1
   fi
-  if [[ ! -r /var/lib/boxes/admin.token ]]; then
-    printf 'Cannot safely upgrade Sysbox: /var/lib/boxes/admin.token is unavailable for the local server API.\n' >&2
+  if [[ ! -r /var/lib/paddock/admin.token ]]; then
+    printf 'Cannot safely upgrade Sysbox: /var/lib/paddock/admin.token is unavailable for the local server API.\n' >&2
     return 1
   fi
 
-  work_dir="$(mktemp -d /run/boxes-runtime-upgrade.XXXXXX)"
+  work_dir="$(mktemp -d /run/paddock-runtime-upgrade.XXXXXX)"
   chmod 0700 "$work_dir"
   RUNTIME_AUTH_CONFIG="${work_dir}/curl.conf"
-  printf 'header = "Authorization: Bearer %s"\n' "$(< /var/lib/boxes/admin.token)" > "$RUNTIME_AUTH_CONFIG"
+  printf 'header = "Authorization: Bearer %s"\n' "$(< /var/lib/paddock/admin.token)" > "$RUNTIME_AUTH_CONFIG"
   chmod 0600 "$RUNTIME_AUTH_CONFIG"
   : > "${work_dir}/stopped.ids"
 
@@ -412,36 +412,36 @@ upgrade_sysbox_if_needed() {
 upgrade_install() {
   local public_url image tools_image
   require_root
-  if [[ ! -s /etc/boxes/server.env ]]; then
-    printf 'Cannot upgrade: /etc/boxes/server.env does not exist; run a fresh install first.\n' >&2
+  if [[ ! -s /etc/paddock/server.env ]]; then
+    printf 'Cannot upgrade: /etc/paddock/server.env does not exist; run a fresh install first.\n' >&2
     exit 1
   fi
-  env_read /etc/boxes/server.env BOXES_PUBLIC_URL || { printf 'Cannot upgrade: BOXES_PUBLIC_URL is missing from /etc/boxes/server.env.\n' >&2; exit 1; }
+  env_read /etc/paddock/server.env PADDOCK_PUBLIC_URL || { printf 'Cannot upgrade: PADDOCK_PUBLIC_URL is missing from /etc/paddock/server.env.\n' >&2; exit 1; }
   public_url="$REPLY"
   detect_arch
   check_os
   upgrade_sysbox_if_needed
   configure_userns
   configure_swap
-  install -d -m 0750 /etc/boxes /var/lib/boxes
+  install -d -m 0750 /etc/paddock /var/lib/paddock
 
-  image="ghcr.io/tony1908/boxes-box:latest"
-  tools_image="ghcr.io/tony1908/boxes-tools:latest"
-  env_add_default /etc/boxes/server.env BOXES_IMAGE "$image"
-  env_add_default /etc/boxes/server.env BOXES_TOOLS_IMAGE "$tools_image"
-  env_add_default /etc/boxes/agent.env BOXES_TOOLS_IMAGE "$tools_image"
-  env_add_default /etc/boxes/server.env BOXES_MEMORY_OVERCOMMIT 1.0
-  chmod 0600 /etc/boxes/server.env
+  image="ghcr.io/tony1908/paddock-box:latest"
+  tools_image="ghcr.io/tony1908/paddock-tools:latest"
+  env_add_default /etc/paddock/server.env PADDOCK_IMAGE "$image"
+  env_add_default /etc/paddock/server.env PADDOCK_TOOLS_IMAGE "$tools_image"
+  env_add_default /etc/paddock/agent.env PADDOCK_TOOLS_IMAGE "$tools_image"
+  env_add_default /etc/paddock/server.env PADDOCK_MEMORY_OVERCOMMIT 1.0
+  chmod 0600 /etc/paddock/server.env
 
-  docker network inspect boxes-net >/dev/null 2>&1 || docker network create --driver bridge --opt com.docker.network.bridge.enable_icc=false boxes-net >/dev/null
-  release_asset boxes-server
-  release_asset boxes-agent
+  docker network inspect paddock-net >/dev/null 2>&1 || docker network create --driver bridge --opt com.docker.network.bridge.enable_icc=false paddock-net >/dev/null
+  release_asset paddock-server
+  release_asset paddock-agent
   install_cli_binaries 1
   write_systemd_units
   systemctl daemon-reload
-  systemctl enable boxes-server.service boxes-agent.service
-  systemctl restart boxes-server.service boxes-agent.service
-  printf 'Boxes services upgraded for %s.\n' "$public_url"
+  systemctl enable paddock-server.service paddock-agent.service
+  systemctl restart paddock-server.service paddock-agent.service
+  printf 'Paddock services upgraded for %s.\n' "$public_url"
 }
 
 while (($#)); do
@@ -483,10 +483,10 @@ if [[ ! "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ || ! "$EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-
   exit 2
 fi
 PUBLIC_URL="${PUBLIC_URL:-https://${DOMAIN}}"
-IMAGE="${IMAGE:-ghcr.io/tony1908/boxes-box:latest}"
-TOOLS_IMAGE="${TOOLS_IMAGE:-ghcr.io/tony1908/boxes-tools:latest}"
+IMAGE="${IMAGE:-ghcr.io/tony1908/paddock-box:latest}"
+TOOLS_IMAGE="${TOOLS_IMAGE:-ghcr.io/tony1908/paddock-tools:latest}"
 if [[ ! "$PUBLIC_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
-  printf 'The public URL must be an https origin (for example, https://boxes.example.com).\n' >&2
+  printf 'The public URL must be an https origin (for example, https://paddock.example.com).\n' >&2
   exit 2
 fi
 if [[ "$PUBLIC_URL" != "https://${DOMAIN}" ]]; then
@@ -509,7 +509,7 @@ if [[ -n "$HOST_BASE" && ! "$HOST_BASE" =~ ^[A-Za-z0-9.-]+$ ]]; then
   printf 'The host base must be a valid DNS hostname.\n' >&2
   exit 2
 fi
-RESTIC_REPOSITORY="/var/lib/boxes/restic"
+RESTIC_REPOSITORY="/var/lib/paddock/restic"
 if [[ -z "$S3_ENDPOINT" && -z "$S3_BUCKET" && -n "$S3_REGION" ]]; then
   printf 'S3 region requires --s3-endpoint and --s3-bucket.\n' >&2
   exit 2
@@ -519,8 +519,8 @@ if [[ -n "$S3_ENDPOINT" || -n "$S3_BUCKET" ]]; then
     printf 'S3 endpoint, bucket, or prefix is invalid.\n' >&2
     exit 2
   fi
-  if [[ ! "${BOXES_S3_ACCESS_KEY:-}" =~ ^[A-Za-z0-9._+=/-]+$ || ! "${BOXES_S3_SECRET_KEY:-}" =~ ^[A-Za-z0-9._+=/-]+$ ]]; then
-    printf 'Set BOXES_S3_ACCESS_KEY and BOXES_S3_SECRET_KEY in the environment to use S3 storage.\n' >&2
+  if [[ ! "${PADDOCK_S3_ACCESS_KEY:-}" =~ ^[A-Za-z0-9._+=/-]+$ || ! "${PADDOCK_S3_SECRET_KEY:-}" =~ ^[A-Za-z0-9._+=/-]+$ ]]; then
+    printf 'Set PADDOCK_S3_ACCESS_KEY and PADDOCK_S3_SECRET_KEY in the environment to use S3 storage.\n' >&2
     exit 2
   fi
   S3_ENDPOINT="${S3_ENDPOINT%/}"
@@ -541,68 +541,68 @@ install_docker
 install_sysbox
 ensure_box_image
 if [[ "$TOOLS_IMAGE" != "none" ]] && ! docker image inspect "$TOOLS_IMAGE" >/dev/null 2>&1; then docker pull "$TOOLS_IMAGE"; fi
-docker network inspect boxes-net >/dev/null 2>&1 || docker network create --driver bridge --opt com.docker.network.bridge.enable_icc=false boxes-net >/dev/null
+docker network inspect paddock-net >/dev/null 2>&1 || docker network create --driver bridge --opt com.docker.network.bridge.enable_icc=false paddock-net >/dev/null
 install_traefik
 
-install -d -m 0750 /etc/boxes
+install -d -m 0750 /etc/paddock
 if [[ "$RESTIC_REPOSITORY" == /* ]]; then install -d -m 0750 "$RESTIC_REPOSITORY"; fi
-if [[ ! -s /etc/boxes/join-token ]]; then
-  openssl rand -hex 32 > /etc/boxes/join-token
-  chmod 0600 /etc/boxes/join-token
+if [[ ! -s /etc/paddock/join-token ]]; then
+  openssl rand -hex 32 > /etc/paddock/join-token
+  chmod 0600 /etc/paddock/join-token
 fi
-if [[ ! -s /etc/boxes/restic-password ]]; then
-  openssl rand -hex 32 > /etc/boxes/restic-password
-  chmod 0600 /etc/boxes/restic-password
+if [[ ! -s /etc/paddock/restic-password ]]; then
+  openssl rand -hex 32 > /etc/paddock/restic-password
+  chmod 0600 /etc/paddock/restic-password
 fi
-JOIN_TOKEN="$(< /etc/boxes/join-token)"
-RESTIC_PASSWORD_VALUE="$(< /etc/boxes/restic-password)"
+JOIN_TOKEN="$(< /etc/paddock/join-token)"
+RESTIC_PASSWORD_VALUE="$(< /etc/paddock/restic-password)"
 HOST_BASE="${HOST_BASE:-$(detect_host_base)}"
 
-release_asset boxes-server
-release_asset boxes-agent
+release_asset paddock-server
+release_asset paddock-agent
 install_cli_binaries
-cat > /etc/boxes/server.env <<EOF
-BOXES_PUBLIC_URL=${PUBLIC_URL}
-BOXES_IMAGE=${IMAGE}
-BOXES_TOOLS_IMAGE=${TOOLS_IMAGE}
-BOXES_BOOTSTRAP_JOIN_TOKEN=${JOIN_TOKEN}
-BOXES_BOOTSTRAP_NODE_NAME=local
-BOXES_BOOTSTRAP_HOST_BASE=${HOST_BASE}
-BOXES_SNAPSHOT_INTERVAL=60s
-BOXES_MEMORY_OVERCOMMIT=${MEMORY_OVERCOMMIT}
-BOXES_STORAGE_REPOSITORY=${RESTIC_REPOSITORY}
-BOXES_STORAGE_ENDPOINT=${S3_ENDPOINT}
-BOXES_STORAGE_BUCKET=${S3_BUCKET}
-BOXES_STORAGE_PREFIX=${S3_PREFIX}
-BOXES_STORAGE_REGION=${S3_REGION}
-BOXES_STORAGE_ACCESS_KEY=${BOXES_S3_ACCESS_KEY:-}
-BOXES_STORAGE_SECRET_KEY=${BOXES_S3_SECRET_KEY:-}
-BOXES_STORAGE_RESTIC_PASSWORD=${RESTIC_PASSWORD_VALUE}
+cat > /etc/paddock/server.env <<EOF
+PADDOCK_PUBLIC_URL=${PUBLIC_URL}
+PADDOCK_IMAGE=${IMAGE}
+PADDOCK_TOOLS_IMAGE=${TOOLS_IMAGE}
+PADDOCK_BOOTSTRAP_JOIN_TOKEN=${JOIN_TOKEN}
+PADDOCK_BOOTSTRAP_NODE_NAME=local
+PADDOCK_BOOTSTRAP_HOST_BASE=${HOST_BASE}
+PADDOCK_SNAPSHOT_INTERVAL=60s
+PADDOCK_MEMORY_OVERCOMMIT=${MEMORY_OVERCOMMIT}
+PADDOCK_STORAGE_REPOSITORY=${RESTIC_REPOSITORY}
+PADDOCK_STORAGE_ENDPOINT=${S3_ENDPOINT}
+PADDOCK_STORAGE_BUCKET=${S3_BUCKET}
+PADDOCK_STORAGE_PREFIX=${S3_PREFIX}
+PADDOCK_STORAGE_REGION=${S3_REGION}
+PADDOCK_STORAGE_ACCESS_KEY=${PADDOCK_S3_ACCESS_KEY:-}
+PADDOCK_STORAGE_SECRET_KEY=${PADDOCK_S3_SECRET_KEY:-}
+PADDOCK_STORAGE_RESTIC_PASSWORD=${RESTIC_PASSWORD_VALUE}
 EOF
-cat > /etc/boxes/agent.env <<EOF
-BOXES_SERVER_URL=wss://${DOMAIN}/api/v1/agent/connect
-BOXES_NODE_TOKEN=${JOIN_TOKEN}
-BOXES_RUNTIME=sysbox-runc
-BOXES_TRAEFIK_DIR=/etc/boxes/traefik/dynamic
-BOXES_TOOLS_IMAGE=${TOOLS_IMAGE}
+cat > /etc/paddock/agent.env <<EOF
+PADDOCK_SERVER_URL=wss://${DOMAIN}/api/v1/agent/connect
+PADDOCK_NODE_TOKEN=${JOIN_TOKEN}
+PADDOCK_RUNTIME=sysbox-runc
+PADDOCK_TRAEFIK_DIR=/etc/paddock/traefik/dynamic
+PADDOCK_TOOLS_IMAGE=${TOOLS_IMAGE}
 RESTIC_REPOSITORY=${RESTIC_REPOSITORY}
 RESTIC_PASSWORD=${RESTIC_PASSWORD_VALUE}
-AWS_ACCESS_KEY_ID=${BOXES_S3_ACCESS_KEY:-}
-AWS_SECRET_ACCESS_KEY=${BOXES_S3_SECRET_KEY:-}
+AWS_ACCESS_KEY_ID=${PADDOCK_S3_ACCESS_KEY:-}
+AWS_SECRET_ACCESS_KEY=${PADDOCK_S3_SECRET_KEY:-}
 AWS_DEFAULT_REGION=${S3_REGION}
 EOF
-chmod 0600 /etc/boxes/server.env /etc/boxes/agent.env
+chmod 0600 /etc/paddock/server.env /etc/paddock/agent.env
 
-printf 'http:\n  routers:\n    boxes-server:\n      rule: "Host(`%s`)"\n      entryPoints: [websecure]\n      service: boxes-server\n      middlewares: [boxes-compress]\n      tls:\n        certResolver: letsencrypt\n  services:\n    boxes-server:\n      loadBalancer:\n        servers:\n          - url: "http://127.0.0.1:8080"\n  middlewares:\n    boxes-compress:\n      compress: {}\n' "$DOMAIN" \
-  > /etc/boxes/traefik/dynamic/boxes-server.yml
-chmod 0600 /etc/boxes/traefik/dynamic/boxes-server.yml
+printf 'http:\n  routers:\n    paddock-server:\n      rule: "Host(`%s`)"\n      entryPoints: [websecure]\n      service: paddock-server\n      middlewares: [paddock-compress]\n      tls:\n        certResolver: letsencrypt\n  services:\n    paddock-server:\n      loadBalancer:\n        servers:\n          - url: "http://127.0.0.1:8080"\n  middlewares:\n    paddock-compress:\n      compress: {}\n' "$DOMAIN" \
+  > /etc/paddock/traefik/dynamic/paddock-server.yml
+chmod 0600 /etc/paddock/traefik/dynamic/paddock-server.yml
 
 write_systemd_units
 systemctl daemon-reload
-systemctl enable --now boxes-server.service
-systemctl enable --now boxes-agent.service
+systemctl enable --now paddock-server.service
+systemctl enable --now paddock-agent.service
 
-printf 'Boxes dashboard: %s\n' "$PUBLIC_URL"
-SETUP_TOKEN="$(< /var/lib/boxes/admin.token)"
+printf 'Paddock dashboard: %s\n' "$PUBLIC_URL"
+SETUP_TOKEN="$(< /var/lib/paddock/admin.token)"
 printf 'Owner setup link (one time): %s/signup/?setup=%s\n' "${PUBLIC_URL%/}" "$SETUP_TOKEN"
-printf 'To read the setup token again: sudo cat /var/lib/boxes/admin.token\n'
+printf 'To read the setup token again: sudo cat /var/lib/paddock/admin.token\n'

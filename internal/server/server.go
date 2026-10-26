@@ -1,4 +1,4 @@
-// Package server implements the boxes control-plane HTTP API.
+// Package server implements the paddock control-plane HTTP API.
 package server
 
 import (
@@ -18,12 +18,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tony1908/boxes-oss/install"
-	"github.com/tony1908/boxes-oss/internal/diagnostics"
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/tunnel"
-	"github.com/tony1908/boxes-oss/internal/types"
-	"github.com/tony1908/boxes-oss/internal/webui"
+	"github.com/tony1908/paddock/install"
+	"github.com/tony1908/paddock/internal/diagnostics"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/tunnel"
+	"github.com/tony1908/paddock/internal/types"
+	"github.com/tony1908/paddock/internal/webui"
 )
 
 // Config contains the persistent and public-facing server settings.
@@ -110,7 +110,7 @@ const (
 	activityActorContextKey
 )
 
-const sessionCookieName = "boxes_session"
+const sessionCookieName = "paddock_session"
 
 // New configures the HTTP API, node tunnel, and encrypted secret storage.
 func New(cfg Config) (*Server, error) {
@@ -124,13 +124,13 @@ func New(cfg Config) (*Server, error) {
 		cfg.PublicURL = "http://localhost:8080"
 	}
 	if cfg.Image == "" {
-		cfg.Image = "ghcr.io/tony1908/boxes-box:latest"
+		cfg.Image = "ghcr.io/tony1908/paddock-box:latest"
 	}
 	if cfg.ToolsImage == "" {
-		cfg.ToolsImage = "ghcr.io/tony1908/boxes-tools:latest"
+		cfg.ToolsImage = "ghcr.io/tony1908/paddock-tools:latest"
 	}
 	if cfg.ToolsImage == "" {
-		cfg.ToolsImage = "ghcr.io/tony1908/boxes-tools:latest"
+		cfg.ToolsImage = "ghcr.io/tony1908/paddock-tools:latest"
 	}
 	if cfg.DesktopSessionTTL <= 0 {
 		cfg.DesktopSessionTTL = 8 * time.Hour
@@ -284,19 +284,19 @@ func (s *Server) cachedNodeHostBases() []string {
 }
 
 func (s *Server) serveCLIInstallScript(w http.ResponseWriter, _ *http.Request) {
-	script := strings.ReplaceAll(string(install.CLIScript), "__BOXES_PUBLIC_URL__", strings.TrimRight(s.cfg.PublicURL, "/"))
+	script := strings.ReplaceAll(string(install.CLIScript), "__PADDOCK_PUBLIC_URL__", strings.TrimRight(s.cfg.PublicURL, "/"))
 	serveInstallAsset(w, []byte(script))
 }
 
 func (s *Server) serveCLIPowerShellInstallScript(w http.ResponseWriter, _ *http.Request) {
-	script := strings.ReplaceAll(string(install.CLIPowerShellScript), "__BOXES_PUBLIC_URL__", strings.TrimRight(s.cfg.PublicURL, "/"))
+	script := strings.ReplaceAll(string(install.CLIPowerShellScript), "__PADDOCK_PUBLIC_URL__", strings.TrimRight(s.cfg.PublicURL, "/"))
 	serveInstallAsset(w, []byte(script))
 }
 
 func (s *Server) serveCLIBinary(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("binary")
 	switch name {
-	case "boxes-darwin-arm64", "boxes-darwin-amd64", "boxes-linux-amd64", "boxes-linux-arm64", "boxes-windows-amd64.exe", "boxes-windows-arm64.exe":
+	case "paddock-darwin-arm64", "paddock-darwin-amd64", "paddock-linux-amd64", "paddock-linux-arm64", "paddock-windows-amd64.exe", "paddock-windows-arm64.exe":
 	default:
 		http.NotFound(w, r)
 		return

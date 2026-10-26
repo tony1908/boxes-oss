@@ -1,4 +1,4 @@
-"""Small synchronous, dependency-light client for the boxes-oss public API."""
+"""Small synchronous, dependency-light client for the Paddock public API."""
 from __future__ import annotations
 
 import json
@@ -9,8 +9,8 @@ from urllib.parse import quote
 import httpx
 
 
-class BoxesError(Exception):
-    """HTTP error returned by boxes-oss."""
+class PaddockError(Exception):
+    """HTTP error returned by Paddock."""
 
     def __init__(self, status: int, code: str, message: str):
         self.status, self.code, self.message = status, code, message
@@ -27,16 +27,16 @@ def _wire(value: Any) -> Any:
     return value
 
 
-def _error(response: httpx.Response) -> BoxesError:
+def _error(response: httpx.Response) -> PaddockError:
     try:
         error = response.json().get("error", {})
     except (ValueError, AttributeError):
         error = {}
-    return BoxesError(response.status_code, error.get("code", "http_error"), error.get("message", response.text or response.reason_phrase))
+    return PaddockError(response.status_code, error.get("code", "http_error"), error.get("message", response.text or response.reason_phrase))
 
 
 class _Namespace:
-    def __init__(self, client: "Boxes"):
+    def __init__(self, client: "Paddock"):
         self._c = client
 
     @staticmethod
@@ -44,8 +44,8 @@ class _Namespace:
         return quote(value, safe="")
 
 
-class Boxes:
-    """Client for a boxes-oss server. Call :meth:`close` when finished."""
+class Paddock:
+    """Client for a Paddock server. Call :meth:`close` when finished."""
 
     def __init__(self, base_url: str, api_key: str, *, transport: Optional[httpx.BaseTransport] = None, poll_interval: float = 0.5, timeout: float = 60.0):
         self.base_url = base_url.rstrip("/") + "/api/v1"
@@ -74,7 +74,7 @@ class Boxes:
         return response.content
 
     def _stream_lines(self, method: str, path: str, params: Optional[dict] = None) -> Iterator[str]:
-        """Yield response lines as they arrive, raising BoxesError for error responses."""
+        """Yield response lines as they arrive, raising PaddockError for error responses."""
         with self._http.stream(method, self.base_url + path, params=params) as response:
             if not response.is_success:
                 response.read()
@@ -112,7 +112,7 @@ class Boxes:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "Boxes":
+    def __enter__(self) -> "Paddock":
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -163,7 +163,7 @@ class _Sandboxes(_Namespace):
             time.sleep(self._c.poll_interval)
             operation = self._c._request("GET", f"/operations/{self._id(operation['id'])}")["operation"]
         if operation and operation.get("status") == "failed":
-            raise BoxesError(500, "operation_failed", operation.get("error", "Operation failed"))
+            raise PaddockError(500, "operation_failed", operation.get("error", "Operation failed"))
 
     # Users and groups are Linux accounts inside the box, persisted with its filesystem. Homes are /home/<name> (mode 770); shared dirs are /shared/<group> (setgid).
     def create_user(self, sandbox_id: str, name: str) -> Any:
@@ -191,7 +191,7 @@ class _Sandboxes(_Namespace):
 class Command:
     """A detached command started with exec.detached. Output, signals, and stdin go through its sandbox."""
 
-    def __init__(self, client: "Boxes", sandbox_id: str, process_id: str):
+    def __init__(self, client: "Paddock", sandbox_id: str, process_id: str):
         self._c, self.sandbox_id, self.process_id = client, sandbox_id, process_id
 
     @property

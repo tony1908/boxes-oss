@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 type machineStatus struct {

@@ -47,10 +47,10 @@ jobs:
           context: .
           file: Dockerfile.server
           push: false
-          tags: boxes/server:ci
+          tags: paddock/server:ci
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.agent
           push: false
-          tags: boxes/agent:ci
+          tags: paddock/agent:ci

@@ -7,14 +7,14 @@ import (
 	"os"
 
 	"github.com/mattn/go-isatty"
-	"github.com/tony1908/boxes-oss/internal/cli"
+	"github.com/tony1908/paddock/internal/cli"
 )
 
 func main() {
 	args := withAutomaticJSON(os.Args[1:], isatty.IsTerminal(os.Stdout.Fd()))
 	app := cli.CLI{Interactive: isatty.IsTerminal(os.Stdin.Fd())}
 	if err := app.Run(context.Background(), args); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "boxes:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "paddock:", err)
 		var exitErr *cli.ExitError
 		if errors.As(err, &exitErr) && exitErr.Code > 0 && exitErr.Code < 256 {
 			os.Exit(exitErr.Code)

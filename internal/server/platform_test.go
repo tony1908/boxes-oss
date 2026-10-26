@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/tunnel"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/tunnel"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestAgentTunnelIsReachableAtInstallPath(t *testing.T) {
@@ -193,7 +193,7 @@ func TestSnapshotDownloadStreamsFromFakeAgent(t *testing.T) {
 			return
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/snapshots/restic-download/download" {
-			if r.Header.Get("X-Boxes-Snapshot-Storage") == "" {
+			if r.Header.Get("X-Paddock-Snapshot-Storage") == "" {
 				t.Error("snapshot storage header missing")
 			}
 			started <- struct{}{}
@@ -850,7 +850,7 @@ func TestEnvironmentSecretsAreEncryptedAndDeliveredAsFiles(t *testing.T) {
 		}
 		contents[name] = string(decoded)
 	}
-	if !strings.Contains(contents["/run/boxes/env"], "API_KEY=secret-value") || contents["/run/boxes/secrets/git-token"] != "private-token" {
+	if !strings.Contains(contents["/run/paddock/env"], "API_KEY=secret-value") || contents["/run/paddock/secrets/git-token"] != "private-token" {
 		t.Fatalf("environment file set omitted configured values: %#v", contents)
 	}
 	withoutSecrets, _, err := srv.environmentFiles(context.Background(), envID, 1, true)
@@ -861,7 +861,7 @@ func TestEnvironmentSecretsAreEncryptedAndDeliveredAsFiles(t *testing.T) {
 		name, _ := file["path"].(string)
 		encoded, _ := file["content"].(string)
 		decoded, _ := base64.StdEncoding.DecodeString(encoded)
-		if name == "/run/boxes/secrets/git-token" || strings.Contains(string(decoded), "secret-value") || strings.Contains(string(decoded), "git-token") {
+		if name == "/run/paddock/secrets/git-token" || strings.Contains(string(decoded), "secret-value") || strings.Contains(string(decoded), "git-token") {
 			t.Fatalf("noSecrets payload contains secret material: %s=%q", name, decoded)
 		}
 	}
@@ -946,13 +946,13 @@ func TestProvisionSandboxSendsEnvironmentFilesToAgent(t *testing.T) {
 			}
 			contentByPath[name] = string(decoded)
 		}
-		if !strings.Contains(contentByPath["/run/boxes/env"], "API_KEY=value-from-secret") || !strings.Contains(contentByPath["/run/boxes/env"], "REQUEST_ONLY=present") || contentByPath["/run/boxes/secrets/token"] != "file-secret" {
+		if !strings.Contains(contentByPath["/run/paddock/env"], "API_KEY=value-from-secret") || !strings.Contains(contentByPath["/run/paddock/env"], "REQUEST_ONLY=present") || contentByPath["/run/paddock/secrets/token"] != "file-secret" {
 			t.Fatalf("agent did not receive environment files: %#v", contentByPath)
 		}
 		var setup struct {
 			SetupScript string `json:"setupScript"`
 		}
-		if err := json.Unmarshal([]byte(contentByPath["/run/boxes/setup.json"]), &setup); err != nil || setup.SetupScript != "printf setup once" {
+		if err := json.Unmarshal([]byte(contentByPath["/run/paddock/setup.json"]), &setup); err != nil || setup.SetupScript != "printf setup once" {
 			t.Fatalf("agent setup config = %#v, err %v", setup, err)
 		}
 	case <-time.After(5 * time.Second):
@@ -1122,7 +1122,7 @@ func TestRunStatusWaitsUntilTerminalEventIsStored(t *testing.T) {
 }
 
 func TestWebhookDeliveryRunsOffRequestPathAndSignsBody(t *testing.T) {
-	t.Setenv("BOXES_WEBHOOK_ALLOW_PRIVATE", "true")
+	t.Setenv("PADDOCK_WEBHOOK_ALLOW_PRIVATE", "true")
 	delivered := make(chan *http.Request, 1)
 	release := make(chan struct{})
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1157,7 +1157,7 @@ func TestWebhookDeliveryRunsOffRequestPathAndSignsBody(t *testing.T) {
 	mac := hmac.New(sha256.New, []byte("hook-secret"))
 	_, _ = mac.Write(body)
 	want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	if got := request.Header.Get("X-Boxes-Signature"); got != want {
+	if got := request.Header.Get("X-Paddock-Signature"); got != want {
 		t.Fatalf("signature = %q, want %q", got, want)
 	}
 	close(release)
@@ -1212,7 +1212,7 @@ func TestGetOperationReturnsStatusAndRejectsUnknownID(t *testing.T) {
 }
 
 func TestWebhookDeliveryRetriesThreeTimesAfterInitialFailure(t *testing.T) {
-	t.Setenv("BOXES_WEBHOOK_ALLOW_PRIVATE", "true")
+	t.Setenv("PADDOCK_WEBHOOK_ALLOW_PRIVATE", "true")
 	var attempts int
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		attempts++
@@ -1245,7 +1245,7 @@ func seedPlatformBox(t *testing.T, srv *Server, nodeID, boxID, nodeToken, host, 
 	if err != nil {
 		t.Fatalf("encrypt boxd token: %v", err)
 	}
-	if err := srv.store.CreateBox(ctx, store.BoxRecord{Box: types.Box{ID: boxID, NodeID: nodeID, Type: "small", State: types.StateReady, Image: "boxes/test", CreatedAt: time.Now().UTC()}, DesktopPasswordEnc: password, BoxdTokenEnc: boxd}); err != nil {
+	if err := srv.store.CreateBox(ctx, store.BoxRecord{Box: types.Box{ID: boxID, NodeID: nodeID, Type: "small", State: types.StateReady, Image: "paddock/test", CreatedAt: time.Now().UTC()}, DesktopPasswordEnc: password, BoxdTokenEnc: boxd}); err != nil {
 		t.Fatalf("create platform box: %v", err)
 	}
 }

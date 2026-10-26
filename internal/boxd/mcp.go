@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/tony1908/boxes-oss/internal/computer"
+	"github.com/tony1908/paddock/internal/computer"
 )
 
 // NewMCPServer creates an MCP server exposing the box's desktop controls.
 func NewMCPServer(desktop *computer.Computer) *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "boxes-computer", Version: "1.0.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "paddock-computer", Version: "1.0.0"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{Name: "screenshot", Description: "Capture the current desktop as a PNG image."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {

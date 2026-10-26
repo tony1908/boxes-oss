@@ -163,16 +163,16 @@ func TestFingerprintStableAndChangesWithMetadata(t *testing.T) {
 
 func TestCaptureFiltersChangesAndCreatesResticSnapshot(t *testing.T) {
 	docker := &fakeExecutor{replies: []executorReply{
-		{stdout: "A /etc/issue\nC /config/keep.txt\nA /config/ignored.log\nD /config/gone.txt\nD /.boxes/manifest\nD /.boxes/opaque\nA /proc/1/status\nC /config/.boxignore\nC /.boxes/deletions\n"},
+		{stdout: "A /etc/issue\nC /config/keep.txt\nA /config/ignored.log\nD /config/gone.txt\nD /.paddock/manifest\nD /.paddock/opaque\nA /proc/1/status\nC /config/.boxignore\nC /.paddock/deletions\n"},
 		{stdout: `{"/config":{}}`},       // inspect image-declared volumes
 		{stdout: "/config/.boxignore\n"}, // find .boxignore files
 		{stdout: "*.log\n"},              // read .boxignore
 		{},                               // volume enumeration (empty)
-		{},                               // create /.boxes
-		{},                               // write /.boxes/deletions
-		{},                               // write /.boxes/manifest
-		{},                               // write /.boxes/opaque
-		{stdout: "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/config/.boxignore\x00/config/keep.txt\x00/etc/issue\x00"}, // filter fallback paths
+		{},                               // create /.paddock
+		{},                               // write /.paddock/deletions
+		{},                               // write /.paddock/manifest
+		{},                               // write /.paddock/opaque
+		{stdout: "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/config/.boxignore\x00/config/keep.txt\x00/etc/issue\x00"}, // filter fallback paths
 		{stdout: "tar-data"}, // docker tar
 	}}
 	restic := &fakeExecutor{replies: []executorReply{{stdout: "{\"message_type\":\"summary\",\"snapshot_id\":\"snap-123\",\"total_bytes_processed\":42}\n"}}}
@@ -194,7 +194,7 @@ func TestCaptureFiltersChangesAndCreatesResticSnapshot(t *testing.T) {
 	if docker.calls[8].stdin != "/config/.boxignore\x00/config/keep.txt\x00/etc/issue\x00" {
 		t.Fatalf("manifest path list = %q", docker.calls[8].stdin)
 	}
-	if docker.calls[11].stdin != "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/config/.boxignore\x00/config/keep.txt\x00/etc/issue\x00" {
+	if docker.calls[11].stdin != "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/config/.boxignore\x00/config/keep.txt\x00/etc/issue\x00" {
 		t.Fatalf("tar path list = %q", docker.calls[11].stdin)
 	}
 	if !contains(docker.calls[11].argv, "--null") {
@@ -222,7 +222,7 @@ func TestCaptureIncludesTarStderrWhenTarExitsNonzero(t *testing.T) {
 		{},
 		{},
 		{},
-		{stdout: "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/etc/issue\x00"},
+		{stdout: "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/etc/issue\x00"},
 		{stderr: tarError, code: 2},
 	}}
 	restic := &fakeExecutor{replies: []executorReply{{stdout: `{"snapshot_id":"snapshot-123","total_bytes_processed":1}`}}}
@@ -283,11 +283,11 @@ func TestCaptureIncludesDeclaredVolumeContentsAndFiltersThem(t *testing.T) {
 		{stdout: "*.ignored\n"},
 		{stdout: "/config\x00/config/home.txt\x00/config/.cache\x00/config/.cache/token\x00/config/.boxignore\x00/config/hidden.ignored\x00"},
 		{stdout: "/data\x00/data/state.txt\x00"},
-		{}, // create /.boxes
-		{}, // write /.boxes/deletions
-		{}, // write /.boxes/manifest
-		{}, // write /.boxes/opaque
-		{stdout: "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/config\x00/config/.boxignore\x00/config/home.txt\x00/data\x00/data/state.txt\x00/etc/issue\x00"}, // filter fallback paths
+		{}, // create /.paddock
+		{}, // write /.paddock/deletions
+		{}, // write /.paddock/manifest
+		{}, // write /.paddock/opaque
+		{stdout: "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/config\x00/config/.boxignore\x00/config/home.txt\x00/data\x00/data/state.txt\x00/etc/issue\x00"}, // filter fallback paths
 		{stdout: "tar-data"},
 	}}
 	restic := &fakeExecutor{replies: []executorReply{{stdout: `{"snapshot_id":"snapshot-volume","total_bytes_processed":12}`}}}
@@ -303,7 +303,7 @@ func TestCaptureIncludesDeclaredVolumeContentsAndFiltersThem(t *testing.T) {
 		!reflect.DeepEqual(docker.calls[6].argv, []string{"docker", "exec", "--user", "0:0", "box-bx_abcdefghijkl", "find", "/data", "-xdev", "-print0"}) {
 		t.Fatalf("volume enumeration calls = %#v and %#v", docker.calls[5].argv, docker.calls[6].argv)
 	}
-	const wantPaths = "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/config\x00/config/.boxignore\x00/config/home.txt\x00/data\x00/data/state.txt\x00/etc/issue\x00"
+	const wantPaths = "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/config\x00/config/.boxignore\x00/config/home.txt\x00/data\x00/data/state.txt\x00/etc/issue\x00"
 	if docker.calls[12].stdin != wantPaths {
 		t.Fatalf("tar path list = %q, want %q", docker.calls[12].stdin, wantPaths)
 	}
@@ -321,7 +321,7 @@ func TestCaptureRunsEveryDockerExecAsRootWithoutAgentEnvironment(t *testing.T) {
 		{},
 		{},
 		{},
-		{stdout: "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/config\x00/data\x00/etc/issue\x00"},
+		{stdout: "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/config\x00/data\x00/etc/issue\x00"},
 		{stdout: "tar-data"},
 	}}
 	restic := &fakeExecutor{replies: []executorReply{{stdout: `{"snapshot_id":"snapshot-root","total_bytes_processed":1}`}}}
@@ -637,7 +637,7 @@ func TestCaptureUsesEmptyDeletionListWithoutAddingDeletedPathsToTar(t *testing.T
 	if docker.calls[5].stdin != "" {
 		t.Fatalf("empty deletion list = %q", docker.calls[5].stdin)
 	}
-	if docker.calls[8].stdin != "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/config/only.txt\x00" {
+	if docker.calls[8].stdin != "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/config/only.txt\x00" {
 		t.Fatalf("tar path list = %q", docker.calls[8].stdin)
 	}
 }
@@ -646,13 +646,13 @@ func TestSnapshotExcludesContractPathsAndTheirContents(t *testing.T) {
 	for _, filePath := range []string{
 		"/proc/1/status", "/sys/kernel", "/dev/null", "/run/lock", "/tmp/file",
 		"/var/tmp/file", "/var/lib/docker/overlay", "/var/cache/apt/archives/pkg",
-		"/config/.cache/tool/cache", "/.boxes/restored/marker", "/opt/boxes-tools/bin/codex",
+		"/config/.cache/tool/cache", "/.paddock/restored/marker", "/opt/paddock-tools/bin/codex",
 	} {
 		if !isExcluded(filePath) {
 			t.Errorf("isExcluded(%q) = false", filePath)
 		}
 	}
-	for _, filePath := range []string{"/tmpish/file", "/config/.cache-old/file", "/.boxes/restored-old/file", "/opt/boxes-tools-extra/bin/codex"} {
+	for _, filePath := range []string{"/tmpish/file", "/config/.cache-old/file", "/.paddock/restored-old/file", "/opt/paddock-tools-extra/bin/codex"} {
 		if isExcluded(filePath) {
 			t.Errorf("isExcluded(%q) = true", filePath)
 		}

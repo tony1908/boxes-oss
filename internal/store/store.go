@@ -1,4 +1,4 @@
-// Package store provides the SQLite persistence layer for boxes-server.
+// Package store provides the SQLite persistence layer for paddock-server.
 package store
 
 import (
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 	_ "modernc.org/sqlite"
 )
 

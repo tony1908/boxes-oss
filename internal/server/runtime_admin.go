@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func (s *Server) stopRuntimeBoxesFromAdmin(w http.ResponseWriter, r *http.Request) {

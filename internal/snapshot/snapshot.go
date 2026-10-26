@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/diagnostics"
-	boxtypes "github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/diagnostics"
+	boxtypes "github.com/tony1908/paddock/internal/types"
 )
 
 const (
@@ -32,8 +32,8 @@ const (
 
 var excludedPaths = []string{
 	"/proc", "/sys", "/dev", "/run", "/tmp", "/var/tmp",
-	"/var/lib/docker", "/var/cache/apt", "/config/.cache", "/.boxes/restored",
-	"/opt/boxes-tools",
+	"/var/lib/docker", "/var/cache/apt", "/config/.cache", "/.paddock/restored",
+	"/opt/paddock-tools",
 	"/config/.npm/_cacache", "/config/go/pkg/mod/cache", "/config/.cargo/registry/cache",
 }
 
@@ -130,7 +130,7 @@ func (e *Engine) Capture(ctx context.Context, boxID string) (boxtypes.Snapshot, 
 	fileSet, deletedSet := make(map[string]struct{}), make(map[string]struct{})
 	for _, filePath := range upperChanges.files {
 		filePath = cleanAbsolutePath(filePath)
-		if filePath == "/.boxes/deletions" || filePath == "/.boxes/manifest" || filePath == "/.boxes/opaque" {
+		if filePath == "/.paddock/deletions" || filePath == "/.paddock/manifest" || filePath == "/.paddock/opaque" {
 			continue
 		}
 		if isExcluded(filePath) || isIgnored(ignoreFiles, filePath) {
@@ -143,7 +143,7 @@ func (e *Engine) Capture(ctx context.Context, boxID string) (boxtypes.Snapshot, 
 	}
 	for _, filePath := range upperChanges.deleted {
 		filePath = cleanAbsolutePath(filePath)
-		if filePath == "/.boxes/deletions" || filePath == "/.boxes/manifest" || filePath == "/.boxes/opaque" {
+		if filePath == "/.paddock/deletions" || filePath == "/.paddock/manifest" || filePath == "/.paddock/opaque" {
 			continue
 		}
 		if isExcluded(filePath) || isIgnored(ignoreFiles, filePath) {
@@ -179,7 +179,7 @@ func (e *Engine) Capture(ctx context.Context, boxID string) (boxtypes.Snapshot, 
 			if volume != "/" && filePath != volume && !strings.HasPrefix(filePath, volume+"/") {
 				return boxtypes.Snapshot{}, fmt.Errorf("volume %q returned path outside mount: %q", volume, filePath)
 			}
-			if filePath == "/.boxes/deletions" || isExcluded(filePath) || isIgnored(ignoreFiles, filePath) {
+			if filePath == "/.paddock/deletions" || isExcluded(filePath) || isIgnored(ignoreFiles, filePath) {
 				continue
 			}
 			if _, exists := fileSet[filePath]; !exists {
@@ -192,27 +192,27 @@ func (e *Engine) Capture(ctx context.Context, boxID string) (boxtypes.Snapshot, 
 	sort.Strings(deleted)
 	sort.Strings(opaque)
 
-	if _, err := e.dockerRun(ctx, dockerExecArgs(container, false, "mkdir", "-p", "/.boxes"), nil, nil); err != nil {
+	if _, err := e.dockerRun(ctx, dockerExecArgs(container, false, "mkdir", "-p", "/.paddock"), nil, nil); err != nil {
 		return boxtypes.Snapshot{}, fmt.Errorf("prepare snapshot metadata: %w", err)
 	}
 	deletionData := []byte(strings.Join(deleted, "\n"))
 	if len(deleted) > 0 {
 		deletionData = append(deletionData, '\n')
 	}
-	if _, err := e.dockerRun(ctx, dockerExecArgs(container, true, "tee", "/.boxes/deletions"), bytes.NewReader(deletionData), nil); err != nil {
+	if _, err := e.dockerRun(ctx, dockerExecArgs(container, true, "tee", "/.paddock/deletions"), bytes.NewReader(deletionData), nil); err != nil {
 		return boxtypes.Snapshot{}, fmt.Errorf("write snapshot deletion metadata: %w", err)
 	}
 	manifestData := nulSeparated(files)
-	if _, err := e.dockerRun(ctx, dockerExecArgs(container, true, "tee", "/.boxes/manifest"), bytes.NewReader(manifestData), nil); err != nil {
+	if _, err := e.dockerRun(ctx, dockerExecArgs(container, true, "tee", "/.paddock/manifest"), bytes.NewReader(manifestData), nil); err != nil {
 		return boxtypes.Snapshot{}, fmt.Errorf("write snapshot manifest metadata: %w", err)
 	}
 	opaqueData := nulSeparated(opaque)
-	if _, err := e.dockerRun(ctx, dockerExecArgs(container, true, "tee", "/.boxes/opaque"), bytes.NewReader(opaqueData), nil); err != nil {
+	if _, err := e.dockerRun(ctx, dockerExecArgs(container, true, "tee", "/.paddock/opaque"), bytes.NewReader(opaqueData), nil); err != nil {
 		return boxtypes.Snapshot{}, fmt.Errorf("write snapshot opaque metadata: %w", err)
 	}
 
 	paths := make([]string, 0, len(files)+3)
-	paths = append(paths, "/.boxes/deletions", "/.boxes/manifest", "/.boxes/opaque")
+	paths = append(paths, "/.paddock/deletions", "/.paddock/manifest", "/.paddock/opaque")
 	paths = append(paths, files...)
 	pathList := nulSeparated(paths)
 	if usedDockerDiff {
@@ -755,7 +755,7 @@ func isResticLockError(err error) bool {
 }
 
 func (e *Engine) runResticOnce(ctx context.Context, stdin io.Reader, stdout io.Writer, args ...string) error {
-	passwordFile, err := os.CreateTemp("", "boxes-restic-password-")
+	passwordFile, err := os.CreateTemp("", "paddock-restic-password-")
 	if err != nil {
 		return fmt.Errorf("create restic password file: %w", err)
 	}
@@ -815,7 +815,7 @@ func isReadOnlyResticCommand(command string) bool {
 
 func resticCacheDir(repository string) string {
 	identifier := sha256.Sum256([]byte(repository))
-	return filepath.Join(os.TempDir(), "boxes-restic-"+hex.EncodeToString(identifier[:8]))
+	return filepath.Join(os.TempDir(), "paddock-restic-"+hex.EncodeToString(identifier[:8]))
 }
 
 func (e *Engine) dockerRun(ctx context.Context, argv []string, stdin io.Reader, stdout io.Writer) (string, error) {

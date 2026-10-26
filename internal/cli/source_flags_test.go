@@ -6,8 +6,8 @@ import (
 )
 
 func TestSourceBodyBuildsGitSourceWithTokenFromEnv(t *testing.T) {
-	t.Setenv("BOXES_TEST_GIT_TOKEN", "ghp_from_env")
-	source, err := sourceBody("https://example.test/repo.git", "v1.0", 1, "BOXES_TEST_GIT_TOKEN", "app", "")
+	t.Setenv("PADDOCK_TEST_GIT_TOKEN", "ghp_from_env")
+	source, err := sourceBody("https://example.test/repo.git", "v1.0", 1, "PADDOCK_TEST_GIT_TOKEN", "app", "")
 	if err != nil {
 		t.Fatalf("sourceBody() error = %v", err)
 	}
@@ -44,8 +44,8 @@ func TestSourceBodyRejectsInvalidFlagCombinations(t *testing.T) {
 }
 
 func TestSourceBodyRejectsUnsetTokenEnv(t *testing.T) {
-	t.Setenv("BOXES_TEST_EMPTY_TOKEN", "")
-	if _, err := sourceBody("https://example.test/repo.git", "", 0, "BOXES_TEST_EMPTY_TOKEN", "", ""); err == nil {
+	t.Setenv("PADDOCK_TEST_EMPTY_TOKEN", "")
+	if _, err := sourceBody("https://example.test/repo.git", "", 0, "PADDOCK_TEST_EMPTY_TOKEN", "", ""); err == nil {
 		t.Fatal("sourceBody() accepted an empty token variable")
 	}
 }

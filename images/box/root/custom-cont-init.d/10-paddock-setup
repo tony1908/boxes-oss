@@ -1,7 +1,7 @@
 #!/usr/bin/with-contenv bash
 set -e
 
-export PATH="/opt/boxes-tools/bin:$PATH"
+export PATH="/opt/paddock-tools/bin:$PATH"
 
 for dir in /config/.config /config/.local /config/.cache; do
 	if [ -d "$dir" ]; then
@@ -10,9 +10,9 @@ for dir in /config/.config /config/.local /config/.cache; do
 done
 
 # The agent copies these files in as root with mode 0600; abc (setup and boxd serve) must read them.
-if [ -d /run/boxes ]; then
-	chown -R abc:abc /run/boxes
-	chmod 0700 /run/boxes
+if [ -d /run/paddock ]; then
+	chown -R abc:abc /run/paddock
+	chmod 0700 /run/paddock
 fi
 
 install -d -o abc -g abc -m 0700 /config/.boxd

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 const (
@@ -173,7 +173,7 @@ func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScr
 
 	if len(env) != 0 {
 		values := make(map[string]string)
-		data, err := decodeFile("/run/boxes/env")
+		data, err := decodeFile("/run/paddock/env")
 		if err != nil {
 			return nil, fmt.Errorf("decode environment file: %w", err)
 		}
@@ -199,14 +199,14 @@ func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScr
 			dotenv.WriteString(dotenvValue(values[key]))
 			dotenv.WriteByte('\n')
 		}
-		writeFile("/run/boxes/env", 0600, []byte(dotenv.String()))
+		writeFile("/run/paddock/env", 0600, []byte(dotenv.String()))
 	}
 	if setupScript != nil || source != nil {
 		if setupScript != nil && len(*setupScript) > maximumSetupBytes {
 			return nil, fmt.Errorf("setupScript must not exceed %d bytes", maximumSetupBytes)
 		}
 		setup := provisionSetup{Repos: []provisionRepo{}}
-		data, err := decodeFile("/run/boxes/setup.json")
+		data, err := decodeFile("/run/paddock/setup.json")
 		if err != nil {
 			return nil, fmt.Errorf("decode setup configuration: %w", err)
 		}
@@ -238,15 +238,15 @@ func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScr
 		if err != nil {
 			return nil, err
 		}
-		writeFile("/run/boxes/setup.json", 0600, data)
+		writeFile("/run/paddock/setup.json", 0600, data)
 	}
 	if len(env) != 0 || setupScript != nil || source != nil {
-		if byPath["/run/boxes/env"] == nil {
-			writeFile("/run/boxes/env", 0600, nil)
+		if byPath["/run/paddock/env"] == nil {
+			writeFile("/run/paddock/env", 0600, nil)
 		}
-		if byPath["/run/boxes/setup.json"] == nil {
+		if byPath["/run/paddock/setup.json"] == nil {
 			data, _ := json.Marshal(provisionSetup{Repos: []provisionRepo{}})
-			writeFile("/run/boxes/setup.json", 0600, data)
+			writeFile("/run/paddock/setup.json", 0600, data)
 		}
 	}
 	result := make([]map[string]any, 0, len(byPath))
@@ -264,7 +264,7 @@ func mergeProvisionFiles(files []map[string]any, env map[string]string, setupScr
 func setupConfigured(files []map[string]any) bool {
 	for _, file := range files {
 		name, _ := file["path"].(string)
-		if name != "/run/boxes/setup.json" {
+		if name != "/run/paddock/setup.json" {
 			continue
 		}
 		encoded, _ := file["content"].(string)

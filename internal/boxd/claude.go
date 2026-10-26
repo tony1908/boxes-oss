@@ -124,7 +124,7 @@ func (h *ClaudeHarness) Start(ctx context.Context, spec ConvSpec) (Session, erro
 	}
 	configPath := filepath.Join(workDir, ".boxd", "mcp.json")
 	args := claudeArgs(spec, configPath)
-	env, err := loadHarnessEnv("/run/boxes/env")
+	env, err := loadHarnessEnv("/run/paddock/env")
 	if err != nil {
 		return nil, err
 	}

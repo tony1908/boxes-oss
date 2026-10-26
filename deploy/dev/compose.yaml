@@ -3,23 +3,23 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.server
-    image: boxes/server:dev
-    command: ["--addr", ":8080", "--data-dir", "/var/lib/boxes", "--public-url", "${BOXES_PUBLIC_URL:-http://localhost:8080}", "--image", "${BOXES_IMAGE:-boxes/box:dev}", "--snapshot-interval", "${BOXES_SNAPSHOT_INTERVAL:-60s}"]
+    image: paddock/server:dev
+    command: ["--addr", ":8080", "--data-dir", "/var/lib/paddock", "--public-url", "${PADDOCK_PUBLIC_URL:-http://localhost:8080}", "--image", "${PADDOCK_IMAGE:-paddock/box:dev}", "--snapshot-interval", "${PADDOCK_SNAPSHOT_INTERVAL:-60s}"]
     environment:
-      BOXES_STORAGE_RESTIC_PASSWORD: ${RESTIC_PASSWORD:-boxes-dev-restic-password}
+      PADDOCK_STORAGE_RESTIC_PASSWORD: ${RESTIC_PASSWORD:-paddock-dev-restic-password}
     ports:
-      - "${BOXES_SERVER_PORT:-8080}:8080"
+      - "${PADDOCK_SERVER_PORT:-8080}:8080"
     volumes:
-      - server-data:/var/lib/boxes
+      - server-data:/var/lib/paddock
     networks:
-      - boxes-net
+      - paddock-net
     restart: unless-stopped
 
   agent:
     build:
       context: ../..
       dockerfile: Dockerfile.agent
-    image: boxes/agent:dev
+    image: paddock/agent:dev
     privileged: true
     pid: host
     depends_on:
@@ -27,23 +27,23 @@ services:
       - traefik
     environment:
       # The local server has no TLS; production uses wss://<server>/api/v1/agent/connect.
-      BOXES_SERVER_URL: ${BOXES_SERVER_URL:-ws://server:8080/api/v1/agent/connect}
-      BOXES_NODE_TOKEN: ${BOXES_NODE_TOKEN:?create a node via the API first}
-      BOXES_FORWARD_AUTH_ADDR: 0.0.0.0:7001
-      BOXES_FORWARD_AUTH_URL: http://agent:7001/auth/forward
-      BOXES_RUNTIME: runc
-      BOXES_HOST_PROC: /proc
-      BOXES_TRAEFIK_DIR: /etc/boxes/traefik/dynamic
-      RESTIC_REPOSITORY: /var/lib/boxes/restic
-      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-boxes-dev-restic-password}
+      PADDOCK_SERVER_URL: ${PADDOCK_SERVER_URL:-ws://server:8080/api/v1/agent/connect}
+      PADDOCK_NODE_TOKEN: ${PADDOCK_NODE_TOKEN:?create a node via the API first}
+      PADDOCK_FORWARD_AUTH_ADDR: 0.0.0.0:7001
+      PADDOCK_FORWARD_AUTH_URL: http://agent:7001/auth/forward
+      PADDOCK_RUNTIME: runc
+      PADDOCK_HOST_PROC: /proc
+      PADDOCK_TRAEFIK_DIR: /etc/paddock/traefik/dynamic
+      RESTIC_REPOSITORY: /var/lib/paddock/restic
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-paddock-dev-restic-password}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/containerd:/var/lib/containerd:ro
       - /var/lib/docker:/var/lib/docker:ro
-      - restic-data:/var/lib/boxes/restic
-      - traefik-config:/etc/boxes/traefik/dynamic
+      - restic-data:/var/lib/paddock/restic
+      - traefik-config:/etc/paddock/traefik/dynamic
     networks:
-      - boxes-net
+      - paddock-net
     restart: unless-stopped
 
   traefik:
@@ -51,16 +51,16 @@ services:
     command:
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
-      - --providers.file.directory=/etc/boxes/traefik/dynamic
+      - --providers.file.directory=/etc/paddock/traefik/dynamic
       - --providers.file.watch=true
       - --api.insecure=false
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - traefik-config:/etc/boxes/traefik/dynamic
+      - traefik-config:/etc/paddock/traefik/dynamic
     networks:
-      - boxes-net
+      - paddock-net
     restart: unless-stopped
 
 volumes:
@@ -69,5 +69,5 @@ volumes:
   traefik-config:
 
 networks:
-  boxes-net:
-    name: boxes-net
+  paddock-net:
+    name: paddock-net

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 type createSandboxRequest struct {
@@ -40,7 +40,7 @@ type createSandboxRequest struct {
 const (
 	defaultSourcePath       = "project"
 	sourceTokenSecret       = "source-token"
-	sourceTokenPath         = "/run/boxes/secrets/" + sourceTokenSecret
+	sourceTokenPath         = "/run/paddock/secrets/" + sourceTokenSecret
 	maximumSourceTokenBytes = 4096
 	maximumSourceDepth      = 1000
 )

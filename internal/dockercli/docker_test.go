@@ -54,7 +54,7 @@ func (e *scriptedExecutor) Run(_ context.Context, argv []string, stdin io.Reader
 
 func TestCreateArgsIncludesManagedContainerLimitsAndSortedEnvironment(t *testing.T) {
 	got, err := CreateArgs(Spec{
-		BoxID: "bx_abcdefghijkl", Image: "boxes/box:dev", Type: "small", Runtime: "sysbox-runc",
+		BoxID: "bx_abcdefghijkl", Image: "paddock/box:dev", Type: "small", Runtime: "sysbox-runc",
 		DesktopPassword: "desktop-secret", BoxdToken: "agent-secret", DiskQuota: true,
 		Env: map[string]string{"ZED": "last", "ALPHA": "first"},
 	})
@@ -63,11 +63,11 @@ func TestCreateArgsIncludesManagedContainerLimitsAndSortedEnvironment(t *testing
 	}
 	want := []string{
 		"docker", "create", "--name", "box-bx_abcdefghijkl", "--hostname", "bx_abcdefghijkl",
-		"--runtime", "sysbox-runc", "--label", "boxes.managed=true", "--label", "boxes.box-id=bx_abcdefghijkl",
+		"--runtime", "sysbox-runc", "--label", "paddock.managed=true", "--label", "paddock.box-id=bx_abcdefghijkl",
 		"--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g",
-		"--network", "boxes-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000",
+		"--network", "paddock-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000",
 		"-e", "TZ=Etc/UTC", "-e", "PASSWORD=desktop-secret", "-e", "BOXD_TOKEN=agent-secret",
-		"-e", "ALPHA=first", "-e", "ZED=last", "--storage-opt", "size=12884901888", "boxes/box:dev",
+		"-e", "ALPHA=first", "-e", "ZED=last", "--storage-opt", "size=12884901888", "paddock/box:dev",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("CreateArgs() = %#v, want %#v", got, want)
@@ -75,17 +75,17 @@ func TestCreateArgsIncludesManagedContainerLimitsAndSortedEnvironment(t *testing
 }
 
 func TestCreateArgsUsesXsmallLimitsAndReadOnlyToolsVolume(t *testing.T) {
-	got, err := CreateArgs(Spec{BoxID: "bx_abcdefghijkl", Image: "boxes/box:dev", Type: "xsmall", Runtime: "runc", ToolsVolume: "boxes-tools-abcdef123456"})
+	got, err := CreateArgs(Spec{BoxID: "bx_abcdefghijkl", Image: "paddock/box:dev", Type: "xsmall", Runtime: "runc", ToolsVolume: "paddock-tools-abcdef123456"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
 		"docker", "create", "--name", "box-bx_abcdefghijkl", "--hostname", "bx_abcdefghijkl",
-		"--runtime", "runc", "--label", "boxes.managed=true", "--label", "boxes.box-id=bx_abcdefghijkl",
+		"--runtime", "runc", "--label", "paddock.managed=true", "--label", "paddock.box-id=bx_abcdefghijkl",
 		"--cpus", "1", "--memory", "2147483648", "--memory-reservation", "134217728",
-		"--pids-limit", "4096", "--shm-size", "1g", "--network", "boxes-net", "--restart", "unless-stopped",
+		"--pids-limit", "4096", "--shm-size", "1g", "--network", "paddock-net", "--restart", "unless-stopped",
 		"-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=",
-		"--mount", "type=volume,source=boxes-tools-abcdef123456,target=/opt/boxes-tools,readonly", "boxes/box:dev",
+		"--mount", "type=volume,source=paddock-tools-abcdef123456,target=/opt/paddock-tools,readonly", "paddock/box:dev",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("CreateArgs() = %#v, want %#v", got, want)
@@ -107,14 +107,14 @@ func TestEnsureNetworkCreatesNetworkWhenMissing(t *testing.T) {
 		err    error
 		stdout string
 		stderr string
-	}{{code: 1, stderr: "Error: No such network: boxes-net"}, {}}}
+	}{{code: 1, stderr: "Error: No such network: paddock-net"}, {}}}
 	docker := New(exec)
 	if err := docker.EnsureNetwork(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	want := [][]string{
-		{"docker", "network", "inspect", "boxes-net"},
-		{"docker", "network", "create", "--driver", "bridge", "--opt", "com.docker.network.bridge.enable_icc=false", "boxes-net"},
+		{"docker", "network", "inspect", "paddock-net"},
+		{"docker", "network", "create", "--driver", "bridge", "--opt", "com.docker.network.bridge.enable_icc=false", "paddock-net"},
 	}
 	if len(exec.calls) != 2 || !reflect.DeepEqual(exec.calls[0].argv, want[0]) || !reflect.DeepEqual(exec.calls[1].argv, want[1]) {
 		t.Fatalf("network calls = %#v, want %#v", exec.calls, want)
@@ -122,7 +122,7 @@ func TestEnsureNetworkCreatesNetworkWhenMissing(t *testing.T) {
 }
 
 func TestEnsureImageInspectsBeforePulling(t *testing.T) {
-	image := "images.example.test/boxes/box:dev"
+	image := "images.example.test/paddock/box:dev"
 	exec := &scriptedExecutor{responses: []struct {
 		code   int
 		err    error
@@ -153,18 +153,18 @@ func TestEnsureToolsVolumePopulatesOncePerImageDigest(t *testing.T) {
 	}}
 	docker := New(exec)
 	for i := 0; i < 2; i++ {
-		volume, available, err := docker.EnsureToolsVolume(context.Background(), "boxes/tools:latest")
-		if err != nil || !available || volume != "boxes-tools-abcdef123456" {
+		volume, available, err := docker.EnsureToolsVolume(context.Background(), "paddock/tools:latest")
+		if err != nil || !available || volume != "paddock-tools-abcdef123456" {
 			t.Fatalf("EnsureToolsVolume() = %q, %v, %v", volume, available, err)
 		}
 	}
 	want := [][]string{
-		{"docker", "image", "inspect", "--format", "{{.Id}}", "boxes/tools:latest"},
-		{"docker", "volume", "inspect", "boxes-tools-abcdef123456"},
-		{"docker", "volume", "create", "boxes-tools-abcdef123456"},
-		{"docker", "run", "--rm", "-v", "boxes-tools-abcdef123456:/dst", "boxes/tools:latest", "cp", "-a", "/opt/boxes-tools/.", "/dst/"},
-		{"docker", "image", "inspect", "--format", "{{.Id}}", "boxes/tools:latest"},
-		{"docker", "volume", "inspect", "boxes-tools-abcdef123456"},
+		{"docker", "image", "inspect", "--format", "{{.Id}}", "paddock/tools:latest"},
+		{"docker", "volume", "inspect", "paddock-tools-abcdef123456"},
+		{"docker", "volume", "create", "paddock-tools-abcdef123456"},
+		{"docker", "run", "--rm", "-v", "paddock-tools-abcdef123456:/dst", "paddock/tools:latest", "cp", "-a", "/opt/paddock-tools/.", "/dst/"},
+		{"docker", "image", "inspect", "--format", "{{.Id}}", "paddock/tools:latest"},
+		{"docker", "volume", "inspect", "paddock-tools-abcdef123456"},
 	}
 	if len(exec.calls) != len(want) {
 		t.Fatalf("EnsureToolsVolume() made %d calls, want %d: %#v", len(exec.calls), len(want), exec.calls)
@@ -177,7 +177,7 @@ func TestEnsureToolsVolumePopulatesOncePerImageDigest(t *testing.T) {
 }
 
 func TestEnsureToolsVolumePullsImageBeforePopulating(t *testing.T) {
-	image := "images.example.test/boxes/tools:v7"
+	image := "images.example.test/paddock/tools:v7"
 	exec := &scriptedExecutor{responses: []struct {
 		code   int
 		err    error
@@ -193,7 +193,7 @@ func TestEnsureToolsVolumePullsImageBeforePopulating(t *testing.T) {
 		{},
 	}}
 	volume, available, err := New(exec).EnsureToolsVolume(context.Background(), image)
-	if err != nil || !available || volume != "boxes-tools-abcdef123456" {
+	if err != nil || !available || volume != "paddock-tools-abcdef123456" {
 		t.Fatalf("EnsureToolsVolume() = %q, %v, %v", volume, available, err)
 	}
 	want := [][]string{
@@ -201,9 +201,9 @@ func TestEnsureToolsVolumePullsImageBeforePopulating(t *testing.T) {
 		{"docker", "image", "inspect", image},
 		{"docker", "pull", image},
 		{"docker", "image", "inspect", "--format", "{{.Id}}", image},
-		{"docker", "volume", "inspect", "boxes-tools-abcdef123456"},
-		{"docker", "volume", "create", "boxes-tools-abcdef123456"},
-		{"docker", "run", "--rm", "-v", "boxes-tools-abcdef123456:/dst", image, "cp", "-a", "/opt/boxes-tools/.", "/dst/"},
+		{"docker", "volume", "inspect", "paddock-tools-abcdef123456"},
+		{"docker", "volume", "create", "paddock-tools-abcdef123456"},
+		{"docker", "run", "--rm", "-v", "paddock-tools-abcdef123456:/dst", image, "cp", "-a", "/opt/paddock-tools/.", "/dst/"},
 	}
 	if len(exec.calls) != len(want) {
 		t.Fatalf("Docker calls = %#v, want %d calls", exec.calls, len(want))
@@ -276,9 +276,9 @@ func TestInspectAndListParseContainerInformation(t *testing.T) {
 		stdout string
 		stderr string
 	}{
-		{stdout: `[{"Id":"container-123","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"172.20.0.4"}}}}]`},
+		{stdout: `[{"Id":"container-123","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"172.20.0.4"}}}}]`},
 		{stdout: "box-bx_abcdefghijkl\n"},
-		{stdout: `[{"Id":"container-123","Name":"/box-bx_abcdefghijkl","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"172.20.0.4"}}}}]`},
+		{stdout: `[{"Id":"container-123","Name":"/box-bx_abcdefghijkl","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"172.20.0.4"}}}}]`},
 	}}
 	docker := New(exec)
 	container, err := docker.Inspect(context.Background(), "box-bx_abcdefghijkl")
@@ -288,7 +288,7 @@ func TestInspectAndListParseContainerInformation(t *testing.T) {
 	if container.ID != "container-123" || container.State != "running" || container.IP != "172.20.0.4" {
 		t.Fatalf("Inspect() = %#v", container)
 	}
-	containers, err := docker.List(context.Background(), "boxes.managed=true")
+	containers, err := docker.List(context.Background(), "paddock.managed=true")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestCreateErrorRedactsEnvironmentSecrets(t *testing.T) {
 }
 
 func TestCreateArgsPointsBoxAtDNSServerOnlyWhenSet(t *testing.T) {
-	base := Spec{BoxID: "bx_abcdefghijkl", Image: "boxes/box:dev", Type: "small", Runtime: "sysbox-runc"}
+	base := Spec{BoxID: "bx_abcdefghijkl", Image: "paddock/box:dev", Type: "small", Runtime: "sysbox-runc"}
 	without, err := CreateArgs(base)
 	if err != nil {
 		t.Fatal(err)

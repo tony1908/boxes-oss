@@ -16,9 +16,9 @@ export interface CommandResult { processId?: string; running?: boolean; exitCode
 export interface ActivityItem { id: string; time: string; actorType: string; actorLabel: string; category: string; action: string; detail: Record<string, unknown>; durationMs?: number; outcome?: string }
 /** One NDJSON record from a detached command's logs: output chunk, or the final exit record when follow is set. */
 export interface CommandLogLine { stream?: 'stdout' | 'stderr'; data?: string; offset?: number; truncated?: boolean; exit?: boolean; exitCode?: number }
-export interface BoxesOptions { baseUrl: string; apiKey: string; fetch?: typeof fetch; pollIntervalMs?: number }
-export class BoxesError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); this.name = 'BoxesError'; }
+export interface PaddockOptions { baseUrl: string; apiKey: string; fetch?: typeof fetch; pollIntervalMs?: number }
+export class PaddockError extends Error {
+  constructor(public status: number, public code: string, message: string) { super(message); this.name = 'PaddockError'; }
 }
 type Query = Record<string, string | number | boolean | undefined | null>;
 type Row = Record<string, any>;
@@ -80,13 +80,13 @@ export class Command {
   closeStdin = () => this.transport.open(`${this.path}/stdin?close=1`, 'POST').then(() => undefined);
 }
 
-export class Boxes {
+export class Paddock {
   private readonly base: string;
   private readonly key: string;
   private readonly fetcher: typeof fetch;
   private readonly pollMs: number;
 
-  constructor(options: BoxesOptions) {
+  constructor(options: PaddockOptions) {
     this.base = options.baseUrl.replace(/\/$/, '') + '/api/v1';
     this.key = options.apiKey;
     this.fetcher = options.fetch ?? fetch;
@@ -104,7 +104,7 @@ export class Boxes {
     if (!response.ok) {
       let error: Row = {};
       try { error = await response.json() as Row; } catch { /* empty or non-JSON response */ }
-      throw new BoxesError(response.status, error?.error?.code ?? 'http_error', error?.error?.message ?? response.statusText);
+      throw new PaddockError(response.status, error?.error?.code ?? 'http_error', error?.error?.message ?? response.statusText);
     }
     return response;
   }
@@ -131,7 +131,7 @@ export class Boxes {
     if (!response.ok) {
       let error: Row = {};
       try { error = await response.json() as Row; } catch { /* empty or non-JSON response */ }
-      throw new BoxesError(response.status, error?.error?.code ?? 'http_error', error?.error?.message ?? response.statusText);
+      throw new PaddockError(response.status, error?.error?.code ?? 'http_error', error?.error?.message ?? response.statusText);
     }
     if (response.status === 204) return undefined as T;
     return (response.headers.get('content-type')?.includes('json') ? await response.json() : await response.arrayBuffer()) as T;
@@ -141,7 +141,7 @@ export class Boxes {
       await new Promise(resolve => setTimeout(resolve, this.pollMs));
       operation = (await this.request<{ operation: Operation }>('GET', `/operations/${this.id(operation.id)}`)).operation;
     }
-    if (operation.status === 'failed') throw new BoxesError(500, 'operation_failed', operation.error ?? 'Operation failed');
+    if (operation.status === 'failed') throw new PaddockError(500, 'operation_failed', operation.error ?? 'Operation failed');
     return operation;
   }
 
@@ -195,7 +195,7 @@ export class Boxes {
   push = (id: string, archive: BodyInit) => this.request<void>('PUT', `/sandboxes/${this.id(id)}/archive`, archive, { 'Content-Type': 'application/gzip' });
   pull = (id: string, path: string) => this.request<ArrayBuffer>('GET', `/sandboxes/${this.id(id)}/artifacts${this.query({ path })}`);
   prompt = (id: string, input: { prompt: string; provider: string; [key: string]: unknown }) => this.request<Row>('POST', `/sandboxes/${this.id(id)}/prompt`, input);
-  events = async function* (this: Boxes, id: string, options: { after?: number; conversation?: string; signal?: AbortSignal } = {}): AsyncGenerator<Row> {
+  events = async function* (this: Paddock, id: string, options: { after?: number; conversation?: string; signal?: AbortSignal } = {}): AsyncGenerator<Row> {
     let cursor = options.after ?? 0;
     while (!options.signal?.aborted) {
       const data = await this.request<{ events: Row[]; cursor: number }>('GET', `/sandboxes/${this.id(id)}/events${this.query({ after: cursor, wait: 30, conversation: options.conversation })}`);

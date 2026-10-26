@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestSignupAndLoginIssueBearerSessions(t *testing.T) {
@@ -73,7 +73,7 @@ func TestHandlerReturnsJSONNotFoundForRegistryPaths(t *testing.T) {
 			if got := response.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
 				t.Fatalf("Content-Type = %q, want application/json", got)
 			}
-			if strings.Contains(response.Body.String(), "<html") || strings.Contains(response.Body.String(), "Boxes") {
+			if strings.Contains(response.Body.String(), "<html") || strings.Contains(response.Body.String(), "Paddock") {
 				t.Fatalf("registry path returned web UI content: %q", response.Body.String())
 			}
 		})
@@ -228,7 +228,7 @@ func TestAPIKeyInSessionCookieIsRejected(t *testing.T) {
 		t.Fatalf("API key response has no key: %#v", created)
 	}
 
-	response := doJSONRequest(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/me", map[string]string{"Cookie": "boxes_session=" + keyToken}, nil)
+	response := doJSONRequest(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/v1/me", map[string]string{"Cookie": "paddock_session=" + keyToken}, nil)
 	assertErrorCode(t, response, http.StatusUnauthorized, "unauthorized")
 	_ = response.Body.Close()
 }
@@ -424,7 +424,7 @@ func TestBootstrapNodeUsesJoinTokenHashAndIsIdempotent(t *testing.T) {
 	defer func() { _ = st.Close() }()
 
 	config := Config{
-		Store: st, DataDir: t.TempDir(), PublicURL: "https://boxes.example.test",
+		Store: st, DataDir: t.TempDir(), PublicURL: "https://paddock.example.test",
 		BootstrapJoinToken: "bootstrap-secret", BootstrapNodeName: "primary",
 		BootstrapHostBase: "203.0.113.5.sslip.io",
 	}
@@ -485,7 +485,7 @@ func newTestServer(t *testing.T) (*Server, func()) {
 	if err != nil {
 		t.Fatalf("open test store: %v", err)
 	}
-	srv, err := New(Config{Store: st, DataDir: t.TempDir(), PublicURL: "http://boxes.example.test", Image: "boxes/box:test"})
+	srv, err := New(Config{Store: st, DataDir: t.TempDir(), PublicURL: "http://paddock.example.test", Image: "paddock/box:test"})
 	if err != nil {
 		_ = st.Close()
 		t.Fatalf("create server: %v", err)
@@ -569,11 +569,11 @@ func doJSONRequest(t *testing.T, client *http.Client, method, url string, header
 func sessionCookie(t *testing.T, response *http.Response) *http.Cookie {
 	t.Helper()
 	for _, cookie := range response.Cookies() {
-		if cookie.Name == "boxes_session" {
+		if cookie.Name == "paddock_session" {
 			return cookie
 		}
 	}
-	t.Fatalf("response has no boxes_session cookie; Set-Cookie = %q", response.Header.Values("Set-Cookie"))
+	t.Fatalf("response has no paddock_session cookie; Set-Cookie = %q", response.Header.Values("Set-Cookie"))
 	return nil
 }
 

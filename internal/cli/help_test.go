@@ -41,7 +41,7 @@ func TestSubcommandHelpPrintsUsageWithoutAPICall(t *testing.T) {
 		if err := app.Run(context.Background(), args); err != nil {
 			t.Fatalf("Run(%v) = %v", args, err)
 		}
-		if !strings.HasPrefix(out.String(), "usage: boxes ") {
+		if !strings.HasPrefix(out.String(), "usage: paddock ") {
 			t.Fatalf("Run(%v) printed %q", args, out.String())
 		}
 	}
@@ -142,7 +142,7 @@ func TestScreenshotCapturesDownloadsAndCleansUp(t *testing.T) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		switch r.URL.Path {
 		case "/api/v1/sandboxes/bx_abcdefghijkl/artifacts":
-			if r.URL.Query().Get("path") != "/tmp/boxes-screenshot.png" {
+			if r.URL.Query().Get("path") != "/tmp/paddock-screenshot.png" {
 				t.Errorf("artifact path = %q", r.URL.Query().Get("path"))
 			}
 			w.Header().Set("Content-Type", "image/png")
@@ -151,7 +151,7 @@ func TestScreenshotCapturesDownloadsAndCleansUp(t *testing.T) {
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			cmd, _ := body["cmd"].([]any)
-			if cmd[0] == "scrot" && (body["desktop"] != true || cmd[len(cmd)-1] != "/tmp/boxes-screenshot.png") {
+			if cmd[0] == "scrot" && (body["desktop"] != true || cmd[len(cmd)-1] != "/tmp/paddock-screenshot.png") {
 				t.Errorf("scrot body = %#v", body)
 			}
 			_, _ = io.WriteString(w, `{"exitCode":0,"stdout":"","stderr":""}`)

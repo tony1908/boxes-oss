@@ -10,12 +10,12 @@ import (
 	"strings"
 )
 
-const screenshotRemotePath = "/tmp/boxes-screenshot.png"
+const screenshotRemotePath = "/tmp/paddock-screenshot.png"
 
 // screenshot captures the box desktop (display :1) with scrot as the default user, downloads the PNG, and
 // deletes the temporary file in the box.
 func (c *CLI) screenshot(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes screenshot <id|current> [-o file.png]")
+	usage := errors.New("usage: paddock screenshot <id|current> [-o file.png]")
 	if len(args) == 0 {
 		return usage
 	}

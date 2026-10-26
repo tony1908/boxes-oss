@@ -1,5 +1,5 @@
 {
-  "name": "@boxes-oss/web",
+  "name": "@paddock/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {

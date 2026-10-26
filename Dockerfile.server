@@ -16,12 +16,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/out ./internal/webui/dist
-RUN mkdir -p /out && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/boxes-server ./cmd/boxes-server
+RUN mkdir -p /out && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/paddock-server ./cmd/paddock-server
 
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/boxes-server /usr/local/bin/boxes-server
+COPY --from=build /out/paddock-server /usr/local/bin/paddock-server
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/boxes-server"]
+ENTRYPOINT ["/usr/local/bin/paddock-server"]

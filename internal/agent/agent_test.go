@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,7 +84,7 @@ func TestBoxdProxyUsesSingleLeadingSlashForUpstreamPath(t *testing.T) {
 	const boxID = "bx_boxdproxyabc"
 	docker := dockercli.New(testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
 		if len(argv) >= 3 && argv[1] == "inspect" && argv[2] == "box-"+boxID {
-			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-`+boxID+`","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-`+boxID+`","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			return 0, nil
 		}
 		return 1, errors.New("unexpected Docker command")
@@ -114,8 +114,8 @@ func TestToolsImageWarningIsLoggedOnce(t *testing.T) {
 }
 
 func TestCreateRequestToolsImageOverridesNodeDefault(t *testing.T) {
-	service := New(Config{ToolsImage: "images.example.test/boxes/tools:old"}, dockercli.New(testExecutor{}), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
-	if got := service.toolsImage(createRequest{ToolsImage: "images.example.test/boxes/tools:new"}); got != "images.example.test/boxes/tools:new" {
+	service := New(Config{ToolsImage: "images.example.test/paddock/tools:old"}, dockercli.New(testExecutor{}), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
+	if got := service.toolsImage(createRequest{ToolsImage: "images.example.test/paddock/tools:new"}); got != "images.example.test/paddock/tools:new" {
 		t.Fatalf("tools image = %q, want image selected by the server", got)
 	}
 }
@@ -124,7 +124,7 @@ func TestPutStoragePersistsSecureConfigurationAndUpdatesRestic(t *testing.T) {
 	storagePath := filepath.Join(t.TempDir(), "storage.json")
 	resticCalls := []callRecord{}
 	restic := testExecutor{calls: &resticCalls}
-	engine := snapshot.New(testExecutor{}, restic, "/var/lib/boxes/restic", "old-password")
+	engine := snapshot.New(testExecutor{}, restic, "/var/lib/paddock/restic", "old-password")
 	service := New(Config{StoragePath: storagePath}, dockercli.New(testExecutor{}), engine)
 	request := httptest.NewRequest(http.MethodPut, "/v1/storage", strings.NewReader(`{"repository":"s3:https://s3.example.test/boxes/prefix","env":{"AWS_ACCESS_KEY_ID":"access-value","AWS_SECRET_ACCESS_KEY":"secret-value","RESTIC_PASSWORD":"shared-password"}}`))
 	response := httptest.NewRecorder()
@@ -257,7 +257,7 @@ func TestBoxdEventsProxyPreservesQueryAndEventResponseShape(t *testing.T) {
 	const boxID = "bx_boxevntabcea"
 	docker := dockercli.New(testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
 		if len(argv) >= 3 && argv[1] == "inspect" && argv[2] == "box-"+boxID {
-			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-`+boxID+`","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-`+boxID+`","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			return 0, nil
 		}
 		return 1, errors.New("unexpected Docker command")
@@ -307,7 +307,7 @@ func TestHealthReportsEmptyNodeIDWhenNotConfigured(t *testing.T) {
 }
 
 func TestCreateRestoresBeforeStartingAndReturnsContainerID(t *testing.T) {
-	t.Setenv("BOXES_TOOLS_IMAGE", "none")
+	t.Setenv("PADDOCK_TOOLS_IMAGE", "none")
 	var calls []callRecord
 	startBoxdTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	archive := testTar(t, "restored.txt", "restored")
@@ -319,7 +319,7 @@ func TestCreateRestoresBeforeStartingAndReturnsContainerID(t *testing.T) {
 			if inspectCount == 1 {
 				return 1, nil
 			}
-			_, _ = io.WriteString(stdout, `[{"Id":"container-123","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container-123","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			return 0, nil
 		case argv[1] == "create":
 			_, _ = io.WriteString(stdout, "container-123\n")
@@ -358,7 +358,7 @@ func TestCreateRestoresBeforeStartingAndReturnsContainerID(t *testing.T) {
 			switch call.argv[1] {
 			case "create":
 				createIndex = i
-				if strings.Contains(strings.Join(call.argv, " "), "/opt/boxes-tools") {
+				if strings.Contains(strings.Join(call.argv, " "), "/opt/paddock-tools") {
 					t.Fatalf("disabled tools image unexpectedly mounted into box: %#v", call.argv)
 				}
 			case "cp":
@@ -372,7 +372,7 @@ func TestCreateRestoresBeforeStartingAndReturnsContainerID(t *testing.T) {
 					if err != nil {
 						t.Fatalf("read copied archive: %v", err)
 					}
-					if header.Name == ".boxes/fork" {
+					if header.Name == ".paddock/fork" {
 						markerIndex = i
 						break
 					}
@@ -388,11 +388,11 @@ func TestCreateRestoresBeforeStartingAndReturnsContainerID(t *testing.T) {
 }
 
 func TestCreateRecoversOnceFromCorruptImageContent(t *testing.T) {
-	t.Setenv("BOXES_TOOLS_IMAGE", "none")
+	t.Setenv("PADDOCK_TOOLS_IMAGE", "none")
 	startBoxdTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	var calls []callRecord
 	inspectCount, createCount := 0, 0
-	const image = "images.example.test/boxes/box:dev"
+	const image = "images.example.test/paddock/box:dev"
 	dockerExec := testExecutor{calls: &calls, command: func(argv []string, _ []byte, stdout, stderr io.Writer) (int, error) {
 		if len(argv) < 2 || argv[0] != "docker" {
 			return 1, errors.New("unexpected command")
@@ -404,7 +404,7 @@ func TestCreateRecoversOnceFromCorruptImageContent(t *testing.T) {
 				if inspectCount == 1 {
 					return 1, nil
 				}
-				_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+				_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			}
 		case "create":
 			createCount++
@@ -451,11 +451,11 @@ func TestCreateRecoversOnceFromCorruptImageContent(t *testing.T) {
 	}
 	want := [][]string{
 		{"docker", "image", "inspect", image},
-		{"docker", "create", "--name", "box-bx_abcdefgh2345", "--hostname", "bx_abcdefgh2345", "--runtime", "runc", "--label", "boxes.managed=true", "--label", "boxes.box-id=bx_abcdefgh2345", "--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g", "--network", "boxes-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=", image},
+		{"docker", "create", "--name", "box-bx_abcdefgh2345", "--hostname", "bx_abcdefgh2345", "--runtime", "runc", "--label", "paddock.managed=true", "--label", "paddock.box-id=bx_abcdefgh2345", "--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g", "--network", "paddock-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=", image},
 		{"docker", "rmi", "-f", image},
 		{"docker", "image", "prune", "-f"},
 		{"docker", "pull", image},
-		{"docker", "create", "--name", "box-bx_abcdefgh2345", "--hostname", "bx_abcdefgh2345", "--runtime", "runc", "--label", "boxes.managed=true", "--label", "boxes.box-id=bx_abcdefgh2345", "--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g", "--network", "boxes-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=", image},
+		{"docker", "create", "--name", "box-bx_abcdefgh2345", "--hostname", "bx_abcdefgh2345", "--runtime", "runc", "--label", "paddock.managed=true", "--label", "paddock.box-id=bx_abcdefgh2345", "--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g", "--network", "paddock-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=", image},
 	}
 	if !reflect.DeepEqual(lifecycleCalls, want) {
 		t.Fatalf("image recovery calls = %#v, want %#v", lifecycleCalls, want)
@@ -472,11 +472,11 @@ func TestCreateRecoversOnceFromCorruptImageContent(t *testing.T) {
 }
 
 func TestCreateRecoversFromCorruptInitialImagePull(t *testing.T) {
-	t.Setenv("BOXES_TOOLS_IMAGE", "none")
+	t.Setenv("PADDOCK_TOOLS_IMAGE", "none")
 	startBoxdTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	var calls []callRecord
 	inspectCount, pullCount := 0, 0
-	const image = "images.example.test/boxes/box:dev"
+	const image = "images.example.test/paddock/box:dev"
 	dockerExec := testExecutor{calls: &calls, command: func(argv []string, _ []byte, stdout, stderr io.Writer) (int, error) {
 		if len(argv) < 2 || argv[0] != "docker" {
 			return 1, errors.New("unexpected command")
@@ -491,7 +491,7 @@ func TestCreateRecoversFromCorruptInitialImagePull(t *testing.T) {
 			if inspectCount == 1 {
 				return 1, nil
 			}
-			_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 		case "pull":
 			pullCount++
 			if pullCount == 1 {
@@ -528,7 +528,7 @@ func TestCreateRecoversFromCorruptInitialImagePull(t *testing.T) {
 		{"docker", "rmi", "-f", image},
 		{"docker", "image", "prune", "-f"},
 		{"docker", "pull", image},
-		{"docker", "create", "--name", "box-bx_abcdefgh2345", "--hostname", "bx_abcdefgh2345", "--runtime", "runc", "--label", "boxes.managed=true", "--label", "boxes.box-id=bx_abcdefgh2345", "--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g", "--network", "boxes-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=", image},
+		{"docker", "create", "--name", "box-bx_abcdefgh2345", "--hostname", "bx_abcdefgh2345", "--runtime", "runc", "--label", "paddock.managed=true", "--label", "paddock.box-id=bx_abcdefgh2345", "--cpus", "2", "--memory", "4294967296", "--memory-reservation", "268435456", "--pids-limit", "4096", "--shm-size", "1g", "--network", "paddock-net", "--restart", "unless-stopped", "-e", "PUID=1000", "-e", "PGID=1000", "-e", "TZ=Etc/UTC", "-e", "PASSWORD=", "-e", "BOXD_TOKEN=", image},
 	}
 	if !reflect.DeepEqual(recoveryCalls, want) {
 		t.Fatalf("initial pull recovery calls = %#v, want %#v", recoveryCalls, want)
@@ -626,7 +626,7 @@ func TestCaptureSnapshotIfChangedSkipsMatchingFingerprint(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proc, "123", "mountinfo"), []byte(mountInfo), 0600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("BOXES_HOST_PROC", proc)
+	t.Setenv("PADDOCK_HOST_PROC", proc)
 	const boxID = "bx_abcdefgh2345"
 	var resticCalls atomic.Int32
 	dockerExec := testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
@@ -910,7 +910,7 @@ func TestCredentialsRecoverFromContainerAfterAgentRestart(t *testing.T) {
 			if len(argv) > 2 && argv[2] == "--format" {
 				_, _ = io.WriteString(stdout, `["PASSWORD=desktop-from-container","BOXD_TOKEN=boxd-from-container"]`)
 			} else {
-				_, _ = io.WriteString(stdout, `[{"Id":"id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+				_, _ = io.WriteString(stdout, `[{"Id":"id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			}
 		}
 		return 0, nil
@@ -978,7 +978,7 @@ func TestForwardAuthAcceptsQueryTokenAndSetsCookie(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	cookie := response.Result().Cookies()
-	if len(cookie) != 1 || cookie[0].Name != "boxes_auth" || cookie[0].Value != "access-token" || !cookie[0].HttpOnly || !cookie[0].Secure || cookie[0].Domain != "" || cookie[0].MaxAge < 1 {
+	if len(cookie) != 1 || cookie[0].Name != "paddock_auth" || cookie[0].Value != "access-token" || !cookie[0].HttpOnly || !cookie[0].Secure || cookie[0].Domain != "" || cookie[0].MaxAge < 1 {
 		t.Fatalf("auth cookies = %#v", cookie)
 	}
 }
@@ -993,7 +993,7 @@ func TestCreateCopiesBase64FilesWithRequestedMode(t *testing.T) {
 			if inspectCount == 1 {
 				return 1, nil
 			}
-			_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			return 0, nil
 		}
 		if len(argv) > 1 && argv[1] == "create" {
@@ -1060,7 +1060,7 @@ func TestCreateWaitsForBoxdHealth(t *testing.T) {
 			if inspects == 1 {
 				return 1, nil
 			}
-			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 		}
 		if len(argv) > 1 && argv[1] == "create" {
 			_, _ = io.WriteString(stdout, "container-id")
@@ -1102,7 +1102,7 @@ func TestStartWaitsForBoxdHealth(t *testing.T) {
 
 	dockerExec := testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
 		if len(argv) > 1 && argv[1] == "inspect" {
-			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 		}
 		return 0, nil
 	}}
@@ -1124,7 +1124,7 @@ func TestStartReturnsBoxNotReadyWhenHealthTimeoutExpires(t *testing.T) {
 	}))
 	dockerExec := testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
 		if len(argv) > 1 && argv[1] == "inspect" {
-			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 		}
 		return 0, nil
 	}}
@@ -1254,11 +1254,11 @@ func TestExecExecutorUsesArgumentsWithoutShellInterpretation(t *testing.T) {
 		t.Skip("printf is unavailable")
 	}
 	var stdout, stderr bytes.Buffer
-	code, err := (ExecExecutor{}).Run(context.Background(), []string{printf, "%s|%s", "hello world", "x;touch /tmp/boxes-shell-must-not-run"}, nil, &stdout, &stderr)
+	code, err := (ExecExecutor{}).Run(context.Background(), []string{printf, "%s|%s", "hello world", "x;touch /tmp/paddock-shell-must-not-run"}, nil, &stdout, &stderr)
 	if err != nil || code != 0 {
 		t.Fatalf("Run() = (%d, %v), stderr %q", code, err, stderr.String())
 	}
-	if got, want := stdout.String(), "hello world|x;touch /tmp/boxes-shell-must-not-run"; got != want {
+	if got, want := stdout.String(), "hello world|x;touch /tmp/paddock-shell-must-not-run"; got != want {
 		t.Fatalf("stdout = %q, want literal argv output %q", got, want)
 	}
 }
@@ -1367,7 +1367,7 @@ func routesDocker() *dockercli.Docker {
 			if len(argv) > 2 && argv[2] == "--format" {
 				_, _ = io.WriteString(stdout, `[]`)
 			} else {
-				_, _ = io.WriteString(stdout, `[{"Id":"id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"172.18.0.3"}}}}]`)
+				_, _ = io.WriteString(stdout, `[{"Id":"id","Name":"/box-bx_abcdefgh2345","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"172.18.0.3"}}}}]`)
 			}
 		}
 		return 0, nil
@@ -1587,12 +1587,12 @@ func TestDetachedKillSignalsProcessGroupFromPidFile(t *testing.T) {
 
 func TestDetachedArgvRecordsPidAndKeepsArgumentsLiteral(t *testing.T) {
 	got := detachedArgv("abc_-1", []string{"printf", "%s", "a b;c"}, nil)
-	want := []string{"setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/abc_-1.pid", "printf", "%s", "a b;c"}
+	want := []string{"setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.paddock-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.paddock-exec/abc_-1.pid", "printf", "%s", "a b;c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("detachedArgv = %#v, want %#v", got, want)
 	}
 	wrapped := detachedArgv("abc_-1", []string{"sleep", "9"}, []string{"setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--"})
-	wantWrapped := []string{"setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/abc_-1.pid", "sleep", "9"}
+	wantWrapped := []string{"setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.paddock-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.paddock-exec/abc_-1.pid", "sleep", "9"}
 	if !reflect.DeepEqual(wrapped, wantWrapped) {
 		t.Fatalf("wrapped detachedArgv = %#v, want %#v", wrapped, wantWrapped)
 	}
@@ -1665,11 +1665,11 @@ func TestDetachedExecAsBoxUserWrapsSetsidAndOpensPidDir(t *testing.T) {
 	agent := New(Config{NodeID: "nd_test"}, dockercli.New(boxUserExecutor(&dockerCalls)), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
 	processID := startDetached(t, agent.Handler(), "bx_abcdefgh2345", `{"cmd":["sleep","9"],"user":"alice","detached":true}`)
 	waitForProcessExit(t, agent.Handler(), "bx_abcdefgh2345", processID)
-	wantPrep := []string{"docker", "exec", "--user", "root", "box-bx_abcdefgh2345", "sh", "-c", "mkdir -p /tmp/.boxes-exec && chmod 1777 /tmp/.boxes-exec"}
+	wantPrep := []string{"docker", "exec", "--user", "root", "box-bx_abcdefgh2345", "sh", "-c", "mkdir -p /tmp/.paddock-exec && chmod 1777 /tmp/.paddock-exec"}
 	if got := findDockerCall(dockerCalls, "sh"); !reflect.DeepEqual(got, wantPrep) {
 		t.Fatalf("pid dir prep argv = %#v, want %#v", got, wantPrep)
 	}
-	want := []string{"docker", "exec", "--user", "root", "--workdir", "/home/alice", "--env", "HOME=/home/alice", "--env", "LOGNAME=alice", "--env", "USER=alice", "box-bx_abcdefgh2345", "setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.boxes-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.boxes-exec/" + processID + ".pid", "sleep", "9"}
+	want := []string{"docker", "exec", "--user", "root", "--workdir", "/home/alice", "--env", "HOME=/home/alice", "--env", "LOGNAME=alice", "--env", "USER=alice", "box-bx_abcdefgh2345", "setpriv", "--reuid=alice", "--regid=alice", "--init-groups", "--", "setsid", "--wait", "sh", "-c", `mkdir -p /tmp/.paddock-exec; echo $$ > "$0"; exec "$@"`, "/tmp/.paddock-exec/" + processID + ".pid", "sleep", "9"}
 	if got := findDockerCall(dockerCalls, "sleep"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("detached docker exec argv = %#v, want %#v", got, want)
 	}

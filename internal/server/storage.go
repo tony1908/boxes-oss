@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 const storageSettingKey = "snapshot_storage"
@@ -76,7 +76,7 @@ func (s *Server) initializeStorage(bootstrap StorageBootstrap) error {
 	}
 	config := storageConfig{Type: "local", Repository: bootstrap.Repository, Env: make(map[string]string)}
 	if config.Repository == "" {
-		config.Repository = "/var/lib/boxes/restic"
+		config.Repository = "/var/lib/paddock/restic"
 	}
 	if bootstrap.Password != "" {
 		config.Env["RESTIC_PASSWORD"] = bootstrap.Password
@@ -156,7 +156,7 @@ func (s *Server) saveStorage(ctx context.Context, config storageConfig) error {
 
 func makeS3Storage(endpoint, bucket, prefix, region, accessKey, secretKey, password string) (storageConfig, error) {
 	if accessKey == "" || secretKey == "" {
-		return storageConfig{}, errors.New("BOXES_S3_ACCESS_KEY and BOXES_S3_SECRET_KEY are required for S3 storage")
+		return storageConfig{}, errors.New("PADDOCK_S3_ACCESS_KEY and PADDOCK_S3_SECRET_KEY are required for S3 storage")
 	}
 	if strings.ContainsAny(accessKey+secretKey, "\r\n\x00") {
 		return storageConfig{}, errors.New("S3 credentials contain an invalid value")
@@ -169,7 +169,7 @@ func makeS3Storage(endpoint, bucket, prefix, region, accessKey, secretKey, passw
 		return storageConfig{}, err
 	}
 	if strings.Trim(prefix, "/") == "" {
-		prefix = "boxes"
+		prefix = "paddock"
 		repository, err = s3Repository(endpoint, bucket, prefix)
 		if err != nil {
 			return storageConfig{}, err
@@ -352,5 +352,5 @@ func (s *Server) snapshotStorageHeader(snapshot types.Snapshot) (http.Header, er
 	if err != nil {
 		return nil, err
 	}
-	return http.Header{"X-Boxes-Snapshot-Storage": {base64.RawURLEncoding.EncodeToString(data)}}, nil
+	return http.Header{"X-Paddock-Snapshot-Storage": {base64.RawURLEncoding.EncodeToString(data)}}, nil
 }

@@ -51,7 +51,7 @@ func (h *OpencodeHarness) Start(ctx context.Context, spec ConvSpec) (Session, er
 		}
 		port := listener.Addr().(*net.TCPAddr).Port
 		_ = listener.Close()
-		env, err := loadHarnessEnv("/run/boxes/env")
+		env, err := loadHarnessEnv("/run/paddock/env")
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +110,7 @@ func (h *OpencodeHarness) Start(ctx context.Context, spec ConvSpec) (Session, er
 }
 
 func opencodeHarnessEnvironment(workDir string, env []string) []string {
-	return append(env, "HOME="+workDir, "XDG_CACHE_HOME=/tmp/boxes-opencode-cache")
+	return append(env, "HOME="+workDir, "XDG_CACHE_HOME=/tmp/paddock-opencode-cache")
 }
 
 func waitForOpencode(ctx context.Context, client *http.Client, baseURL string) error {

@@ -1,3 +1,3 @@
-# boxes-sdk
+# paddock-sdk
 
-Install with `pip install boxes-sdk`.
+Install with `pip install paddock-sdk`.

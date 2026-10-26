@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 	"io"
 	"net/http"
 	"os"
@@ -26,7 +26,7 @@ const (
 	maxProcessesPerBox        = 100
 	maxStdinWriteBytes        = 1 << 20
 	stdinWriteTimeout         = 30 * time.Second
-	detachedPIDDir            = "/tmp/.boxes-exec"
+	detachedPIDDir            = "/tmp/.paddock-exec"
 	logFollowGrace            = 10 * time.Second
 	logPollInterval           = 200 * time.Millisecond
 )

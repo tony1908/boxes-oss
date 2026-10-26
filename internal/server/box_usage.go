@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 // boxCounters is container usage: CPU seconds and network bytes.

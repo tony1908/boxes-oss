@@ -270,7 +270,7 @@ func forwardAuthMiddleware(address string) map[string]any {
 	return map[string]any{"forwardAuth": map[string]any{
 		"address":                  address,
 		"trustForwardHeader":       true,
-		"addAuthCookiesToResponse": []string{"boxes_auth"},
+		"addAuthCookiesToResponse": []string{"paddock_auth"},
 	}}
 }
 

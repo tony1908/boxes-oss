@@ -1,36 +1,36 @@
-# Boxes CLI
+# Paddock CLI
 
-The `boxes` CLI connects to a Boxes server and sends requests to its `/api/v1`
+The `paddock` CLI connects to a Paddock server and sends requests to its `/api/v1`
 API. Install it from a release, use the server's CLI installer
 (`curl -fsSL https://<your-domain>/install/cli.sh | sh`), or build it from the
-repository with `go build ./cmd/boxes`.
+repository with `go build ./cmd/paddock`.
 
 ## Authentication
 
 For agents and CI, authenticate with an API key:
 
 ```sh
-boxes login --server https://boxes.example.com --api-key "$BOXES_API_KEY"
+paddock login --server https://paddock.example.com --api-key "$PADDOCK_API_KEY"
 ```
 
 `login` validates the key with `GET /api/v1/me` before saving it. The config
-file is written to `~/.config/boxes/config.json` with `0600` permissions. Use
+file is written to `~/.config/paddock/config.json` with `0600` permissions. Use
 `--key-stdin` to read the key from standard input without putting it in shell
 history:
 
 ```sh
-printf '%s' "$BOXES_API_KEY" | boxes login --server https://boxes.example.com --key-stdin
+printf '%s' "$PADDOCK_API_KEY" | paddock login --server https://paddock.example.com --key-stdin
 ```
 
 For interactive account login, pass an email. The password is prompted for
-unless supplied with `--password` or `BOXES_PASSWORD`:
+unless supplied with `--password` or `PADDOCK_PASSWORD`:
 
 ```sh
-boxes login --server https://boxes.example.com --email you@example.com
+paddock login --server https://paddock.example.com --email you@example.com
 ```
 
-`boxes whoami` prints the active server URL and authenticated account email,
-verifying the current credentials with the server. `boxes logout` clears the
+`paddock whoami` prints the active server URL and authenticated account email,
+verifying the current credentials with the server. `paddock logout` clears the
 saved server, token, and current box.
 
 API keys are created in the web UI (or with `POST /api/v1/api-keys`). Create
@@ -44,10 +44,10 @@ run without a config file:
 
 | Variable | Purpose |
 | --- | --- |
-| `BOXES_SERVER` | Server base URL (also the default for `login --server`) |
-| `BOXES_TOKEN` | Bearer token |
-| `BOXES_API_KEY` | API key, used as the bearer token when `BOXES_TOKEN` is unset |
-| `BOXES_PASSWORD` | Account password for `login --email` |
+| `PADDOCK_SERVER` | Server base URL (also the default for `login --server`) |
+| `PADDOCK_TOKEN` | Bearer token |
+| `PADDOCK_API_KEY` | API key, used as the bearer token when `PADDOCK_TOKEN` is unset |
+| `PADDOCK_PASSWORD` | Account password for `login --email` |
 
 ## Box sizes
 
@@ -57,7 +57,7 @@ run without a config file:
 
 ## Commands
 
-Run `boxes --help` for the command list. Every command accepts `--help` or `-h` anywhere in its arguments (after a `--` separator the arguments belong to the remote command) and prints its usage without calling the server; `boxes help <command>` does the same. The full set of top-level commands is:
+Run `paddock --help` for the command list. Every command accepts `--help` or `-h` anywhere in its arguments (after a `--` separator the arguments belong to the remote command) and prints its usage without calling the server; `paddock help <command>` does the same. The full set of top-level commands is:
 
 ```
 login logout whoami new list get info status current exec ps logs kill ssh proxy scp
@@ -69,50 +69,50 @@ skill env drive user group help
 Common forms:
 
 ```sh
-boxes new [--type SIZE] [--image REF] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
+paddock new [--type SIZE] [--image REF] [--ttl SECONDS | --no-auto-stop] [--idle-stop DURATION] \
           [-e KEY=VALUE]... [--setup-file FILE] [--from SNAPSHOT] [--environment ID | --no-env] \
           [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]... \
           [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]]
-boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
-boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
-boxes get <id>
-boxes info <id|current>
-boxes current
-boxes exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]
-boxes ps <id|current>                               # detached commands for a box
-boxes logs <id|current> <processId> [-f]             # output; -f follows and exits with the command status
-boxes kill <id|current> <processId> [--signal TERM]  # signal a detached command
-boxes prompt [id|current] "text" [--provider claude|codex|opencode|pi|prime|kimi] [--model M] [--new | --conversation ID] [--stop-when-done]
-boxes steer <id> <message> [--conversation ID]
-boxes interrupt <id> [--conversation ID]
-boxes events <id> [--follow]
-boxes conversations <id|current>
-boxes snapshots <id|current>
-boxes snapshots rm <boxId> <snapshotId>
-boxes usage <id|current>
-boxes desktop <id> [--public] [--profile NAME]
-boxes screenshot <id|current> [-o file.png]  # capture the desktop to a PNG
-boxes browser <id> [--public] [--profile NAME]
-boxes host <id> <port> [--private]
-boxes forward <id|current> <port> [--local-port N]
-boxes push <id> [dir] [--to PATH]
-boxes pull <id> <path> [-o DEST]
-boxes stop [id|current]
-boxes resume <id|current> [--type SIZE] [--ttl SECONDS | --no-auto-stop]
-boxes restore <id|current> <snapshotId>
-boxes fork <id|current> [--ttl SECONDS | --no-auto-stop]
-boxes extend <id|current> --hours N | --ttl SECONDS | --no-auto-stop | --idle-stop DURATION
-boxes delete <id|current> [--yes]
-boxes snapshot <id> <name> | snapshot pull <snapshotId|boxId> [-o FILE] | snapshot rm <name|snapshotId>
-boxes limits
-boxes status
-boxes dashboard [id|current]
-boxes skill install [--claude] [--codex] [--force]
-boxes env list | create <name> [JSON] | update <id> <JSON> | delete <id> | upgrade <id>
+paddock list [--filter r|s|e...] [--all] [--tag KEY=VALUE|KEY]...
+paddock update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]...
+paddock get <id>
+paddock info <id|current>
+paddock current
+paddock exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]
+paddock ps <id|current>                               # detached commands for a box
+paddock logs <id|current> <processId> [-f]             # output; -f follows and exits with the command status
+paddock kill <id|current> <processId> [--signal TERM]  # signal a detached command
+paddock prompt [id|current] "text" [--provider claude|codex|opencode|pi|prime|kimi] [--model M] [--new | --conversation ID] [--stop-when-done]
+paddock steer <id> <message> [--conversation ID]
+paddock interrupt <id> [--conversation ID]
+paddock events <id> [--follow]
+paddock conversations <id|current>
+paddock snapshots <id|current>
+paddock snapshots rm <boxId> <snapshotId>
+paddock usage <id|current>
+paddock desktop <id> [--public] [--profile NAME]
+paddock screenshot <id|current> [-o file.png]  # capture the desktop to a PNG
+paddock browser <id> [--public] [--profile NAME]
+paddock host <id> <port> [--private]
+paddock forward <id|current> <port> [--local-port N]
+paddock push <id> [dir] [--to PATH]
+paddock pull <id> <path> [-o DEST]
+paddock stop [id|current]
+paddock resume <id|current> [--type SIZE] [--ttl SECONDS | --no-auto-stop]
+paddock restore <id|current> <snapshotId>
+paddock fork <id|current> [--ttl SECONDS | --no-auto-stop]
+paddock extend <id|current> --hours N | --ttl SECONDS | --no-auto-stop | --idle-stop DURATION
+paddock delete <id|current> [--yes]
+paddock snapshot <id> <name> | snapshot pull <snapshotId|boxId> [-o FILE] | snapshot rm <name|snapshotId>
+paddock limits
+paddock status
+paddock dashboard [id|current]
+paddock skill install [--claude] [--codex] [--force]
+paddock env list | create <name> [JSON] | update <id> <JSON> | delete <id> | upgrade <id>
 ```
 
-`--json` goes before the command (for example, `boxes --json list`) and prints
-machine-readable output. `boxes list` also accepts `--json` after the
+`--json` goes before the command (for example, `paddock --json list`) and prints
+machine-readable output. `paddock list` also accepts `--json` after the
 subcommand.
 
 Creating a box, forking one, or using a box command records that box ID as
@@ -132,50 +132,50 @@ seconds and `--no-auto-stop` disables the timer; the two are mutually exclusive.
 `prompt --stop-when-done` asks the server to stop and snapshot the box once the
 run reaches a terminal state.
 
-`boxes delete <id|current>` permanently deletes a box. It prompts for
+`paddock delete <id|current>` permanently deletes a box. It prompts for
 confirmation on a terminal; when stdin is not a terminal it requires `--yes`.
 
 ### Tags
 
 `--tag KEY=VALUE` (repeatable) attaches tags to a new box. Keys match
 `^[a-z0-9][a-z0-9_.-]{0,62}$`, values are at most 255 characters, and a box can
-hold 10 tags. `boxes update <id|current> --tag KEY=VALUE` merges the given tags
+hold 10 tags. `paddock update <id|current> --tag KEY=VALUE` merges the given tags
 into the existing ones, and `--clear-tags` removes them all (the two cannot be
-combined). `boxes list --tag KEY=VALUE` keeps boxes with that exact value, and
+combined). `paddock list --tag KEY=VALUE` keeps boxes with that exact value, and
 `--tag KEY` keeps boxes that have the key; repeated filters must all match. Tags
-appear in the `tags` field of `boxes info` and `boxes get` output.
+appear in the `tags` field of `paddock info` and `paddock get` output.
 
 ### Images
 
-`boxes new --image REF` runs the box in a specific container image. The image must be built `FROM ghcr.io/tony1908/boxes-box` so boxd is present; otherwise the box never becomes ready (`box_not_ready`). Without the flag the server default image is used.
+`paddock new --image REF` runs the box in a specific container image. The image must be built `FROM ghcr.io/tony1908/paddock-box` so boxd is present; otherwise the box never becomes ready (`box_not_ready`). Without the flag the server default image is used.
 
 ### Usage
 
-`boxes usage <id|current>` prints the usage JSON from `GET /sandboxes/{id}/usage`, including `totals` (`cpuSeconds`, `rxBytes`, `txBytes`) and `live` while the box runs. See [api.md](api.md#usage-and-cost).
+`paddock usage <id|current>` prints the usage JSON from `GET /sandboxes/{id}/usage`, including `totals` (`cpuSeconds`, `rxBytes`, `txBytes`) and `live` while the box runs. See [api.md](api.md#usage-and-cost).
 
 ### Sources
 
-`boxes new` takes one source, either a git repository or a tarball, which is fetched once on first boot before `--setup-file` runs:
+`paddock new` takes one source, either a git repository or a tarball, which is fetched once on first boot before `--setup-file` runs:
 
 - `--git URL` clones an https repository into `/config/<path>`. `--revision` takes a branch, tag, or commit SHA; `--depth N` makes a shallow clone (1 to 1000); `--path` picks the directory (default `project`).
 - `--git-token-env VAR` reads the git token from the environment variable `VAR` for private repositories. The token is never passed as a flag value and is not stored.
 - `--tarball URL` downloads a `.tar.gz` and extracts it into `/config/<path>`. It cannot be combined with `--git`, and `--revision`, `--depth`, and `--git-token-env` apply only to `--git`.
 
 ```sh
-boxes new --git https://github.com/acme/app.git --revision v2.1.0 --depth 1 --git-token-env GITHUB_TOKEN --path app
+paddock new --git https://github.com/acme/app.git --revision v2.1.0 --depth 1 --git-token-env GITHUB_TOKEN --path app
 ```
 
 ### Outbound network policy
 
-`boxes new` and `boxes update <id|current>` take the same network flags:
+`paddock new` and `paddock update <id|current>` take the same network flags:
 
 - `--network allow-all|deny-all|allowlist` sets the mode (`allow-all` is the default for new boxes).
 - `--allow-domain HOST` (repeatable) allows a hostname or `*.example.com`; `--allow-cidr CIDR` (repeatable) allows an IPv4 range. Both require `--network allowlist`.
 - `--deny-cidr CIDR` (repeatable) blocks an IPv4 range in every mode and wins over allows. `169.254.169.254/32` is always blocked.
 
 ```sh
-boxes new --network allowlist --allow-domain api.github.com --allow-domain '*.npmjs.org' --deny-cidr 10.0.0.0/8
-boxes update current --network deny-all
+paddock new --network allowlist --allow-domain api.github.com --allow-domain '*.npmjs.org' --deny-cidr 10.0.0.0/8
+paddock update current --network deny-all
 ```
 
 `update` applies to a running box at once and to a stopped box on its next start.
@@ -183,16 +183,16 @@ Allowlists are DNS-based and IPv4 only; see the limits in the API reference.
 
 ### Exec and detached commands
 
-`boxes exec <id|current> [flags] -- <command> [arguments]` runs a command in the box.
+`paddock exec <id|current> [flags] -- <command> [arguments]` runs a command in the box.
 Flags may appear before or after the box ID, but must come before `--`:
 
 - `--user NAME` runs as a box user (default `abc`).
 - `--cwd DIR` sets the working directory inside the box.
 - `--env KEY=VALUE` (repeatable) sets environment variables for the command.
 - `--desktop` runs the command inside the box desktop session (`DISPLAY=:1` plus the session's bus and runtime variables), so GUI apps appear on the desktop. Use it with `--detach` for apps that keep running. It runs as `abc` only and returns `409 desktop_not_running` when no session is up.
-- `--detach` starts the command in the background and prints its processId. `boxes ps <id>` lists detached commands, `boxes exec <id> --status PID` shows one, `boxes logs <id> PID [-f]` prints its output (`-f` follows until it exits), and `boxes kill <id> PID [--signal TERM]` signals it.
+- `--detach` starts the command in the background and prints its processId. `paddock ps <id>` lists detached commands, `paddock exec <id> --status PID` shows one, `paddock logs <id> PID [-f]` prints its output (`-f` follows until it exits), and `paddock kill <id> PID [--signal TERM]` signals it.
 
-`exec` exits with the command's exit code, so `boxes exec` works in shell conditions and CI. `logs -f` does the same once the command has exited. Other CLI failures exit with 1.
+`exec` exits with the command's exit code, so `paddock exec` works in shell conditions and CI. `logs -f` does the same once the command has exited. Other CLI failures exit with 1.
 
 ### Drives
 
@@ -200,11 +200,11 @@ Drives are named volumes that survive box deletion. Create one, then mount it
 with `--mount DRIVE:PATH[:ro]` (repeatable; `PATH` must be under `/mnt`):
 
 ```
-boxes drive create data
-boxes new --mount data:/mnt/data --mount cache:/mnt/cache:ro
-boxes drive list
-boxes drive fork data data-copy
-boxes drive rm data
+paddock drive create data
+paddock new --mount data:/mnt/data --mount cache:/mnt/cache:ro
+paddock drive list
+paddock drive fork data data-copy
+paddock drive rm data
 ```
 
 Data persists until the drive is deleted and is not included in snapshots.
@@ -221,13 +221,13 @@ read them through group membership. Shared groups get `/shared/<group>`
 (setgid 2770).
 
 ```
-boxes user add <box> alice
-boxes user list <box>
-boxes user rm <box> alice
-boxes group add <box> team
-boxes group member add <box> team alice
-boxes group member rm <box> team alice
-boxes exec <box> --user alice -- id -un
+paddock user add <box> alice
+paddock user list <box>
+paddock user rm <box> alice
+paddock group add <box> team
+paddock group member add <box> team alice
+paddock group member rm <box> team alice
+paddock exec <box> --user alice -- id -un
 ```
 
 Accounts live in the box filesystem and persist across stop and resume.
@@ -238,8 +238,8 @@ are reserved. See the API docs for the isolation model.
 
 ### Desktop, browser, and forwarding
 
-Launch a GUI app on the desktop with `boxes exec <id> --desktop --detach -- ./my-app`.
-`boxes screenshot <id> [-o file.png]` captures the full desktop (display `:1`) to a PNG
+Launch a GUI app on the desktop with `paddock exec <id> --desktop --detach -- ./my-app`.
+`paddock screenshot <id> [-o file.png]` captures the full desktop (display `:1`) to a PNG
 and downloads it; the default file is `screenshot-<id>.png`. The temporary capture in the
 box is removed after the download.
 
@@ -261,28 +261,28 @@ selected box page. `ssh`, `scp`, and `proxy <id>` are the SSH helpers.
 
 ### Skill installation
 
-`skill install` writes the embedded Boxes agent skill to `~/.claude/skills/boxes/SKILL.md`
-and `~/.codex/skills/boxes/SKILL.md`. Pass `--claude` or `--codex` to select one.
+`skill install` writes the embedded Paddock agent skill to `~/.claude/skills/paddock/SKILL.md`
+and `~/.codex/skills/paddock/SKILL.md`. Pass `--claude` or `--codex` to select one.
 Existing modified files are preserved unless `--force` is supplied.
 
 ## Quickstart
 
 ```sh
-boxes login --server https://boxes.example.com --email you@example.com
-boxes new --type small --ttl 3600        # creates a box and makes it "current"
-boxes exec current -- uname -a            # run a command
-boxes push current ./project --to /config/project
-boxes exec current -- sh -c 'cd /config/project && ls'
-boxes exec current --detach -- sleep 600   # prints a processId
-boxes logs current <processId> -f        # stream output until it exits
-boxes kill current <processId>            # SIGTERM the command
-boxes desktop current                     # open the desktop session
-boxes prompt current "summarize the repo" --provider claude --stop-when-done
-boxes stop current                        # captures a snapshot, then stops
-boxes resume current                      # restores from the latest snapshot
-boxes restore current <snapshotId>        # roll back to one of its snapshots
-boxes fork current --ttl 1800             # copies the filesystem into a new box
-boxes delete current --yes
+paddock login --server https://paddock.example.com --email you@example.com
+paddock new --type small --ttl 3600        # creates a box and makes it "current"
+paddock exec current -- uname -a            # run a command
+paddock push current ./project --to /config/project
+paddock exec current -- sh -c 'cd /config/project && ls'
+paddock exec current --detach -- sleep 600   # prints a processId
+paddock logs current <processId> -f        # stream output until it exits
+paddock kill current <processId>            # SIGTERM the command
+paddock desktop current                     # open the desktop session
+paddock prompt current "summarize the repo" --provider claude --stop-when-done
+paddock stop current                        # captures a snapshot, then stops
+paddock resume current                      # restores from the latest snapshot
+paddock restore current <snapshotId>        # roll back to one of its snapshots
+paddock fork current --ttl 1800             # copies the filesystem into a new box
+paddock delete current --yes
 ```
 
 `fork` creates a new box from a fresh capture of the source; `resume` brings a
@@ -291,5 +291,5 @@ stopped box back from its latest snapshot.
 `new --keep-snapshots N` and `update --keep-snapshots N` set how many automatic
 snapshots the box keeps (1 to 50; default 5). `restore` rolls the box back to one
 of its own snapshots: a running box is stopped and resumed from it, and a stopped
-box resumes from it next. Snapshot IDs come from `boxes snapshots <id>`. See [lifecycle.md](lifecycle.md) and
+box resumes from it next. Snapshot IDs come from `paddock snapshots <id>`. See [lifecycle.md](lifecycle.md) and
 [snapshots.md](snapshots.md).

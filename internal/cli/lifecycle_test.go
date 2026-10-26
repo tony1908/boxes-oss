@@ -65,8 +65,8 @@ func TestCurrentPersistenceDoesNotSaveEnvironmentCredentials(t *testing.T) {
 		_, _ = io.WriteString(w, `{"id":"bx_abcdefghijkl","state":"ready"}`)
 	}))
 	defer server.Close()
-	t.Setenv("BOXES_SERVER", server.URL)
-	t.Setenv("BOXES_TOKEN", "transient-token")
+	t.Setenv("PADDOCK_SERVER", server.URL)
+	t.Setenv("PADDOCK_TOKEN", "transient-token")
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: configPath, HTTPClient: server.Client()}
 	if err := app.Run(context.Background(), []string{"info", "bx_abcdefghijkl"}); err != nil {
@@ -425,7 +425,7 @@ func TestConversationSnapshotUsageAndLimitsEndpoints(t *testing.T) {
 
 func TestDashboardOpensCurrentBoxURL(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"server":"https://boxes.example.test/","current":"bx_current"}`), 0600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"server":"https://paddock.example.test/","current":"bx_current"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	opened := ""
@@ -433,7 +433,7 @@ func TestDashboardOpensCurrentBoxURL(t *testing.T) {
 	if err := app.Run(context.Background(), []string{"dashboard", "current"}); err != nil {
 		t.Fatalf("dashboard: %v", err)
 	}
-	if opened != "https://boxes.example.test/sandbox/?id=bx_current" {
+	if opened != "https://paddock.example.test/sandbox/?id=bx_current" {
 		t.Fatalf("dashboard URL = %q", opened)
 	}
 }
@@ -502,14 +502,14 @@ func TestStatusLogoutAndForkTTL(t *testing.T) {
 func TestSkillInstallProtectsModifiedFilesAndCanForce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	claudeFile := filepath.Join(home, ".claude", "skills", "boxes", "SKILL.md")
+	claudeFile := filepath.Join(home, ".claude", "skills", "paddock", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(claudeFile), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(claudeFile, []byte("user-owned\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: filepath.Join(home, ".config", "boxes", "config.json")}
+	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: filepath.Join(home, ".config", "paddock", "config.json")}
 	if err := app.Run(context.Background(), []string{"skill", "install", "--claude"}); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("install modified skill error = %v, want force guidance", err)
 	}
@@ -520,7 +520,7 @@ func TestSkillInstallProtectsModifiedFilesAndCanForce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(installed, []byte("boxes-skill-managed")) || !bytes.Contains(installed, []byte("--stop-when-done")) || !bytes.Contains(installed, []byte("boxes extend")) {
+	if !bytes.Contains(installed, []byte("paddock-skill-managed")) || !bytes.Contains(installed, []byte("--stop-when-done")) || !bytes.Contains(installed, []byte("paddock extend")) {
 		t.Fatalf("installed skill lacks marker/lifecycle guidance: %s", installed)
 	}
 }

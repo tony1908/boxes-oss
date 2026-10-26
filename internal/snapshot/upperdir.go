@@ -24,7 +24,7 @@ type procMountInfo struct {
 }
 
 func newProcMountInfo() procMountInfo {
-	root := os.Getenv("BOXES_HOST_PROC")
+	root := os.Getenv("PADDOCK_HOST_PROC")
 	if root == "" {
 		root = "/proc"
 	}

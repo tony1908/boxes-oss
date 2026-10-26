@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 type webhookEventDelivery struct {
@@ -191,14 +191,14 @@ func (s *Server) deliverWebhook(item webhookRequest) {
 	mac := hmac.New(sha256.New, []byte(item.Secret))
 	_, _ = mac.Write(item.Body)
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	allowPrivate := strings.EqualFold(os.Getenv("BOXES_WEBHOOK_ALLOW_PRIVATE"), "true")
+	allowPrivate := strings.EqualFold(os.Getenv("PADDOCK_WEBHOOK_ALLOW_PRIVATE"), "true")
 	transport := &http.Transport{DialContext: webhookDialContext(allowPrivate)}
 	client := &http.Client{Timeout: 5 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	for attempt := 0; attempt < 4; attempt++ {
 		request, err := http.NewRequest(http.MethodPost, item.URL, bytes.NewReader(item.Body))
 		if err == nil {
 			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set("X-Boxes-Signature", signature)
+			request.Header.Set("X-Paddock-Signature", signature)
 			response, requestErr := client.Do(request)
 			if requestErr == nil {
 				_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
@@ -221,7 +221,7 @@ func validWebhookURL(raw string) bool {
 
 func webhookURLAllowed(raw string) bool {
 	parsed, err := url.ParseRequestURI(raw)
-	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && (strings.EqualFold(os.Getenv("BOXES_WEBHOOK_ALLOW_PRIVATE"), "true") || !blockedWebhookHost(parsed.Hostname()))
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && (strings.EqualFold(os.Getenv("PADDOCK_WEBHOOK_ALLOW_PRIVATE"), "true") || !blockedWebhookHost(parsed.Hostname()))
 }
 
 func blockedWebhookHost(host string) bool {

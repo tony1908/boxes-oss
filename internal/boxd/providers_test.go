@@ -24,11 +24,11 @@ func TestProviderRegistryRegistersCodexAndOpencode(t *testing.T) {
 }
 
 func TestOpencodeHarnessUsesWritableCacheOutsideConfigHome(t *testing.T) {
-	env := opencodeHarnessEnvironment("/config", []string{"BOXES_TEST=value"})
+	env := opencodeHarnessEnvironment("/config", []string{"PADDOCK_TEST=value"})
 	if !containsEnvValue(env, "HOME", "/config") {
 		t.Fatalf("OpenCode HOME env = %#v, want /config", env)
 	}
-	if !containsEnvValue(env, "XDG_CACHE_HOME", "/tmp/boxes-opencode-cache") {
+	if !containsEnvValue(env, "XDG_CACHE_HOME", "/tmp/paddock-opencode-cache") {
 		t.Fatalf("OpenCode XDG_CACHE_HOME env = %#v, want writable /tmp cache", env)
 	}
 }
@@ -151,11 +151,11 @@ func TestOpencodeRecordedEventLinesBecomeHarnessEvents(t *testing.T) {
 func TestOpencodeReplayNormalizesAssistantPartsAndToolLifecycleOnce(t *testing.T) {
 	lines := []string{
 		`{"type":"message.updated","properties":{"info":{"id":"msg-user","sessionID":"ses-1","role":"user"}}}`,
-		`{"type":"message.part.updated","properties":{"part":{"id":"part-user","sessionID":"ses-1","messageID":"msg-user","type":"text","text":"boxes-ok 1920"}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"part-user","sessionID":"ses-1","messageID":"msg-user","type":"text","text":"paddock-ok 1920"}}}`,
 		`{"type":"message.updated","properties":{"info":{"id":"msg-assistant","sessionID":"ses-1","role":"assistant"}}}`,
-		`{"type":"message.part.updated","properties":{"part":{"id":"part-text","sessionID":"ses-1","messageID":"msg-assistant","type":"text","text":"boxes-"}}}`,
-		`{"type":"message.part.updated","properties":{"part":{"id":"part-text","sessionID":"ses-1","messageID":"msg-assistant","type":"text","text":"boxes-ok"}}}`,
-		`{"type":"message.part.updated","properties":{"part":{"id":"part-text","sessionID":"ses-1","messageID":"msg-assistant","type":"text","text":"boxes-ok"}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"part-text","sessionID":"ses-1","messageID":"msg-assistant","type":"text","text":"paddock-"}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"part-text","sessionID":"ses-1","messageID":"msg-assistant","type":"text","text":"paddock-ok"}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"part-text","sessionID":"ses-1","messageID":"msg-assistant","type":"text","text":"paddock-ok"}}}`,
 		`{"type":"message.part.updated","properties":{"part":{"id":"part-tool","sessionID":"ses-1","messageID":"msg-assistant","type":"tool","callID":"call-1","tool":"bash","state":{"status":"running","title":"echo hi","input":{"command":"echo hi"}}}}}`,
 		`{"type":"message.part.updated","properties":{"part":{"id":"part-tool","sessionID":"ses-1","messageID":"msg-assistant","type":"tool","callID":"call-1","tool":"bash","state":{"status":"running","title":"echo hi","input":{"command":"echo hi"}}}}}`,
 		`{"type":"message.part.updated","properties":{"part":{"id":"part-tool","sessionID":"ses-1","messageID":"msg-assistant","type":"tool","callID":"call-1","tool":"bash","state":{"status":"completed","title":"echo hi","input":{"command":"echo hi"},"output":"ok"}}}}`,
@@ -167,8 +167,8 @@ func TestOpencodeReplayNormalizesAssistantPartsAndToolLifecycleOnce(t *testing.T
 		got = append(got, mapper.mapEvent([]byte(line))...)
 	}
 	want := []HarnessEvent{
-		{Type: "message.part", SessionID: "ses-1", Data: map[string]any{"id": "part-text", "text": "boxes-"}},
-		{Type: "message.part", SessionID: "ses-1", Data: map[string]any{"id": "part-text", "text": "boxes-ok"}},
+		{Type: "message.part", SessionID: "ses-1", Data: map[string]any{"id": "part-text", "text": "paddock-"}},
+		{Type: "message.part", SessionID: "ses-1", Data: map[string]any{"id": "part-text", "text": "paddock-ok"}},
 		{Type: "tool.call", SessionID: "ses-1", Data: map[string]any{"id": "call-1", "name": "echo hi", "input": map[string]any{"command": "echo hi"}}},
 		{Type: "tool.result", SessionID: "ses-1", Data: map[string]any{"id": "call-1", "output": "ok", "isError": false}},
 	}

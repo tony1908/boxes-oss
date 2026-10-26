@@ -57,23 +57,23 @@ RUN set -eux; \
     else \
         echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1; \
     fi; \
-    ln -s "$(command -v google-chrome || command -v firefox)" /usr/local/bin/boxes-browser; \
+    ln -s "$(command -v google-chrome || command -v firefox)" /usr/local/bin/paddock-browser; \
     rm -rf /var/lib/apt/lists/*
 
 ENV START_DOCKER=false \
     SELKIES_IS_MANUAL_RESOLUTION_MODE=true \
     SELKIES_MANUAL_WIDTH=1920 \
     SELKIES_MANUAL_HEIGHT=1080 \
-    BROWSER=boxes-browser
+    BROWSER=paddock-browser
 
 COPY --from=boxd-build /out/boxd /usr/local/bin/boxd
 COPY images/box/root/ /
 COPY images/box/selkies/startwm.sh /defaults/startwm.sh
 
 RUN chmod 0755 \
-        /custom-cont-init.d/00-boxes-restore \
-        /custom-cont-init.d/01-boxes-ssh-hostkeys \
-        /custom-cont-init.d/10-boxes-setup \
+        /custom-cont-init.d/00-paddock-restore \
+        /custom-cont-init.d/01-paddock-ssh-hostkeys \
+        /custom-cont-init.d/10-paddock-setup \
         /custom-services.d/boxd \
         /custom-services.d/sshd \
         /usr/local/bin/docker \
@@ -88,7 +88,7 @@ RUN chmod 0755 \
         'AllowUsers abc' \
         'AuthorizedKeysFile /config/.ssh/authorized_keys' \
         'UsePAM no' \
-        > /etc/ssh/sshd_config.d/boxes.conf \
+        > /etc/ssh/sshd_config.d/paddock.conf \
     && printf 'abc ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/abc \
     && chmod 0440 /etc/sudoers.d/abc \
     && visudo -cf /etc/sudoers.d/abc \

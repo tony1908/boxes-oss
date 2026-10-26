@@ -1,4 +1,4 @@
-module github.com/tony1908/boxes-oss
+module github.com/tony1908/paddock
 
 go 1.26.0
 

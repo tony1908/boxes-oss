@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Boxes API
+  title: Paddock API
   version: 1.0.0
-  description: Lifecycle, execution, and installation contract for self-hosted Boxes.
+  description: Lifecycle, execution, and installation contract for self-hosted Paddock.
 servers:
   - url: /api/v1
 security:
@@ -28,7 +28,7 @@ paths:
       - url: /
     get:
       summary: Download the Windows CLI installer
-      description: Returns a PowerShell script with the configured public server URL embedded. It installs the matching Windows CLI and the Boxes agent skills for the current user.
+      description: Returns a PowerShell script with the configured public server URL embedded. It installs the matching Windows CLI and the Paddock agent skills for the current user.
       security: []
       responses:
         "200":
@@ -41,13 +41,13 @@ paths:
     servers:
       - url: /
     get:
-      summary: Download a Boxes CLI binary
+      summary: Download a Paddock CLI binary
       security: []
       parameters:
         - name: binary
           in: path
           required: true
-          description: Supported binaries include boxes-darwin-arm64, boxes-darwin-amd64, boxes-linux-amd64, boxes-linux-arm64, boxes-windows-amd64.exe, and boxes-windows-arm64.exe.
+          description: Supported binaries include paddock-darwin-arm64, paddock-darwin-amd64, paddock-linux-amd64, paddock-linux-arm64, paddock-windows-amd64.exe, and paddock-windows-arm64.exe.
           schema:
             type: string
       responses:
@@ -1381,7 +1381,7 @@ components:
         image:
           type: string
           maxLength: 255
-          description: Container image for this box, a reference like ghcr.io/you/box:tag. Must be built FROM ghcr.io/tony1908/boxes-box so boxd is present; otherwise the box never becomes ready (box_not_ready). Omitted uses the server default box image. Invalid references return 400 invalid_image. Forks always use the source box image.
+          description: Container image for this box, a reference like ghcr.io/you/box:tag. Must be built FROM ghcr.io/tony1908/paddock-box so boxd is present; otherwise the box never becomes ready (box_not_ready). Omitted uses the server default box image. Invalid references return 400 invalid_image. Forks always use the source box image.
         ttlSeconds:
           allOf:
             - $ref: "#/components/schemas/TTLSeconds"

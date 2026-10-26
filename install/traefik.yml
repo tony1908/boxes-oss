@@ -9,13 +9,13 @@ entryPoints:
 
 providers:
   file:
-    directory: /etc/boxes/traefik/dynamic
+    directory: /etc/paddock/traefik/dynamic
     watch: true
 
 certificatesResolvers:
   letsencrypt:
     acme:
       email: __ACME_EMAIL__
-      storage: /etc/boxes/traefik/acme.json
+      storage: /etc/paddock/traefik/acme.json
       httpChallenge:
         entryPoint: web

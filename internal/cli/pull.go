@@ -16,7 +16,7 @@ import (
 
 func (c *CLI) pull(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: boxes pull <id> <path> [-o dest]")
+		return fmt.Errorf("usage: paddock pull <id> <path> [-o dest]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -33,7 +33,7 @@ func (c *CLI) pull(ctx context.Context, args []string) error {
 			i++
 			continue
 		}
-		return fmt.Errorf("usage: boxes pull <id> <path> [-o dest]")
+		return fmt.Errorf("usage: paddock pull <id> <path> [-o dest]")
 	}
 	if err := c.fetchArtifact(ctx, id, source, dest); err != nil {
 		return err

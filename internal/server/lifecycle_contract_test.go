@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestParseTTLSecondsSupportsDefaultNullMinimumAndMaximum(t *testing.T) {
@@ -213,7 +213,7 @@ func TestSandboxListFilterAndUsageEndpoint(t *testing.T) {
 func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 	srv, cleanup := newTestServer(t)
 	defer cleanup()
-	srv.cfg.PublicURL = "https://boxes.example.test/"
+	srv.cfg.PublicURL = "https://paddock.example.test/"
 	httpServer := httptest.NewServer(srv.Handler())
 	defer httpServer.Close()
 	response, err := httpServer.Client().Get(httpServer.URL + "/install/cli.sh")
@@ -222,7 +222,7 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 	}
 	script, _ := io.ReadAll(response.Body)
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusOK || !strings.Contains(string(script), "SERVER_URL='https://boxes.example.test'") || !strings.Contains(string(script), "/install/cli/${binary}") || !strings.Contains(string(script), "boxes skill install") {
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(script), "SERVER_URL='https://paddock.example.test'") || !strings.Contains(string(script), "/install/cli/${binary}") || !strings.Contains(string(script), "paddock skill install") {
 		t.Fatalf("CLI install script response status=%d body=%s", response.StatusCode, script)
 	}
 	powershellResponse, err := httpServer.Client().Get(httpServer.URL + "/install/cli.ps1")
@@ -231,10 +231,10 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 	}
 	powershellScript, _ := io.ReadAll(powershellResponse.Body)
 	_ = powershellResponse.Body.Close()
-	if powershellResponse.StatusCode != http.StatusOK || !strings.Contains(string(powershellScript), "$SERVER_URL = 'https://boxes.example.test'") || !strings.Contains(string(powershellScript), "boxes-windows-$arch.exe") || !strings.Contains(string(powershellScript), "$env:LOCALAPPDATA") || !strings.Contains(string(powershellScript), "--json skill install") {
+	if powershellResponse.StatusCode != http.StatusOK || !strings.Contains(string(powershellScript), "$SERVER_URL = 'https://paddock.example.test'") || !strings.Contains(string(powershellScript), "paddock-windows-$arch.exe") || !strings.Contains(string(powershellScript), "$env:LOCALAPPDATA") || !strings.Contains(string(powershellScript), "--json skill install") {
 		t.Fatalf("PowerShell CLI install response status=%d body=%s", powershellResponse.StatusCode, powershellScript)
 	}
-	missing, err := httpServer.Client().Get(httpServer.URL + "/install/cli/boxes-linux-amd64")
+	missing, err := httpServer.Client().Get(httpServer.URL + "/install/cli/paddock-linux-amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,10 +247,10 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 	if err := os.MkdirAll(cliDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cliDir, "boxes-linux-amd64"), []byte("cli-binary"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(cliDir, "paddock-linux-amd64"), []byte("cli-binary"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	installed, err := httpServer.Client().Get(httpServer.URL + "/install/cli/boxes-linux-amd64")
+	installed, err := httpServer.Client().Get(httpServer.URL + "/install/cli/paddock-linux-amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,10 +259,10 @@ func TestCLIDistributionServesScriptAndConfiguredBinaries(t *testing.T) {
 	if installed.StatusCode != http.StatusOK || string(contents) != "cli-binary" {
 		t.Fatalf("binary response status=%d contents=%q", installed.StatusCode, contents)
 	}
-	if err := os.WriteFile(filepath.Join(cliDir, "boxes-windows-arm64.exe"), []byte("windows-cli-binary"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(cliDir, "paddock-windows-arm64.exe"), []byte("windows-cli-binary"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	windowsInstalled, err := httpServer.Client().Get(httpServer.URL + "/install/cli/boxes-windows-arm64.exe")
+	windowsInstalled, err := httpServer.Client().Get(httpServer.URL + "/install/cli/paddock-windows-arm64.exe")
 	if err != nil {
 		t.Fatal(err)
 	}

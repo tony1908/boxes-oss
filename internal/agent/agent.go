@@ -30,15 +30,15 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/tony1908/boxes-oss/internal/diagnostics"
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
-	boxtypes "github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/diagnostics"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
+	boxtypes "github.com/tony1908/paddock/internal/types"
 )
 
 const (
 	defaultRuntime        = "sysbox-runc"
-	defaultTraefikDir     = "/etc/boxes/traefik/dynamic"
+	defaultTraefikDir     = "/etc/paddock/traefik/dynamic"
 	defaultForwardAuthURL = "http://127.0.0.1:7001/auth/forward"
 	maxExecOutput         = 1 << 20
 	maxRequestBody        = 16 << 20
@@ -215,13 +215,13 @@ func New(config Config, docker *dockercli.Docker, snapshots *snapshot.Engine) *A
 		config.ForwardAuthURL = defaultForwardAuthURL
 	}
 	if config.StoragePath == "" {
-		config.StoragePath = "/etc/boxes/storage.json"
+		config.StoragePath = "/etc/paddock/storage.json"
 	}
 	if config.ToolsImage == "" {
-		config.ToolsImage = os.Getenv("BOXES_TOOLS_IMAGE")
+		config.ToolsImage = os.Getenv("PADDOCK_TOOLS_IMAGE")
 	}
 	if config.TraefikCheckAddr == "" {
-		config.TraefikCheckAddr = os.Getenv("BOXES_TRAEFIK_CHECK_ADDR")
+		config.TraefikCheckAddr = os.Getenv("PADDOCK_TRAEFIK_CHECK_ADDR")
 	}
 	if config.TraefikCheckAddr == "" {
 		config.TraefikCheckAddr = "127.0.0.1:443"
@@ -441,7 +441,7 @@ func LoadStorage(filename string) (string, string, map[string]string, error) {
 }
 
 func (a *Agent) health(w http.ResponseWriter, r *http.Request) {
-	containers, err := a.docker.List(r.Context(), "boxes.managed=true")
+	containers, err := a.docker.List(r.Context(), "paddock.managed=true")
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "docker_unavailable", "cannot list managed boxes")
 		return
@@ -524,7 +524,7 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 	}
 	toolsVolume := ""
 	if image := a.toolsImage(request); image == "" || strings.EqualFold(image, "none") {
-		a.warnToolsUnavailable("BOXES_TOOLS_IMAGE is not configured; skipping shared tools volume")
+		a.warnToolsUnavailable("PADDOCK_TOOLS_IMAGE is not configured; skipping shared tools volume")
 	} else {
 		volume, available, err := a.docker.EnsureToolsVolume(r.Context(), image)
 		if err != nil {
@@ -573,7 +573,7 @@ func (a *Agent) createBox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if request.Fork {
-		markerArchive, err := makeFilesArchive([]boxFile{{Path: "/.boxes/fork", Mode: 0o600}})
+		markerArchive, err := makeFilesArchive([]boxFile{{Path: "/.paddock/fork", Mode: 0o600}})
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_files", "cannot create fork restore marker")
 			return
@@ -1132,7 +1132,7 @@ func (a *Agent) snapshotDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Disposition", `attachment; filename="snapshot.tar.gz"`)
-	w.Header().Add("Trailer", "X-Boxes-Snapshot-Error")
+	w.Header().Add("Trailer", "X-Paddock-Snapshot-Error")
 	w.WriteHeader(http.StatusOK)
 	gz := gzip.NewWriter(w)
 	a.snapshotExclusiveMu.RLock()
@@ -1140,11 +1140,11 @@ func (a *Agent) snapshotDownload(w http.ResponseWriter, r *http.Request) {
 	a.snapshotExclusiveMu.RUnlock()
 	if err != nil {
 		_ = gz.Close()
-		w.Header().Set("X-Boxes-Snapshot-Error", "snapshot dump failed")
+		w.Header().Set("X-Paddock-Snapshot-Error", "snapshot dump failed")
 		return
 	}
 	if err := gz.Close(); err != nil {
-		w.Header().Set("X-Boxes-Snapshot-Error", "snapshot compression failed")
+		w.Header().Set("X-Paddock-Snapshot-Error", "snapshot compression failed")
 	}
 }
 
@@ -1235,7 +1235,7 @@ func isUnreachableSnapshotRepository(err error) bool {
 }
 
 func snapshotStorageFromHeader(r *http.Request) (storageUpdate, bool) {
-	encoded := r.Header.Get("X-Boxes-Snapshot-Storage")
+	encoded := r.Header.Get("X-Paddock-Snapshot-Storage")
 	if encoded == "" {
 		return storageUpdate{}, true
 	}

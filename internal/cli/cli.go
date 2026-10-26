@@ -37,9 +37,9 @@ type Config struct {
 //go:embed skill.md
 var embeddedSkill []byte
 
-// CLI contains the interactive and external dependencies of the boxes command.
+// CLI contains the interactive and external dependencies of the paddock command.
 // HTTPClient and command/browser hooks are injectable so the CLI can be tested
-// against httptest servers without a running boxes server.
+// against httptest servers without a running paddock server.
 type CLI struct {
 	In                  io.Reader
 	Out                 io.Writer
@@ -59,7 +59,7 @@ type CLI struct {
 	boxRef     string // box resolved by boxID during the current Run
 }
 
-// Run executes one boxes command. The current box is updated only when the command succeeds.
+// Run executes one paddock command. The current box is updated only when the command succeeds.
 func (c *CLI) Run(ctx context.Context, args []string) error {
 	c.boxRef = ""
 	err := c.dispatch(ctx, args)
@@ -80,14 +80,14 @@ func (c *CLI) dispatch(ctx context.Context, args []string) error {
 	c.defaults()
 	c.jsonOutput = false
 	if len(args) == 0 {
-		return errors.New("usage: boxes [--json] <command> [arguments]")
+		return errors.New("usage: paddock [--json] <command> [arguments]")
 	}
 	if args[0] == "--json" {
 		c.jsonOutput = true
 		args = args[1:]
 	}
 	if len(args) == 0 {
-		return errors.New("usage: boxes [--json] <command> [arguments]")
+		return errors.New("usage: paddock [--json] <command> [arguments]")
 	}
 	if args[0] == "-h" || args[0] == "--help" {
 		c.printUsage()
@@ -130,7 +130,7 @@ func (c *CLI) dispatch(ctx context.Context, args []string) error {
 	}
 	baseURL, token := c.BaseURL, c.Token
 	if baseURL == "" {
-		return errors.New("server URL is not configured; run boxes login --server URL --api-key KEY")
+		return errors.New("server URL is not configured; run paddock login --server URL --api-key KEY")
 	}
 	c.client = NewClient(baseURL, token, c.HTTPClient)
 	switch args[0] {
@@ -220,7 +220,7 @@ func (c *CLI) dispatch(ctx context.Context, args []string) error {
 	case "group":
 		return c.group(ctx, args[1:])
 	default:
-		return fmt.Errorf("unknown command %q; run boxes --help", args[0])
+		return fmt.Errorf("unknown command %q; run paddock --help", args[0])
 	}
 }
 
@@ -242,7 +242,7 @@ func (c *CLI) defaults() {
 		if err != nil {
 			home = "."
 		}
-		c.ConfigPath = filepath.Join(home, ".config", "boxes", "config.json")
+		c.ConfigPath = filepath.Join(home, ".config", "paddock", "config.json")
 	}
 	if c.OpenBrowser == nil {
 		c.OpenBrowser = func(ctx context.Context, target string) error {
@@ -295,12 +295,12 @@ func (c *CLI) loadConfig() error {
 	if c.Token == "" {
 		c.Token = config.Token
 	}
-	if server := os.Getenv("BOXES_SERVER"); server != "" {
+	if server := os.Getenv("PADDOCK_SERVER"); server != "" {
 		c.BaseURL = server
 	}
-	if token := os.Getenv("BOXES_TOKEN"); token != "" {
+	if token := os.Getenv("PADDOCK_TOKEN"); token != "" {
 		c.Token = token
-	} else if apiKey := os.Getenv("BOXES_API_KEY"); apiKey != "" {
+	} else if apiKey := os.Getenv("PADDOCK_API_KEY"); apiKey != "" {
 		c.Token = apiKey
 	}
 	return nil
@@ -341,10 +341,10 @@ func (c *CLI) saveConfig(config Config) error {
 func (c *CLI) login(ctx context.Context, args []string) error {
 	fs := c.flagSet("login")
 	defaultServer := c.BaseURL
-	if envServer := os.Getenv("BOXES_SERVER"); envServer != "" {
+	if envServer := os.Getenv("PADDOCK_SERVER"); envServer != "" {
 		defaultServer = envServer
 	}
-	server := fs.String("server", defaultServer, "boxes server URL")
+	server := fs.String("server", defaultServer, "paddock server URL")
 	apiKey := fs.String("api-key", "", "API key")
 	email := fs.String("email", "", "account email")
 	password := fs.String("password", "", "account password (prompted if omitted)")
@@ -353,7 +353,7 @@ func (c *CLI) login(ctx context.Context, args []string) error {
 		return err
 	}
 	if *server == "" || fs.NArg() != 0 {
-		return errors.New("usage: boxes login --server URL --api-key KEY")
+		return errors.New("usage: paddock login --server URL --api-key KEY")
 	}
 	key := *apiKey
 	if *keyStdin {
@@ -367,10 +367,10 @@ func (c *CLI) login(ctx context.Context, args []string) error {
 		key = strings.TrimSpace(line)
 	}
 	if key == "" {
-		key = os.Getenv("BOXES_API_KEY")
+		key = os.Getenv("PADDOCK_API_KEY")
 	}
 	if key == "" {
-		key = os.Getenv("BOXES_TOKEN")
+		key = os.Getenv("PADDOCK_TOKEN")
 	}
 	if key != "" {
 		client := NewClient(*server, key, c.HTTPClient)
@@ -396,11 +396,11 @@ func (c *CLI) login(ctx context.Context, args []string) error {
 		return err
 	}
 	if *email == "" {
-		return errors.New("usage: boxes login --server URL --api-key KEY")
+		return errors.New("usage: paddock login --server URL --api-key KEY")
 	}
 	secret := *password
 	if secret == "" {
-		secret = os.Getenv("BOXES_PASSWORD")
+		secret = os.Getenv("PADDOCK_PASSWORD")
 	}
 	if secret == "" {
 		if _, err := fmt.Fprint(c.Err, "Password: "); err != nil {
@@ -436,7 +436,7 @@ func (c *CLI) login(ctx context.Context, args []string) error {
 
 func (c *CLI) whoami(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: boxes whoami")
+		return errors.New("usage: paddock whoami")
 	}
 	var response struct {
 		User struct {
@@ -458,7 +458,7 @@ func (c *CLI) whoami(ctx context.Context, args []string) error {
 
 func (c *CLI) current(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: boxes current")
+		return errors.New("usage: paddock current")
 	}
 	if c.config.Current == "" {
 		return errors.New("no current box; create or use a box first")
@@ -472,7 +472,7 @@ func (c *CLI) current(args []string) error {
 
 func (c *CLI) logout(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: boxes logout")
+		return errors.New("usage: paddock logout")
 	}
 	c.config.Server, c.config.Token, c.config.Current = "", "", ""
 	if err := c.saveConfig(c.config); err != nil {
@@ -487,7 +487,7 @@ func (c *CLI) logout(args []string) error {
 
 func (c *CLI) skill(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] != "install" {
-		return errors.New("usage: boxes skill install [--claude] [--codex] [--force]")
+		return errors.New("usage: paddock skill install [--claude] [--codex] [--force]")
 	}
 	fs := c.flagSet("skill install")
 	claude := fs.Bool("claude", false, "install for Claude Code")
@@ -497,7 +497,7 @@ func (c *CLI) skill(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes skill install [--claude] [--codex] [--force]")
+		return errors.New("usage: paddock skill install [--claude] [--codex] [--force]")
 	}
 	if !*claude && !*codex {
 		*claude, *codex = true, true
@@ -509,10 +509,10 @@ func (c *CLI) skill(ctx context.Context, args []string) error {
 	}
 	var targets []string
 	if *claude {
-		targets = append(targets, filepath.Join(home, ".claude", "skills", "boxes", "SKILL.md"))
+		targets = append(targets, filepath.Join(home, ".claude", "skills", "paddock", "SKILL.md"))
 	}
 	if *codex {
-		targets = append(targets, filepath.Join(home, ".codex", "skills", "boxes", "SKILL.md"))
+		targets = append(targets, filepath.Join(home, ".codex", "skills", "paddock", "SKILL.md"))
 	}
 	for _, target := range targets {
 		if existing, readErr := os.ReadFile(target); readErr == nil {
@@ -544,7 +544,7 @@ func (c *CLI) skill(ctx context.Context, args []string) error {
 
 func (c *CLI) dashboard(ctx context.Context, args []string) error {
 	if len(args) > 1 {
-		return errors.New("usage: boxes dashboard [id|current]")
+		return errors.New("usage: paddock dashboard [id|current]")
 	}
 	base, err := url.Parse(c.client.BaseURL)
 	if err != nil {
@@ -570,7 +570,7 @@ func (c *CLI) dashboard(ctx context.Context, args []string) error {
 
 func (c *CLI) forward(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: boxes forward <id|current> <port> [--local-port N]")
+		return errors.New("usage: paddock forward <id|current> <port> [--local-port N]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -586,7 +586,7 @@ func (c *CLI) forward(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 || *localPort < 0 || *localPort > 65535 {
-		return errors.New("invalid local port; usage: boxes forward <id|current> <port> [--local-port N]")
+		return errors.New("invalid local port; usage: paddock forward <id|current> <port> [--local-port N]")
 	}
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", *localPort))
 	if err != nil {
@@ -651,7 +651,7 @@ func (c *CLI) bridgeForward(ctx context.Context, local net.Conn, id string, port
 func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 	fs := c.flagSet("new")
 	boxType := fs.String("type", "default", "box size")
-	image := fs.String("image", "", "container image for the box (must be built FROM ghcr.io/tony1908/boxes-box)")
+	image := fs.String("image", "", "container image for the box (must be built FROM ghcr.io/tony1908/paddock-box)")
 	ttl := fs.Int64("ttl", 3600, "time to live in seconds")
 	idleStop := fs.String("idle-stop", "", "stop after inactivity (Go duration, e.g. 30m; off disables)")
 	noAutoStop := fs.Bool("no-auto-stop", false, "disable the auto-stop timer")
@@ -679,7 +679,7 @@ func (c *CLI) newSandbox(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes new [--mount DRIVE:PATH[:ro]]... [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]")
+		return errors.New("usage: paddock new [--mount DRIVE:PATH[:ro]]... [--type SIZE] [--image REF] [--ttl SECONDS] [--no-auto-stop] [-e KEY=VALUE]... [--setup-file FILE] [--git URL [--revision X] [--depth N] [--git-token-env VAR] [--path P] | --tarball URL [--path P]] [--from NAME] [--environment NAME] [--no-env] [--tag KEY=VALUE]... [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]")
 	}
 	if *noAutoStop && flagWasSet(fs, "ttl") {
 		return errors.New("--ttl and --no-auto-stop are mutually exclusive")
@@ -846,7 +846,7 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes list [--filter r|s|e...] [--all] [--tag KEY=VALUE]... [--json]")
+		return errors.New("usage: paddock list [--filter r|s|e...] [--all] [--tag KEY=VALUE]... [--json]")
 	}
 	c.jsonOutput = c.jsonOutput || *jsonOutput
 	query := url.Values{}
@@ -887,7 +887,7 @@ func (c *CLI) list(ctx context.Context, args []string) error {
 // update changes sandbox tags (--tag merges into the existing tags, --clear-tags removes them all)
 // and the outbound network policy (--network and friends).
 func (c *CLI) update(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]")
+	usage := errors.New("usage: paddock update <id|current> [--tag KEY=VALUE]... [--clear-tags] [--keep-snapshots N] [--network MODE] [--allow-domain HOST]... [--allow-cidr CIDR]... [--deny-cidr CIDR]")
 	if len(args) == 0 {
 		return usage
 	}
@@ -962,7 +962,7 @@ func (c *CLI) update(ctx context.Context, args []string) error {
 // restore rolls a box back to one of its own snapshots; a running box is stopped and resumed from it.
 func (c *CLI) restore(ctx context.Context, args []string) error {
 	if len(args) != 2 {
-		return errors.New("usage: boxes restore <id|current> <snapshotId>")
+		return errors.New("usage: paddock restore <id|current> <snapshotId>")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1037,7 +1037,7 @@ func parseTagFlags(values []string) (map[string]string, error) {
 
 func (c *CLI) get(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: boxes get <id>")
+		return errors.New("usage: paddock get <id>")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1052,7 +1052,7 @@ func (c *CLI) get(ctx context.Context, args []string) error {
 
 func (c *CLI) info(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: boxes info <id|current>")
+		return errors.New("usage: paddock info <id|current>")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1075,7 +1075,7 @@ func (c *CLI) info(ctx context.Context, args []string) error {
 }
 
 func (c *CLI) exec(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]")
+	usage := errors.New("usage: paddock exec <id|current> [--user NAME] [--cwd DIR] [--env KEY=VALUE]... [--detach] [--status PID] -- <command> [arguments]")
 	fs := c.flagSet("exec")
 	detach := fs.Bool("detach", false, "run command in the background")
 	statusPID := fs.String("status", "", "show detached process status")
@@ -1205,7 +1205,7 @@ func (c *CLI) exec(ctx context.Context, args []string) error {
 	return nil
 }
 
-// ExitError reports a remote command's exit status. The boxes binary exits with Code.
+// ExitError reports a remote command's exit status. The paddock binary exits with Code.
 type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string {
@@ -1215,7 +1215,7 @@ func (e *ExitError) Error() string {
 // ps lists the detached commands the agent still remembers for a box.
 func (c *CLI) ps(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: boxes ps <id|current>")
+		return errors.New("usage: paddock ps <id|current>")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1256,7 +1256,7 @@ func (c *CLI) ps(ctx context.Context, args []string) error {
 
 // logs prints a detached command's output. With -f it follows until the command exits and returns its status.
 func (c *CLI) logs(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes logs <id|current> <processId> [-f]")
+	usage := errors.New("usage: paddock logs <id|current> <processId> [-f]")
 	if len(args) < 2 {
 		return usage
 	}
@@ -1333,7 +1333,7 @@ func (l *logLines) handle(line []byte) error {
 
 // kill sends a signal to a detached command's process group.
 func (c *CLI) kill(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes kill <id|current> <processId> [--signal TERM]")
+	usage := errors.New("usage: paddock kill <id|current> <processId> [--signal TERM]")
 	if len(args) < 2 {
 		return usage
 	}
@@ -1356,7 +1356,7 @@ func (c *CLI) kill(ctx context.Context, args []string) error {
 
 func (c *CLI) ssh(ctx context.Context, args []string) error {
 	if len(args) < 1 || (len(args) > 1 && args[1] != "--") {
-		return errors.New("usage: boxes ssh <id> [-- command...]")
+		return errors.New("usage: paddock ssh <id> [-- command...]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1365,7 +1365,7 @@ func (c *CLI) ssh(ctx context.Context, args []string) error {
 	if err := c.ensureSSHKey(ctx, id); err != nil {
 		return err
 	}
-	sshArgs := []string{"-o", "ProxyCommand=boxes proxy " + id}
+	sshArgs := []string{"-o", "ProxyCommand=paddock proxy " + id}
 	hostKeyOptions, err := c.hostKeyOptions(id)
 	if err != nil {
 		return err
@@ -1432,7 +1432,7 @@ func (c *CLI) hostKeyOptions(id string) ([]string, error) {
 
 func (c *CLI) proxy(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: boxes proxy <id>")
+		return errors.New("usage: paddock proxy <id>")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1500,9 +1500,9 @@ func (c *CLI) proxy(ctx context.Context, args []string) error {
 
 func (c *CLI) scp(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: boxes scp <source> <destination> [arguments]")
+		return errors.New("usage: paddock scp <source> <destination> [arguments]")
 	}
-	commandArgs := []string{"-o", "ProxyCommand=boxes proxy %h"}
+	commandArgs := []string{"-o", "ProxyCommand=paddock proxy %h"}
 	boxID := ""
 	for _, arg := range args {
 		if colon := strings.IndexByte(arg, ':'); colon > 0 && !strings.Contains(arg[:colon], "/") {
@@ -1551,11 +1551,11 @@ func (c *CLI) prompt(ctx context.Context, args []string) error {
 		if err := json.Indent(&pretty, catalog, "", "  "); err != nil {
 			return fmt.Errorf("format provider models: %w", err)
 		}
-		_, err = fmt.Fprintf(c.Out, "Usage: boxes prompt [id|current] \"text\" [--provider claude|codex|opencode|pi|prime|kimi --model MODEL]\nKnown models and reasoning levels:\n%s\n", pretty.String())
+		_, err = fmt.Fprintf(c.Out, "Usage: paddock prompt [id|current] \"text\" [--provider claude|codex|opencode|pi|prime|kimi --model MODEL]\nKnown models and reasoning levels:\n%s\n", pretty.String())
 		return err
 	}
 	if len(args) == 0 {
-		return errors.New("usage: boxes prompt [id] \"text\" [--provider PROVIDER --model MODEL --new --conversation ID --stop-when-done]")
+		return errors.New("usage: paddock prompt [id] \"text\" [--provider PROVIDER --model MODEL --new --conversation ID --stop-when-done]")
 	}
 	idArg := "current"
 	promptArgs := args
@@ -1683,7 +1683,7 @@ func (c *CLI) followRun(ctx context.Context, id, runID, conversationID string) e
 
 func (c *CLI) events(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes events <id> [--follow] [--after CURSOR]")
+		return errors.New("usage: paddock events <id> [--follow] [--after CURSOR]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1696,7 +1696,7 @@ func (c *CLI) events(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes events <id> [--follow] [--after CURSOR]")
+		return errors.New("usage: paddock events <id> [--follow] [--after CURSOR]")
 	}
 	cursor := *after
 	for {
@@ -1738,7 +1738,7 @@ func (c *CLI) events(ctx context.Context, args []string) error {
 
 func (c *CLI) steer(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: boxes steer <id> <message> [--conversation ID]")
+		return errors.New("usage: paddock steer <id> <message> [--conversation ID]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1750,7 +1750,7 @@ func (c *CLI) steer(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: boxes steer <id> <message> [--conversation ID]")
+		return errors.New("usage: paddock steer <id> <message> [--conversation ID]")
 	}
 	body := map[string]string{"message": fs.Arg(0)}
 	if *conversation != "" {
@@ -1761,7 +1761,7 @@ func (c *CLI) steer(ctx context.Context, args []string) error {
 
 func (c *CLI) interrupt(ctx context.Context, args []string) error {
 	if len(args) < 1 {
-		return errors.New("usage: boxes interrupt <id> [--conversation ID]")
+		return errors.New("usage: paddock interrupt <id> [--conversation ID]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1773,7 +1773,7 @@ func (c *CLI) interrupt(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes interrupt <id> [--conversation ID]")
+		return errors.New("usage: paddock interrupt <id> [--conversation ID]")
 	}
 	body := map[string]string{}
 	if *conversation != "" {
@@ -1784,7 +1784,7 @@ func (c *CLI) interrupt(ctx context.Context, args []string) error {
 
 func (c *CLI) desktop(ctx context.Context, args []string, browser bool) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes desktop <id> [--public] [--vnc]")
+		return errors.New("usage: paddock desktop <id> [--public] [--vnc]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1835,7 +1835,7 @@ func (c *CLI) desktop(ctx context.Context, args []string, browser bool) error {
 
 func (c *CLI) host(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes host <id> <port> [--private]")
+		return errors.New("usage: paddock host <id> <port> [--private]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1847,7 +1847,7 @@ func (c *CLI) host(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: boxes host <id> <port> [--private]")
+		return errors.New("usage: paddock host <id> <port> [--private]")
 	}
 	port, err := strconv.Atoi(fs.Arg(0))
 	if err != nil || port < 1 || port > 65535 {
@@ -1862,7 +1862,7 @@ func (c *CLI) host(ctx context.Context, args []string) error {
 
 func (c *CLI) stop(ctx context.Context, args []string) error {
 	if len(args) > 1 {
-		return errors.New("usage: boxes stop [id|current]")
+		return errors.New("usage: paddock stop [id|current]")
 	}
 	idArg := "current"
 	if len(args) == 1 {
@@ -1887,7 +1887,7 @@ func (c *CLI) stop(ctx context.Context, args []string) error {
 
 func (c *CLI) resume(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes resume <id> [--type SIZE]")
+		return errors.New("usage: paddock resume <id> [--type SIZE]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1924,7 +1924,7 @@ func (c *CLI) resume(ctx context.Context, args []string) error {
 
 func (c *CLI) fork(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes fork <id|current> [--ttl SECONDS|--no-auto-stop]")
+		return errors.New("usage: paddock fork <id|current> [--ttl SECONDS|--no-auto-stop]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -1969,7 +1969,7 @@ func (c *CLI) fork(ctx context.Context, args []string) error {
 
 func (c *CLI) extend(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes extend <id|current> --hours N | --ttl SECONDS | --no-auto-stop")
+		return errors.New("usage: paddock extend <id|current> --hours N | --ttl SECONDS | --no-auto-stop")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -2036,7 +2036,7 @@ func parseIdleStopFlag(value string) (int64, error) {
 
 func (c *CLI) delete(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes delete <id|current> [--yes]")
+		return errors.New("usage: paddock delete <id|current> [--yes]")
 	}
 	fs := c.flagSet("delete")
 	yes := fs.Bool("yes", false, "confirm permanent deletion")
@@ -2044,7 +2044,7 @@ func (c *CLI) delete(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: boxes delete <id|current> [--yes]")
+		return errors.New("usage: paddock delete <id|current> [--yes]")
 	}
 	if !*yes {
 		if !c.Interactive {
@@ -2116,7 +2116,7 @@ func (c *CLI) delete(ctx context.Context, args []string) error {
 
 func (c *CLI) boxSubresource(ctx context.Context, args []string, name string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: boxes %s <id|current>", name)
+		return fmt.Errorf("usage: paddock %s <id|current>", name)
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -2131,7 +2131,7 @@ func (c *CLI) boxSubresource(ctx context.Context, args []string, name string) er
 
 func (c *CLI) limits(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: boxes limits")
+		return errors.New("usage: paddock limits")
 	}
 	result, err := c.client.doJSON(ctx, http.MethodGet, "/limits", nil, nil)
 	if err != nil {
@@ -2142,7 +2142,7 @@ func (c *CLI) limits(ctx context.Context, args []string) error {
 
 func (c *CLI) status(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: boxes status")
+		return errors.New("usage: paddock status")
 	}
 	if c.config.Current == "" {
 		return errors.New("no current box; create or use a box first")
@@ -2152,14 +2152,14 @@ func (c *CLI) status(ctx context.Context, args []string) error {
 
 func (c *CLI) snapshot(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes snapshot <id> <name> | snapshot pull <snapshotId|boxId> [-o file.tar.gz] | snapshot rm <name>")
+		return errors.New("usage: paddock snapshot <id> <name> | snapshot pull <snapshotId|boxId> [-o file.tar.gz] | snapshot rm <name>")
 	}
 	switch args[0] {
 	case "pull":
 		return c.snapshotPull(ctx, args[1:])
 	case "rm":
 		if len(args) != 2 {
-			return errors.New("usage: boxes snapshot rm <name|snapshotId>")
+			return errors.New("usage: paddock snapshot rm <name|snapshotId>")
 		}
 		var named struct {
 			NamedSnapshots []struct {
@@ -2182,7 +2182,7 @@ func (c *CLI) snapshot(ctx context.Context, args []string) error {
 		return c.deleteSnapshot(ctx, []string{args[1]})
 	default:
 		if len(args) != 2 {
-			return errors.New("usage: boxes snapshot <id> <name>")
+			return errors.New("usage: paddock snapshot <id> <name>")
 		}
 		id, err := c.boxID(args[0])
 		if err != nil {
@@ -2243,7 +2243,7 @@ func (c *CLI) deleteSnapshot(ctx context.Context, args []string) error {
 			}
 		}
 	} else {
-		return errors.New("usage: boxes snapshot rm <name|snapshotId> or boxes snapshots rm <boxId> <snapshotId>")
+		return errors.New("usage: paddock snapshot rm <name|snapshotId> or paddock snapshots rm <boxId> <snapshotId>")
 	}
 	if boxID == "" {
 		return fmt.Errorf("snapshot %q was not found", snapshotID)
@@ -2254,12 +2254,12 @@ func (c *CLI) deleteSnapshot(ctx context.Context, args []string) error {
 
 func (c *CLI) snapshotPull(ctx context.Context, args []string) error {
 	if len(args) != 1 && len(args) != 3 {
-		return errors.New("usage: boxes snapshot pull <snapshotId|boxId> [-o file.tar.gz]")
+		return errors.New("usage: paddock snapshot pull <snapshotId|boxId> [-o file.tar.gz]")
 	}
 	output := ""
 	if len(args) == 3 {
 		if args[1] != "-o" || args[2] == "" {
-			return errors.New("usage: boxes snapshot pull <snapshotId|boxId> [-o file.tar.gz]")
+			return errors.New("usage: paddock snapshot pull <snapshotId|boxId> [-o file.tar.gz]")
 		}
 		output = args[2]
 	}
@@ -2315,12 +2315,12 @@ func (c *CLI) snapshotPull(ctx context.Context, args []string) error {
 
 func (c *CLI) environment(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: boxes env list|create|update|delete|upgrade")
+		return errors.New("usage: paddock env list|create|update|delete|upgrade")
 	}
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return errors.New("usage: boxes env list")
+			return errors.New("usage: paddock env list")
 		}
 		result, err := c.client.doJSON(ctx, http.MethodGet, "/environments", nil, nil)
 		if err != nil {
@@ -2329,7 +2329,7 @@ func (c *CLI) environment(ctx context.Context, args []string) error {
 		return c.printValue(unwrap(result, "environments"))
 	case "create":
 		if len(args) < 2 {
-			return errors.New("usage: boxes env create <name> [JSON document]")
+			return errors.New("usage: paddock env create <name> [JSON document]")
 		}
 		body := map[string]any{"name": args[1]}
 		if len(args) > 2 {
@@ -2346,7 +2346,7 @@ func (c *CLI) environment(ctx context.Context, args []string) error {
 		return c.printValue(unwrap(result, "environment"))
 	case "update":
 		if len(args) != 3 {
-			return errors.New("usage: boxes env update <id> <JSON document>")
+			return errors.New("usage: paddock env update <id> <JSON document>")
 		}
 		id, err := requiredID(args[1])
 		if err != nil {
@@ -2363,7 +2363,7 @@ func (c *CLI) environment(ctx context.Context, args []string) error {
 		return c.printValue(unwrap(result, "environment"))
 	case "delete", "rm":
 		if len(args) != 2 {
-			return errors.New("usage: boxes env delete <id>")
+			return errors.New("usage: paddock env delete <id>")
 		}
 		id, err := requiredID(args[1])
 		if err != nil {
@@ -2376,7 +2376,7 @@ func (c *CLI) environment(ctx context.Context, args []string) error {
 		return err
 	case "upgrade":
 		if len(args) != 2 {
-			return errors.New("usage: boxes env upgrade <id>")
+			return errors.New("usage: paddock env upgrade <id>")
 		}
 		id, err := requiredID(args[1])
 		if err != nil {
@@ -2412,9 +2412,9 @@ func parseMountFlags(values []string) ([]map[string]any, error) {
 	return mounts, nil
 }
 
-// drive manages named persistent volumes: boxes drive create|list|rm|fork.
+// drive manages named persistent volumes: paddock drive create|list|rm|fork.
 func (c *CLI) drive(ctx context.Context, args []string) error {
-	usage := errors.New("usage: boxes drive create <name> | list | rm <name> | fork <source> <target>")
+	usage := errors.New("usage: paddock drive create <name> | list | rm <name> | fork <source> <target>")
 	if len(args) == 0 {
 		return usage
 	}
@@ -2559,11 +2559,11 @@ func flagsBeforePositionals(fs *flag.FlagSet, args []string) []string {
 }
 
 func (c *CLI) printUsage() {
-	_, _ = fmt.Fprintln(c.Out, "Usage: boxes [--json] <command>")
+	_, _ = fmt.Fprintln(c.Out, "Usage: paddock [--json] <command>")
 	_, _ = fmt.Fprintln(c.Out, "Commands: login logout whoami new list get info status current exec ps logs kill ssh proxy scp push pull screenshot prompt events steer interrupt conversations snapshots restore usage limits desktop browser host stop resume extend update fork snapshot delete dashboard forward skill env drive user group")
-	_, _ = fmt.Fprintln(c.Out, "Drives: boxes drive create|list|rm|fork; boxes new --mount DRIVE:PATH[:ro] (PATH under /mnt)")
-	_, _ = fmt.Fprintln(c.Out, "Users: boxes user add|list|rm <box> [name]; boxes group add <box> <group>; boxes group member add|rm <box> <group> <user>; boxes exec --user <name>")
-	_, _ = fmt.Fprintln(c.Out, "Push: boxes push <id> [dir] [--to path]")
+	_, _ = fmt.Fprintln(c.Out, "Drives: paddock drive create|list|rm|fork; paddock new --mount DRIVE:PATH[:ro] (PATH under /mnt)")
+	_, _ = fmt.Fprintln(c.Out, "Users: paddock user add|list|rm <box> [name]; paddock group add <box> <group>; paddock group member add|rm <box> <group> <user>; paddock exec --user <name>")
+	_, _ = fmt.Fprintln(c.Out, "Push: paddock push <id> [dir] [--to path]")
 	_, _ = fmt.Fprintln(c.Out, "Box sizes: xsmall (1 CPU, 2 GiB), small (2 CPU, 4 GiB), default (4 CPU, 8 GiB), large (8 CPU, 16 GiB), xlarge (16 CPU, 32 GiB)")
 }
 
@@ -2607,7 +2607,7 @@ func (c *CLI) boxID(value string) (string, error) {
 		}
 	}
 	if strings.HasPrefix(value, "-") {
-		return "", fmt.Errorf("invalid box ID %q; expected an ID or current (see boxes <command> --help)", value)
+		return "", fmt.Errorf("invalid box ID %q; expected an ID or current (see paddock <command> --help)", value)
 	}
 	id, err := requiredID(value)
 	if err != nil {
@@ -2678,16 +2678,16 @@ func promptPositionalCount(args []string) int {
 }
 
 func managedSkillContent() []byte {
-	const marker = "<!-- boxes-skill-managed -->"
+	const marker = "<!-- paddock-skill-managed -->"
 	body := strings.Replace(string(embeddedSkill), marker, "", 1)
 	hash := sha256.Sum256([]byte(body))
-	managedMarker := "<!-- boxes-skill-managed: sha256=" + hex.EncodeToString(hash[:]) + " -->"
+	managedMarker := "<!-- paddock-skill-managed: sha256=" + hex.EncodeToString(hash[:]) + " -->"
 	return []byte(strings.Replace(string(embeddedSkill), marker, managedMarker, 1))
 }
 
 func managedSkillIsUnmodified(content []byte) bool {
 	text := string(content)
-	start := strings.Index(text, "<!-- boxes-skill-managed: sha256=")
+	start := strings.Index(text, "<!-- paddock-skill-managed: sha256=")
 	if start < 0 {
 		return false
 	}
@@ -2697,7 +2697,7 @@ func managedSkillIsUnmodified(content []byte) bool {
 	}
 	end += start + len(" -->")
 	marker := text[start:end]
-	const prefix = "<!-- boxes-skill-managed: sha256="
+	const prefix = "<!-- paddock-skill-managed: sha256="
 	if !strings.HasPrefix(marker, prefix) {
 		return false
 	}

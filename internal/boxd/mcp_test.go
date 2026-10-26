@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/tony1908/boxes-oss/internal/computer"
+	"github.com/tony1908/paddock/internal/computer"
 )
 
 type computerCommand struct {

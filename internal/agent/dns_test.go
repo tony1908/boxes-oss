@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
-	boxtypes "github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
+	boxtypes "github.com/tony1908/paddock/internal/types"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -331,7 +331,7 @@ func TestSetNetworkPolicyGatesDNSRulesOnCreateTimeResolver(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			inspect := `[{"Id":"container-id","Name":"/box-` + dnsTestBoxID + `","State":{"Status":"running"},"HostConfig":{"Dns":` + tc.dns + `},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"172.18.0.7"}}}}]`
+			inspect := `[{"Id":"container-id","Name":"/box-` + dnsTestBoxID + `","State":{"Status":"running"},"HostConfig":{"Dns":` + tc.dns + `},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"172.18.0.7"}}}}]`
 			dockerExec := testExecutor{command: func(argv []string, _ []byte, stdout, _ io.Writer) (int, error) {
 				if len(argv) > 1 && argv[1] == "inspect" {
 					_, _ = io.WriteString(stdout, inspect)

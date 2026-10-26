@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
 )
 
 func TestDesktopEnvFromEnviron(t *testing.T) {

@@ -32,7 +32,7 @@ var domainPattern = regexp.MustCompile(`^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[
 
 // ValidateNetworkPolicy checks mode, list sizes, domain syntax and IPv4 CIDRs.
 // An empty mode means allow-all.
-// ponytail: IPv6 is rejected, not filtered: boxes-net is IPv4-only, so v6 traffic would bypass the rules.
+// ponytail: IPv6 is rejected, not filtered: paddock-net is IPv4-only, so v6 traffic would bypass the rules.
 func ValidateNetworkPolicy(policy NetworkPolicy) error {
 	switch policy.Mode {
 	case "", NetworkAllowAll, NetworkDenyAll, NetworkAllowlist:

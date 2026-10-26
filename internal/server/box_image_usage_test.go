@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/tunnel"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/tunnel"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 // fakeAgentCall records one request the server sent to a fake agent.

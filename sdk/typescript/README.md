@@ -1,3 +1,3 @@
-# @boxes-oss/sdk
+# paddock-sdk
 
-Install with `npm install @boxes-oss/sdk`.
+Install with `npm install paddock-sdk`.

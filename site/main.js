@@ -1,4 +1,4 @@
-// boxes landing page. Copy buttons, copy status, and TOC highlighting.
+// paddock landing page. Copy buttons, copy status, and TOC highlighting.
 
 // Copy buttons: copy the code block they sit in and announce it.
 const copyStatus = document.getElementById("copy-status");

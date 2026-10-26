@@ -1,11 +1,11 @@
-import { Boxes } from '@boxes-oss/sdk';
+import { Paddock } from 'paddock-sdk';
 
-const boxes = new Boxes({ baseUrl: process.env.BOXES_URL!, apiKey: process.env.BOXES_API_KEY! });
+const paddock = new Paddock({ baseUrl: process.env.PADDOCK_URL!, apiKey: process.env.PADDOCK_API_KEY! });
 try {
-  const box = await boxes.sandboxes.create({ type: 'small', ttlSeconds: 3600 });
-  const result = await boxes.exec.run(box.id, 'echo hello');
+  const box = await paddock.sandboxes.create({ type: 'small', ttlSeconds: 3600 });
+  const result = await paddock.exec.run(box.id, 'echo hello');
   console.log(result);
-  await boxes.sandboxes.stop(box.id);
+  await paddock.sandboxes.stop(box.id);
 } finally {
-  // Boxes uses global fetch and has no persistent connection to close.
+  // Paddock uses global fetch and has no persistent connection to close.
 }

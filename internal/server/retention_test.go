@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestRetentionRequiresOwnerAndConfirmation(t *testing.T) {

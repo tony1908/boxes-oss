@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/diagnostics"
-	"github.com/tony1908/boxes-oss/internal/tunnel"
+	"github.com/tony1908/paddock/internal/diagnostics"
+	"github.com/tony1908/paddock/internal/tunnel"
 )
 
 type agentClient struct{ http *http.Client }

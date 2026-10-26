@@ -2,20 +2,20 @@
 set -e
 
 move_fork_marker() {
-    if [ -f /.boxes/fork ]; then
-        mkdir -p /.boxes/restored
-        mv -f /.boxes/fork /.boxes/restored/fork
+    if [ -f /.paddock/fork ]; then
+        mkdir -p /.paddock/restored
+        mv -f /.paddock/fork /.paddock/restored/fork
     fi
 }
 
-deletions=/.boxes/deletions
+deletions=/.paddock/deletions
 if [ ! -f "$deletions" ]; then
     move_fork_marker
     exit 0
 fi
 
-manifest=/.boxes/manifest
-opaque=/.boxes/opaque
+manifest=/.paddock/manifest
+opaque=/.paddock/opaque
 declare -A captured_paths=()
 if [ -f "$manifest" ]; then
     while IFS= read -r -d '' captured_path; do
@@ -41,13 +41,13 @@ fi
 while IFS= read -r deleted_path || [ -n "$deleted_path" ]; do
     [ -n "$deleted_path" ] || continue
     case "$deleted_path" in
-        /*) [ "$deleted_path" = / ] || [ "$deleted_path" = /.boxes ] || [ "$deleted_path" = /.boxes/deletions ] || rm -rf -- "$deleted_path" ;;
+        /*) [ "$deleted_path" = / ] || [ "$deleted_path" = /.paddock ] || [ "$deleted_path" = /.paddock/deletions ] || rm -rf -- "$deleted_path" ;;
     esac
 done < "$deletions"
 
-rm -f /.boxes/restored
-mkdir -p /.boxes/restored
+rm -f /.paddock/restored
+mkdir -p /.paddock/restored
 move_fork_marker
 for metadata in "$deletions" "$manifest" "$opaque"; do
-    [ -f "$metadata" ] && mv "$metadata" /.boxes/restored/
+    [ -f "$metadata" ] && mv "$metadata" /.paddock/restored/
 done

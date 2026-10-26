@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestGetStorageSettingsIsOwnerOnlyAndNeverExposesCredentials(t *testing.T) {
@@ -121,7 +121,7 @@ func TestStorageAdminRejectsForwardedRequestsFromPublicHost(t *testing.T) {
 	defer cleanup()
 	request := httptest.NewRequest(http.MethodPost, "/admin/storage", strings.NewReader(`{}`))
 	request.RemoteAddr = "127.0.0.1:4321"
-	request.Host = "boxes.example.test"
+	request.Host = "paddock.example.test"
 	adminToken, err := os.ReadFile(filepath.Join(srv.cfg.DataDir, "admin.token"))
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestSnapshotStorageHeaderUsesSnapshotRepositoryAndEncryptedEnvironment(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := base64.RawURLEncoding.DecodeString(headers.Get("X-Boxes-Snapshot-Storage"))
+	data, err := base64.RawURLEncoding.DecodeString(headers.Get("X-Paddock-Snapshot-Storage"))
 	if err != nil {
 		t.Fatal(err)
 	}

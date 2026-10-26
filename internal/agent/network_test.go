@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
-	boxtypes "github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
+	boxtypes "github.com/tony1908/paddock/internal/types"
 )
 
 const netBoxID = "bx_netabcdefgh2"
@@ -22,13 +22,13 @@ func ipt(args ...string) []string { return append([]string{"iptables", "-w", "5"
 func TestNetworkRulesDenyAll(t *testing.T) {
 	got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: boxtypes.NetworkDenyAll}, nil, "")
 	want := [][]string{
-		ipt("-N", "BOXES-"+netBoxID),
-		ipt("-F", "BOXES-"+netBoxID),
-		ipt("-A", "BOXES-"+netBoxID, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "RETURN"),
-		ipt("-A", "BOXES-"+netBoxID, "-d", "169.254.169.254/32", "-j", "DROP"),
-		ipt("-A", "BOXES-"+netBoxID, "-j", "DROP"),
-		ipt("-I", "DOCKER-USER", "-s", "172.18.0.7/32", "-j", "BOXES-"+netBoxID),
-		ipt("-I", "INPUT", "-s", "172.18.0.7/32", "-j", "BOXES-"+netBoxID),
+		ipt("-N", "PADDOCK-"+netBoxID),
+		ipt("-F", "PADDOCK-"+netBoxID),
+		ipt("-A", "PADDOCK-"+netBoxID, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "RETURN"),
+		ipt("-A", "PADDOCK-"+netBoxID, "-d", "169.254.169.254/32", "-j", "DROP"),
+		ipt("-A", "PADDOCK-"+netBoxID, "-j", "DROP"),
+		ipt("-I", "DOCKER-USER", "-s", "172.18.0.7/32", "-j", "PADDOCK-"+netBoxID),
+		ipt("-I", "INPUT", "-s", "172.18.0.7/32", "-j", "PADDOCK-"+netBoxID),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("deny-all rules:\n got %q\nwant %q", got, want)
@@ -40,7 +40,7 @@ func TestNetworkRulesAllowlistResolvesDomainsAndDenyWins(t *testing.T) {
 		AllowCIDRs: []string{"10.0.0.0/8"}, DenyCIDRs: []string{"10.1.0.0/16"}}
 	resolved := map[string][]net.IP{"api.github.com": {net.ParseIP("140.82.112.5")}}
 	got := networkRules(netBoxID, "172.18.0.7", policy, resolved, "")
-	chain := "BOXES-" + netBoxID
+	chain := "PADDOCK-" + netBoxID
 	want := [][]string{
 		ipt("-N", chain),
 		ipt("-F", chain),
@@ -64,10 +64,10 @@ func TestNetworkRulesAllowAllSkipsInputJumpAndDefaultsEmptyMode(t *testing.T) {
 	for _, mode := range []string{boxtypes.NetworkAllowAll, ""} {
 		got := networkRules(netBoxID, "172.18.0.7", boxtypes.NetworkPolicy{Mode: mode}, nil, "")
 		last := got[len(got)-1]
-		if !reflect.DeepEqual(last, ipt("-I", "DOCKER-USER", "-s", "172.18.0.7/32", "-j", "BOXES-"+netBoxID)) {
+		if !reflect.DeepEqual(last, ipt("-I", "DOCKER-USER", "-s", "172.18.0.7/32", "-j", "PADDOCK-"+netBoxID)) {
 			t.Fatalf("mode %q: last rule = %q, want only the DOCKER-USER jump", mode, last)
 		}
-		if rule := got[len(got)-2]; !reflect.DeepEqual(rule, ipt("-A", "BOXES-"+netBoxID, "-j", "RETURN")) {
+		if rule := got[len(got)-2]; !reflect.DeepEqual(rule, ipt("-A", "PADDOCK-"+netBoxID, "-j", "RETURN")) {
 			t.Fatalf("mode %q: final chain rule = %q, want RETURN", mode, rule)
 		}
 	}
@@ -80,7 +80,7 @@ func TestNetworkRulesWithoutIPProducesNothing(t *testing.T) {
 }
 
 func TestJumpDeleteRulesAndTeardown(t *testing.T) {
-	chain := "BOXES-" + netBoxID
+	chain := "PADDOCK-" + netBoxID
 	listing := "-N DOCKER-USER\n-A DOCKER-USER -s 172.18.0.7/32 -j " + chain + "\n-A DOCKER-USER -s 172.18.0.9/32 -j " + chain + "\n-A DOCKER-USER -j RETURN\n"
 	if got, want := jumpDeleteRules(chain, listing, ""), [][]string{
 		ipt("-D", "DOCKER-USER", "-s", "172.18.0.7/32", "-j", chain),
@@ -109,7 +109,7 @@ func TestResolvedIPsAreSortedAndUnique(t *testing.T) {
 }
 
 func TestCreateBoxWithDenyAllPolicyAppliesFirewallRules(t *testing.T) {
-	t.Setenv("BOXES_TOOLS_IMAGE", "none")
+	t.Setenv("PADDOCK_TOOLS_IMAGE", "none")
 	startBoxdTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	var dockerCalls, firewallCalls []callRecord
 	inspectCount := 0
@@ -120,7 +120,7 @@ func TestCreateBoxWithDenyAllPolicyAppliesFirewallRules(t *testing.T) {
 			if inspectCount == 1 {
 				return 1, nil
 			}
-			_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-`+netBoxID+`","State":{"Status":"running"},"NetworkSettings":{"Networks":{"boxes-net":{"IPAddress":"127.0.0.1"}}}}]`)
+			_, _ = io.WriteString(stdout, `[{"Id":"container-id","Name":"/box-`+netBoxID+`","State":{"Status":"running"},"NetworkSettings":{"Networks":{"paddock-net":{"IPAddress":"127.0.0.1"}}}}]`)
 			return 0, nil
 		case len(argv) > 1 && (argv[1] == "create" || argv[1] == "start"):
 			if argv[1] == "create" {
@@ -141,7 +141,7 @@ func TestCreateBoxWithDenyAllPolicyAppliesFirewallRules(t *testing.T) {
 	service := New(Config{NodeID: "nd_test", Runtime: "runc", TraefikDir: t.TempDir(), NetworkDir: t.TempDir()}, dockercli.New(dockerExec), snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
 	service.firewall = firewall
 
-	body := `{"boxId":"` + netBoxID + `","image":"images.example.test/boxes/box:dev","type":"default","networkPolicy":{"mode":"deny-all"}}`
+	body := `{"boxId":"` + netBoxID + `","image":"images.example.test/paddock/box:dev","type":"default","networkPolicy":{"mode":"deny-all"}}`
 	recorder := httptest.NewRecorder()
 	service.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/boxes", strings.NewReader(body)))
 	if recorder.Code != 201 {
@@ -206,7 +206,7 @@ func TestMergeDNSHistoryCapsIPsPerDomain(t *testing.T) {
 }
 
 func TestNetworkRulesDNSOnlyToForwarderWhenGatewaySet(t *testing.T) {
-	chain := "BOXES-" + netBoxID
+	chain := "PADDOCK-" + netBoxID
 	gateway := "172.18.0.1"
 	unrestricted := ipt("-A", chain, "-p", "udp", "--dport", "53", "-j", "RETURN")
 	for _, mode := range []string{boxtypes.NetworkAllowlist, boxtypes.NetworkDenyAll} {

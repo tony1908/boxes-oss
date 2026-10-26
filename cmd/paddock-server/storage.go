@@ -18,16 +18,16 @@ import (
 func runStorageSet(args []string, adminURL, accessKey, secretKey string, output io.Writer) error {
 	flags := flag.NewFlagSet("storage set", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	dataDir := flags.String("data-dir", "/var/lib/boxes", "server data directory")
+	dataDir := flags.String("data-dir", "/var/lib/paddock", "server data directory")
 	endpoint := flags.String("s3-endpoint", "", "S3 endpoint URL")
 	bucket := flags.String("s3-bucket", "", "S3 bucket name")
-	prefix := flags.String("s3-prefix", "boxes", "S3 repository prefix")
+	prefix := flags.String("s3-prefix", "paddock", "S3 repository prefix")
 	region := flags.String("s3-region", "", "AWS-compatible region")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
-		return errors.New("usage: boxes-server storage set [--data-dir DIR] --s3-endpoint URL --s3-bucket NAME [--s3-prefix P] [--s3-region R]")
+		return errors.New("usage: paddock-server storage set [--data-dir DIR] --s3-endpoint URL --s3-bucket NAME [--s3-prefix P] [--s3-region R]")
 	}
 	if *endpoint == "" || *bucket == "" || accessKey == "" || secretKey == "" {
-		return errors.New("S3 endpoint and bucket flags plus BOXES_S3_ACCESS_KEY and BOXES_S3_SECRET_KEY environment variables are required")
+		return errors.New("S3 endpoint and bucket flags plus PADDOCK_S3_ACCESS_KEY and PADDOCK_S3_SECRET_KEY environment variables are required")
 	}
 	token, err := os.ReadFile(filepath.Join(*dataDir, "admin.token"))
 	if err != nil {
@@ -64,7 +64,7 @@ func runStorageSet(args []string, adminURL, accessKey, secretKey string, output 
 	client := &http.Client{Timeout: 30 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
-		return errors.New("could not update snapshot storage; is boxes-server running locally?")
+		return errors.New("could not update snapshot storage; is paddock-server running locally?")
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

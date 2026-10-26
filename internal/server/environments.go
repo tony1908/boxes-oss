@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 type environmentRepo struct {
@@ -310,10 +310,10 @@ func (s *Server) environmentFiles(ctx context.Context, envID string, version int
 		dotenv.WriteString(dotenvValue(vars[key]))
 		dotenv.WriteByte('\n')
 	}
-	files := []map[string]any{encodedBoxFile("/run/boxes/env", 0o600, []byte(dotenv.String()))}
+	files := []map[string]any{encodedBoxFile("/run/paddock/env", 0o600, []byte(dotenv.String()))}
 	if !noSecrets {
 		for name, content := range secrets.Files {
-			files = append(files, encodedBoxFile(path.Join("/run/boxes/secrets", name), 0o600, []byte(content)))
+			files = append(files, encodedBoxFile(path.Join("/run/paddock/secrets", name), 0o600, []byte(content)))
 		}
 	}
 	repos := []environmentRepo{}
@@ -336,7 +336,7 @@ func (s *Server) environmentFiles(ctx context.Context, envID string, version int
 	if err != nil {
 		return nil, 0, err
 	}
-	files = append(files, encodedBoxFile("/run/boxes/setup.json", 0o600, setupJSON))
+	files = append(files, encodedBoxFile("/run/paddock/setup.json", 0o600, setupJSON))
 	return files, stored.Version, nil
 }
 

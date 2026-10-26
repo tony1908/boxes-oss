@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/tony1908/boxes-oss/internal/store"
+	"github.com/tony1908/paddock/internal/store"
 )
 
 // reservedHostPorts are used inside every box: 3000/3001 serve the webtop desktop

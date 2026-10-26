@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func (s *Server) schedule(ctx context.Context, size types.Size, boxType string) (store.NodeRecord, error) {

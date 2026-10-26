@@ -28,9 +28,9 @@ Every route except the public ones below requires authentication.
 
 Public routes (no bearer token):
 
-- `GET /api/v1/agent/connect` and `GET /agent/connect`: WebSocket endpoint used by the local `boxes-agent`.
+- `GET /api/v1/agent/connect` and `GET /agent/connect`: WebSocket endpoint used by the local `paddock-agent`.
 - `GET /install/cli.sh`, `GET /install/cli.ps1`, `GET /install/cli/{binary}`, `GET /install/traefik.yml`: installer and CLI downloads.
-- `POST /admin/storage`, `POST /admin/runtime/stop`, `POST /admin/runtime/resume`: local administration endpoints used by `boxes-server storage set` and the installer's `--upgrade --allow-runtime-restart` path. They require the admin token from `/var/lib/boxes/admin.token` and accept only loopback requests.
+- `POST /admin/storage`, `POST /admin/runtime/stop`, `POST /admin/runtime/resume`: local administration endpoints used by `paddock-server storage set` and the installer's `--upgrade --allow-runtime-restart` path. They require the admin token from `/var/lib/paddock/admin.token` and accept only loopback requests.
 
 ## Detached commands
 
@@ -56,9 +56,9 @@ Sandboxes accept up to 10 key/value `tags`. Keys must match `^[a-z0-9][a-z0-9_.-
 - `POST /sandboxes/{id}/fork` copies the source sandbox's tags unless the body sets `tags`.
 
 ```sh
-curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
+curl -X PATCH "$PADDOCK/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
   -d '{"tags":{"team":"agents"}}'
-curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bearer $KEY"
+curl "$PADDOCK/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bearer $KEY"
 ```
 
 ## Sources
@@ -69,7 +69,7 @@ curl "$BOXES/api/v1/sandboxes?tag=team=agents&tag=owner" -H "Authorization: Bear
 
 `image` on `POST /sandboxes` picks the container image for one box. Omitted uses the server's default box image (`GET`/`PUT /settings/images`). A reference that fails validation returns `400 invalid_image`.
 
-Custom images must be built `FROM ghcr.io/tony1908/boxes-box`, which carries `boxd`. An image without it never becomes ready and the create call returns `503 box_not_ready`.
+Custom images must be built `FROM ghcr.io/tony1908/paddock-box`, which carries `boxd`. An image without it never becomes ready and the create call returns `503 box_not_ready`.
 
 `POST /sandboxes/{id}/fork` always runs the source box's image; an `image` in the fork body is ignored. Resume and migrate also keep the box's own image.
 
@@ -109,13 +109,13 @@ Isolation model: a home is `/home/<name>`, mode `770`, owned by the user and tha
 `networkPolicy` controls where a box can send traffic. It is accepted by `POST /sandboxes` (and copied by `POST /sandboxes/{id}/fork` unless the body sets its own). Invalid policies return `400 invalid_network_policy`.
 
 - `mode`: `allow-all` (the default), `deny-all` (no new outbound connections; existing ones may finish), or `allowlist` (only `allowDomains` and `allowCidrs`).
-- `denyCidrs` win over every other rule in every mode. `169.254.169.254/32` (cloud metadata) is blocked for every box, with or without a `networkPolicy`: the agent installs one host firewall rule per `boxes-net` subnet when it starts, and a policy change never removes it.
+- `denyCidrs` win over every other rule in every mode. `169.254.169.254/32` (cloud metadata) is blocked for every box, with or without a `networkPolicy`: the agent installs one host firewall rule per `paddock-net` subnet when it starts, and a policy change never removes it.
 - `POST /sandboxes/{id}/restore` with `{"snapshotId": "..."}` rolls the sandbox back to one of its own snapshots (`404 snapshot_not_found` otherwise). A running sandbox is stopped, which captures a final snapshot so the rollback can be undone, and then resumed from the chosen snapshot. A stopped sandbox records the snapshot for its next resume. Busy states (`provisioning`, `stopping`, `resuming`, `deleting`) return `409 sandbox_busy`.
 - `keepSnapshots` on `POST /sandboxes` and `PATCH /sandboxes/{id}` sets how many automatic snapshots are kept, from 1 to 50; `0` or omitted uses the default of 5. Values outside that range return `400 invalid_keep_snapshots`. Forks copy the source value unless one is given. Named snapshots are never pruned.
 - `PATCH /sandboxes/{id}` with `networkPolicy` replaces the policy; `null` clears it. A running box is updated immediately; a stopped box stores the policy and applies it when it next starts or resumes. If the node cannot apply a running box's policy, the request returns `502 network_policy_failed`, the stored policy stays unchanged, and the box is stopped so it is never left unfiltered.
 - Limits: at most 64 entries per list; `allowDomains` entries are hostnames or `*.example.com`; CIDRs must be IPv4.
 
-DNS goes through the agent. Each box is created with the agent's `boxes-net` gateway as its resolver, and that resolver is the only DNS server a box can reach in `allowlist` and `deny-all` mode. The agent answers each lookup from the box's policy:
+DNS goes through the agent. Each box is created with the agent's `paddock-net` gateway as its resolver, and that resolver is the only DNS server a box can reach in `allowlist` and `deny-all` mode. The agent answers each lookup from the box's policy:
 
 - An allowed name is forwarded upstream. Every IPv4 address in the answer is opened for that box before the answer is returned, so the box can only connect to addresses it was actually given. AAAA answers are dropped because IPv6 is not filtered.
 - A name that is not allowed is refused (`REFUSED`) without being forwarded. In `deny-all` mode every name is refused.
@@ -129,13 +129,13 @@ Ceilings of the allowlist, so plan around them:
 - IPv4 only. Boxes use an IPv4 bridge network, so IPv6 is rejected rather than filtered.
 - `--dns` is fixed when a container is created. Boxes created before the forwarder keep their old resolver and the old unrestricted port-53 rule until they are recreated; they do not use the forwarder, so their names are not checked. Recreate them to get the forwarder.
 - DNS depends on the agent for boxes created with the forwarder. If the agent is down, those boxes cannot resolve names. If the forwarder fails to start, the agent logs an error and new boxes get Docker's default resolver with no DNS restriction.
-- On hosts whose INPUT policy drops by default, the agent adds an ACCEPT for DNS from `boxes-net` to the forwarder at startup. Per-box chains still drop DNS to any other address.
+- On hosts whose INPUT policy drops by default, the agent adds an ACCEPT for DNS from `paddock-net` to the forwarder at startup. Per-box chains still drop DNS to any other address.
 - A forwarded IP stays open for 30 minutes after its last lookup, and the rules are rebuilt on each refresh. A domain with more than 64 live IPs is capped at the 64 most recent.
 
 ```sh
-curl -X POST "$BOXES/api/v1/sandboxes" -H "Authorization: Bearer $KEY" \
+curl -X POST "$PADDOCK/api/v1/sandboxes" -H "Authorization: Bearer $KEY" \
   -d '{"networkPolicy":{"mode":"allowlist","allowDomains":["api.github.com","*.npmjs.org"],"denyCidrs":["10.0.0.0/8"]}}'
-curl -X PATCH "$BOXES/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
+curl -X PATCH "$PADDOCK/api/v1/sandboxes/$ID" -H "Authorization: Bearer $KEY" \
   -d '{"networkPolicy":{"mode":"deny-all"}}'
 ```
 

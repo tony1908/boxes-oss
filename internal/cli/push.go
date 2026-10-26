@@ -40,7 +40,7 @@ var skippedPushDirs = map[string]struct{}{
 
 func (c *CLI) push(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: boxes push <id> [dir] [--to <path>]")
+		return fmt.Errorf("usage: paddock push <id> [dir] [--to <path>]")
 	}
 	id, err := c.boxID(args[0])
 	if err != nil {
@@ -55,10 +55,10 @@ func (c *CLI) push(ctx context.Context, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(args[i], "-") {
-			return fmt.Errorf("usage: boxes push <id> [dir] [--to <path>]")
+			return fmt.Errorf("usage: paddock push <id> [dir] [--to <path>]")
 		}
 		if positionals > 0 {
-			return fmt.Errorf("usage: boxes push <id> [dir] [--to <path>]")
+			return fmt.Errorf("usage: paddock push <id> [dir] [--to <path>]")
 		}
 		dir, positionals = args[i], positionals+1
 	}

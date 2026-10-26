@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>boxes docs</title>
-  <meta name="description" content="Install boxes on a VPS, install the CLI, and run the recipes agents use most.">
+  <title>Paddock docs</title>
+  <meta name="description" content="Install Paddock on a VPS, install the CLI, and run the recipes agents use most.">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,12 +17,12 @@
 
   <header class="site-header">
     <div class="wrap">
-      <a class="wordmark" href="index.html">boxes</a>
+      <a class="wordmark" href="index.html">paddock</a>
       <nav aria-label="Primary">
         <ul class="nav">
           <li><a class="hide-sm" href="docs.html">Docs</a></li>
           <li><a class="hide-sm" href="index.html#install">Install</a></li>
-          <li><a href="https://github.com/tony1908/boxes-oss">GitHub</a></li>
+          <li><a href="https://github.com/tony1908/paddock">GitHub</a></li>
         </ul>
       </nav>
       <a class="btn btn-primary btn-sm" href="index.html#install">Get started</a>
@@ -44,21 +44,21 @@
         <li>
           <p>Run the installer on the VPS. Replace the domain and email with your own.</p>
           <div class="codeblock">
-            <button class="copy" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh | sudo bash -s -- --domain boxes.example.com --email you@example.com">Copy</button>
-            <pre><code>curl -fsSL https://raw.githubusercontent.com/tony1908/boxes-oss/main/install/install.sh \
+            <button class="copy" type="button" aria-label="Copy command" data-copy="curl -fsSL https://raw.githubusercontent.com/tony1908/paddock/main/install/install.sh | sudo bash -s -- --domain paddock.example.com --email you@example.com">Copy</button>
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/tony1908/paddock/main/install/install.sh \
   | sudo bash -s -- \
-  --domain boxes.example.com --email you@example.com</code></pre>
+  --domain paddock.example.com --email you@example.com</code></pre>
           </div>
         </li>
         <li>
-          <p>Open the one-time owner setup link the installer prints, and create the owner account. The setup token is also in <code>/var/lib/boxes/admin.token</code>.</p>
+          <p>Open the one-time owner setup link the installer prints, and create the owner account. The setup token is also in <code>/var/lib/paddock/admin.token</code>.</p>
         </li>
         <li>
           <p>Install the CLI on your laptop, then log in with the owner account.</p>
           <div class="codeblock">
             <button class="copy" type="button" aria-label="Copy command">Copy</button>
-            <pre><code>curl -fsSL https://boxes.example.com/install/cli.sh | sh
-boxes login --server https://boxes.example.com --email you@example.com</code></pre>
+            <pre><code>curl -fsSL https://paddock.example.com/install/cli.sh | sh
+paddock login --server https://paddock.example.com --email you@example.com</code></pre>
           </div>
         </li>
       </ol>
@@ -74,7 +74,7 @@ boxes login --server https://boxes.example.com --email you@example.com</code></p
 
     <section class="wrap docs-section" id="docs" aria-labelledby="docs-title">
       <h2 id="docs-title">Recipes<span class="sub">Recipes for the things agents do most.</span></h2>
-      <p>Each recipe is a few commands you can copy and run. For every flag, run <code>boxes help &lt;command&gt;</code>.</p>
+      <p>Each recipe is a few commands you can copy and run. For every flag, run <code>paddock help &lt;command&gt;</code>.</p>
 
       <div class="docs">
         <nav class="toc" aria-label="Recipes">
@@ -99,8 +99,8 @@ boxes login --server https://boxes.example.com --email you@example.com</code></p
             <p>Create a box, which becomes <code>current</code>, then run a command in it.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes new --type small --ttl 3600
-boxes exec current -- uname -a</code></pre>
+              <pre><code>paddock new --type small --ttl 3600
+paddock exec current -- uname -a</code></pre>
             </div>
           </section>
 
@@ -109,8 +109,8 @@ boxes exec current -- uname -a</code></pre>
             <p>Copy a local project into the box, then run its tests there.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes push current . --to /config/project
-boxes exec current -- bash -lc 'cd /config/project &amp;&amp; npm test'</code></pre>
+              <pre><code>paddock push current . --to /config/project
+paddock exec current -- bash -lc 'cd /config/project &amp;&amp; npm test'</code></pre>
             </div>
           </section>
 
@@ -119,10 +119,10 @@ boxes exec current -- bash -lc 'cd /config/project &amp;&amp; npm test'</code></
             <p>Start a command in the background, check its output, and stop it when you need to.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes exec current --detach -- npm run build
-boxes ps current
-boxes logs current &lt;processId&gt; -f
-boxes kill current &lt;processId&gt;</code></pre>
+              <pre><code>paddock exec current --detach -- npm run build
+paddock ps current
+paddock logs current &lt;processId&gt; -f
+paddock kill current &lt;processId&gt;</code></pre>
             </div>
           </section>
 
@@ -131,7 +131,7 @@ boxes kill current &lt;processId&gt;</code></pre>
             <p>Send a prompt to a coding agent that runs inside the box.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes prompt current "Fix the failing tests in /config/project" --provider opencode</code></pre>
+              <pre><code>paddock prompt current "Fix the failing tests in /config/project" --provider opencode</code></pre>
             </div>
           </section>
 
@@ -140,8 +140,8 @@ boxes kill current &lt;processId&gt;</code></pre>
             <p>Allow only the domains a box needs when you create it, or cut its network off on a running box.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes new --network allowlist --allow-domain api.github.com
-boxes update current --network deny-all</code></pre>
+              <pre><code>paddock new --network allowlist --allow-domain api.github.com
+paddock update current --network deny-all</code></pre>
             </div>
           </section>
 
@@ -150,7 +150,7 @@ boxes update current --network deny-all</code></pre>
             <p>Clone a Git repository into the box on first boot.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes new --git https://github.com/you/repo --revision main</code></pre>
+              <pre><code>paddock new --git https://github.com/you/repo --revision main</code></pre>
             </div>
           </section>
 
@@ -159,8 +159,8 @@ boxes update current --network deny-all</code></pre>
             <p>Create a drive, mount it into a box at <code>/mnt/cache</code>, and it keeps its files after the box is deleted.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes drive create cache
-boxes new --mount cache:/mnt/cache</code></pre>
+              <pre><code>paddock drive create cache
+paddock new --mount cache:/mnt/cache</code></pre>
             </div>
           </section>
 
@@ -169,8 +169,8 @@ boxes new --mount cache:/mnt/cache</code></pre>
             <p>List a box's snapshots, then roll the box back to one of them.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes snapshots current
-boxes restore current &lt;snapshotId&gt;</code></pre>
+              <pre><code>paddock snapshots current
+paddock restore current &lt;snapshotId&gt;</code></pre>
             </div>
           </section>
 
@@ -179,8 +179,8 @@ boxes restore current &lt;snapshotId&gt;</code></pre>
             <p>Start an app on the box desktop, then save a screenshot of the desktop.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes exec current --desktop --detach -- ./my-app
-boxes screenshot current -o shot.png</code></pre>
+              <pre><code>paddock exec current --desktop --detach -- ./my-app
+paddock screenshot current -o shot.png</code></pre>
             </div>
           </section>
 
@@ -189,16 +189,16 @@ boxes screenshot current -o shot.png</code></pre>
             <p>Give a port inside the box its own public HTTPS URL. Ports 3000, 3001 and 7070 are taken by the box, so serve your app on another port.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes host current 8080</code></pre>
+              <pre><code>paddock host current 8080</code></pre>
             </div>
           </section>
 
           <section class="recipe" id="skill" aria-labelledby="skill-title">
             <h3 id="skill-title">Let your coding agent use boxes</h3>
-            <p>Install the boxes skill for Claude Code, so the agent knows the CLI. Codex has its own <code>--codex</code> flag. OpenCode reads ~/.claude/skills too, so the same install works for it.</p>
+            <p>Install the paddock skill for Claude Code, so the agent knows the CLI. Codex has its own <code>--codex</code> flag. OpenCode reads ~/.claude/skills too, so the same install works for it.</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>boxes skill install --claude</code></pre>
+              <pre><code>paddock skill install --claude</code></pre>
             </div>
           </section>
         </div>
@@ -207,14 +207,14 @@ boxes screenshot current -o shot.png</code></pre>
       <div class="reference">
         <h3>Full reference</h3>
         <ul>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/cli.md">docs/cli.md</a>, every command and flag</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/api.md">docs/api.md</a>, the HTTP API</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/self-hosting.md">docs/self-hosting.md</a>, installing and configuring the server</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/snapshots.md">docs/snapshots.md</a>, snapshots, resume and restore</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/desktop.md">docs/desktop.md</a>, desktop sessions</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/docs/lifecycle.md">docs/lifecycle.md</a>, box states and auto-stop timers</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/sdk/typescript/README.md">sdk/typescript/README.md</a>, the TypeScript SDK</li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/sdk/python/README.md">sdk/python/README.md</a>, the Python SDK</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/docs/cli.md">docs/cli.md</a>, every command and flag</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/docs/api.md">docs/api.md</a>, the HTTP API</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/docs/self-hosting.md">docs/self-hosting.md</a>, installing and configuring the server</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/docs/snapshots.md">docs/snapshots.md</a>, snapshots, resume and restore</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/docs/desktop.md">docs/desktop.md</a>, desktop sessions</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/docs/lifecycle.md">docs/lifecycle.md</a>, box states and auto-stop timers</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/sdk/typescript/README.md">sdk/typescript/README.md</a>, the TypeScript SDK</li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/sdk/python/README.md">sdk/python/README.md</a>, the Python SDK</li>
         </ul>
       </div>
     </section>
@@ -222,12 +222,12 @@ boxes screenshot current -o shot.png</code></pre>
 
   <footer class="site-footer">
     <div class="wrap">
-      <a class="wordmark" href="index.html">boxes</a>
+      <a class="wordmark" href="index.html">paddock</a>
       <nav aria-label="Footer">
         <ul>
           <li><a href="docs.html">Docs</a></li>
-          <li><a href="https://github.com/tony1908/boxes-oss">GitHub</a></li>
-          <li><a href="https://github.com/tony1908/boxes-oss/blob/main/LICENSE">MIT license</a></li>
+          <li><a href="https://github.com/tony1908/paddock">GitHub</a></li>
+          <li><a href="https://github.com/tony1908/paddock/blob/main/LICENSE">MIT license</a></li>
         </ul>
       </nav>
     </div>

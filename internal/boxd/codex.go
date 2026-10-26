@@ -28,7 +28,7 @@ func (h *CodexHarness) Start(ctx context.Context, spec ConvSpec) (Session, error
 	if workDir == "" {
 		workDir = "/config"
 	}
-	env, err := loadHarnessEnv("/run/boxes/env")
+	env, err := loadHarnessEnv("/run/paddock/env")
 	if err != nil {
 		return nil, err
 	}

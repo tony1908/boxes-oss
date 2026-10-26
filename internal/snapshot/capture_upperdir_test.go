@@ -30,7 +30,7 @@ func TestCaptureUsesUpperDirAndWritesNULManifest(t *testing.T) {
 	docker := &fakeExecutor{pid: "123", replies: []executorReply{
 		{stdout: "{}"}, // image-declared volumes
 		{},             // .boxignore discovery
-		{},             // create /.boxes
+		{},             // create /.paddock
 		{},             // write deletions
 		{},             // write manifest
 		{},             // write opaque metadata
@@ -38,7 +38,7 @@ func TestCaptureUsesUpperDirAndWritesNULManifest(t *testing.T) {
 	}}
 	restic := &fakeExecutor{replies: []executorReply{{stdout: `{"snapshot_id":"snapshot-upper","total_bytes_processed":7}`}}}
 	engine := New(docker, restic, "/repo", "secret")
-	t.Setenv("BOXES_HOST_PROC", filepath.Join(root, "proc"))
+	t.Setenv("PADDOCK_HOST_PROC", filepath.Join(root, "proc"))
 	engine.mountInfo = newProcMountInfo()
 	if _, err := engine.Capture(context.Background(), "bx_abcdefghijkl"); err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestCaptureUsesUpperDirAndWritesNULManifest(t *testing.T) {
 	}
 	manifestCall, tarCall := -1, -1
 	for i, call := range docker.calls {
-		if contains(call.argv, "/.boxes/manifest") {
+		if contains(call.argv, "/.paddock/manifest") {
 			manifestCall = i
 		}
 		if contains(call.argv, "--files-from") {
@@ -61,7 +61,7 @@ func TestCaptureUsesUpperDirAndWritesNULManifest(t *testing.T) {
 	if manifestCall < 0 || docker.calls[manifestCall].stdin != "/marker-x\x00" {
 		t.Fatalf("manifest write = %#v, want NUL-separated /marker-x", docker.calls)
 	}
-	const wantTarPaths = "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/marker-x\x00"
+	const wantTarPaths = "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/marker-x\x00"
 	if tarCall < 0 || docker.calls[tarCall].stdin != wantTarPaths {
 		t.Fatalf("tar paths = %q, want %q", docker.calls[tarCall].stdin, wantTarPaths)
 	}
@@ -80,11 +80,11 @@ func TestCaptureFallsBackToDockerDiffWhenUpperDirIsUnavailable(t *testing.T) {
 		{stdout: "A /from-diff\nD /removed-by-diff\n"},
 		{stdout: "{}"}, // image-declared volumes
 		{},             // .boxignore discovery
-		{},             // create /.boxes
+		{},             // create /.paddock
 		{},             // write deletions
 		{},             // write manifest
 		{},             // write opaque metadata
-		{stdout: "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/from-diff\x00"}, // filter fallback paths
+		{stdout: "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/from-diff\x00"}, // filter fallback paths
 		{stdout: "tar-data"},
 	}}
 	restic := &fakeExecutor{replies: []executorReply{{stdout: `{"snapshot_id":"snapshot-fallback","total_bytes_processed":1}`}}}
@@ -99,10 +99,10 @@ func TestCaptureFallsBackToDockerDiffWhenUpperDirIsUnavailable(t *testing.T) {
 		if strings.HasPrefix(call.stdin, "/removed-by-diff\n") {
 			foundDeletion = true
 		}
-		if contains(call.argv, "/.boxes/manifest") && call.stdin == "/from-diff\x00" {
+		if contains(call.argv, "/.paddock/manifest") && call.stdin == "/from-diff\x00" {
 			foundManifest = true
 		}
-		if contains(call.argv, "--files-from") && call.stdin == "/.boxes/deletions\x00/.boxes/manifest\x00/.boxes/opaque\x00/from-diff\x00" {
+		if contains(call.argv, "--files-from") && call.stdin == "/.paddock/deletions\x00/.paddock/manifest\x00/.paddock/opaque\x00/from-diff\x00" {
 			foundTar = true
 		}
 	}

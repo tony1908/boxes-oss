@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 // SetupOptions configures first-start repository and script setup.
@@ -78,7 +78,7 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 	}
 	setupFile := options.SetupFile
 	if setupFile == "" {
-		setupFile = "/run/boxes/setup.json"
+		setupFile = "/run/paddock/setup.json"
 	}
 	data, err := os.ReadFile(setupFile)
 	if errors.Is(err, os.ErrNotExist) {
@@ -131,13 +131,13 @@ func RunSetup(ctx context.Context, options SetupOptions) (returnErr error) {
 	if executor == nil {
 		executor = osSetupExecutor{}
 	}
-	env, err := loadHarnessEnv("/run/boxes/env")
+	env, err := loadHarnessEnv("/run/paddock/env")
 	if err != nil {
 		return err
 	}
 	secretsDir := options.SecretsDir
 	if secretsDir == "" {
-		secretsDir = "/run/boxes/secrets"
+		secretsDir = "/run/paddock/secrets"
 	}
 	if err := cloneSetupRepos(ctx, executor, store, doc.Repos, root, secretsDir, env); err != nil {
 		return err

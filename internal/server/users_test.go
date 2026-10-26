@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/tunnel"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/tunnel"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestValidateAccountName(t *testing.T) {

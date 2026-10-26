@@ -11,31 +11,31 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/server"
-	"github.com/tony1908/boxes-oss/internal/store"
+	"github.com/tony1908/paddock/internal/server"
+	"github.com/tony1908/paddock/internal/store"
 )
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "storage" {
 		if len(os.Args) < 3 || os.Args[2] != "set" {
-			log.Fatal("usage: boxes-server storage set [--data-dir DIR] --s3-endpoint URL --s3-bucket NAME [--s3-prefix P] [--s3-region R]")
+			log.Fatal("usage: paddock-server storage set [--data-dir DIR] --s3-endpoint URL --s3-bucket NAME [--s3-prefix P] [--s3-region R]")
 		}
-		adminURL := os.Getenv("BOXES_SERVER_ADMIN_URL")
+		adminURL := os.Getenv("PADDOCK_SERVER_ADMIN_URL")
 		if adminURL == "" {
 			adminURL = "http://127.0.0.1:8080/api/v1/admin/storage"
 		}
-		if err := runStorageSet(os.Args[3:], adminURL, os.Getenv("BOXES_S3_ACCESS_KEY"), os.Getenv("BOXES_S3_SECRET_KEY"), os.Stdout); err != nil {
+		if err := runStorageSet(os.Args[3:], adminURL, os.Getenv("PADDOCK_S3_ACCESS_KEY"), os.Getenv("PADDOCK_S3_SECRET_KEY"), os.Stdout); err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	dataDir := flag.String("data-dir", "/var/lib/boxes", "server data directory")
+	dataDir := flag.String("data-dir", "/var/lib/paddock", "server data directory")
 	publicURL := flag.String("public-url", "http://localhost:8080", "public server URL")
-	image := flag.String("image", "ghcr.io/tony1908/boxes-box:latest", "default box image")
-	snapshotInterval := flag.Duration("snapshot-interval", envDuration("BOXES_SNAPSHOT_INTERVAL", time.Minute), "periodic snapshot interval")
-	desktopSessionTTL := flag.Duration("desktop-session-ttl", envDuration("BOXES_DESKTOP_SESSION_TTL", 8*time.Hour), "desktop session lifetime")
-	snapshotBusyInterval := flag.Duration("snapshot-busy-interval", envDuration("BOXES_SNAPSHOT_BUSY_INTERVAL", 5*time.Minute), "minimum interval after repeated changed snapshots")
+	image := flag.String("image", "ghcr.io/tony1908/paddock-box:latest", "default box image")
+	snapshotInterval := flag.Duration("snapshot-interval", envDuration("PADDOCK_SNAPSHOT_INTERVAL", time.Minute), "periodic snapshot interval")
+	desktopSessionTTL := flag.Duration("desktop-session-ttl", envDuration("PADDOCK_DESKTOP_SESSION_TTL", 8*time.Hour), "desktop session lifetime")
+	snapshotBusyInterval := flag.Duration("snapshot-busy-interval", envDuration("PADDOCK_SNAPSHOT_BUSY_INTERVAL", 5*time.Minute), "minimum interval after repeated changed snapshots")
 	memoryOvercommit := flag.Float64("memory-overcommit", 1.0, "memory reservation headroom factor (1.0 admits reservations up to 90% of node RAM)")
 	admissionMode := flag.String("admission", "usage", "admission mode: usage or reservation")
 	bufferPercent := flag.Float64("admission-buffer-percent", 0.15, "fraction of RAM reserved for host headroom")
@@ -48,21 +48,21 @@ func main() {
 	if err := os.MkdirAll(*dataDir, 0o700); err != nil {
 		log.Fatal(err)
 	}
-	db, err := store.Open(filepath.Join(*dataDir, "boxes.db"))
+	db, err := store.Open(filepath.Join(*dataDir, "paddock.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
 	srv, err := server.New(server.Config{
-		Store: db, DataDir: *dataDir, PublicURL: *publicURL, Image: *image, ToolsImage: os.Getenv("BOXES_TOOLS_IMAGE"), SnapshotInterval: *snapshotInterval, SnapshotBusyInterval: *snapshotBusyInterval, DesktopSessionTTL: *desktopSessionTTL, MemoryOvercommit: *memoryOvercommit, AdmissionMode: *admissionMode, AdmissionBufferPercent: *bufferPercent, AdmissionBufferMin: *bufferMin, AdmissionExpectedBox: *expectedBox, AdmissionPSIMax: *psiMax, AdmissionSwapAllowance: *swapAllowance,
-		BootstrapJoinToken: os.Getenv("BOXES_BOOTSTRAP_JOIN_TOKEN"),
-		BootstrapNodeName:  os.Getenv("BOXES_BOOTSTRAP_NODE_NAME"),
-		BootstrapHostBase:  os.Getenv("BOXES_BOOTSTRAP_HOST_BASE"),
+		Store: db, DataDir: *dataDir, PublicURL: *publicURL, Image: *image, ToolsImage: os.Getenv("PADDOCK_TOOLS_IMAGE"), SnapshotInterval: *snapshotInterval, SnapshotBusyInterval: *snapshotBusyInterval, DesktopSessionTTL: *desktopSessionTTL, MemoryOvercommit: *memoryOvercommit, AdmissionMode: *admissionMode, AdmissionBufferPercent: *bufferPercent, AdmissionBufferMin: *bufferMin, AdmissionExpectedBox: *expectedBox, AdmissionPSIMax: *psiMax, AdmissionSwapAllowance: *swapAllowance,
+		BootstrapJoinToken: os.Getenv("PADDOCK_BOOTSTRAP_JOIN_TOKEN"),
+		BootstrapNodeName:  os.Getenv("PADDOCK_BOOTSTRAP_NODE_NAME"),
+		BootstrapHostBase:  os.Getenv("PADDOCK_BOOTSTRAP_HOST_BASE"),
 		StorageBootstrap: server.StorageBootstrap{
-			Repository: os.Getenv("BOXES_STORAGE_REPOSITORY"), Endpoint: os.Getenv("BOXES_STORAGE_ENDPOINT"),
-			Bucket: os.Getenv("BOXES_STORAGE_BUCKET"), Prefix: os.Getenv("BOXES_STORAGE_PREFIX"),
-			Region: os.Getenv("BOXES_STORAGE_REGION"), AccessKey: os.Getenv("BOXES_STORAGE_ACCESS_KEY"),
-			SecretKey: os.Getenv("BOXES_STORAGE_SECRET_KEY"), Password: os.Getenv("BOXES_STORAGE_RESTIC_PASSWORD"),
+			Repository: os.Getenv("PADDOCK_STORAGE_REPOSITORY"), Endpoint: os.Getenv("PADDOCK_STORAGE_ENDPOINT"),
+			Bucket: os.Getenv("PADDOCK_STORAGE_BUCKET"), Prefix: os.Getenv("PADDOCK_STORAGE_PREFIX"),
+			Region: os.Getenv("PADDOCK_STORAGE_REGION"), AccessKey: os.Getenv("PADDOCK_STORAGE_ACCESS_KEY"),
+			SecretKey: os.Getenv("PADDOCK_STORAGE_SECRET_KEY"), Password: os.Getenv("PADDOCK_STORAGE_RESTIC_PASSWORD"),
 		},
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func main() {
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
-	log.Printf("boxes-server listening on %s", *addr)
+	log.Printf("paddock-server listening on %s", *addr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

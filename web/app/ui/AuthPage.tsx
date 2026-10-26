@@ -55,7 +55,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   return (
     <main className="auth-page">
       <section className="auth-form-wrap">
-        <Link className="brand auth-brand" href="/"><BrandMark size={20} animated={busy} /><span>boxes</span></Link>
+        <Link className="brand auth-brand" href="/"><BrandMark size={20} animated={busy} /><span>paddock</span></Link>
         <h1>{signup ? 'Create the owner account' : 'Sign in'}</h1>
         <p className="auth-host">Server: <code>{host}</code></p>
         {signup && setupRequired && !setupToken && <p className="form-error" role="alert">Use the owner setup link printed by the installer.</p>}

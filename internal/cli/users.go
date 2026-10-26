@@ -8,9 +8,9 @@ import (
 	"net/url"
 )
 
-const usersUsage = "usage: boxes user add <box> <name> | list <box> | rm <box> <name>; boxes group add <box> <group>; boxes group member add|rm <box> <group> <user>"
+const usersUsage = "usage: paddock user add <box> <name> | list <box> | rm <box> <name>; paddock group add <box> <group>; paddock group member add|rm <box> <group> <user>"
 
-// user handles `boxes user add|list|rm`: isolated Linux users inside a box.
+// user handles `paddock user add|list|rm`: isolated Linux users inside a box.
 func (c *CLI) user(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New(usersUsage)
@@ -60,7 +60,7 @@ func (c *CLI) user(ctx context.Context, args []string) error {
 	}
 }
 
-// group handles `boxes group add` and `boxes group member add|rm`: shared groups inside a box.
+// group handles `paddock group add` and `paddock group member add|rm`: shared groups inside a box.
 func (c *CLI) group(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New(usersUsage)

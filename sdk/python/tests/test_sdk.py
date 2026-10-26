@@ -1,7 +1,7 @@
 import json
 import httpx
 import pytest
-from boxes_sdk import Boxes, BoxesError
+from paddock_sdk import Paddock, PaddockError
 
 def test_auth_idempotency_and_error_envelope():
     requests=[]
@@ -10,12 +10,12 @@ def test_auth_idempotency_and_error_envelope():
         if request.url.path.endswith("/sandboxes") and request.method == "POST":
             return httpx.Response(201,json={"id":"bx_1","state":"ready"})
         return httpx.Response(400,json={"error":{"code":"invalid_type","message":"bad type"}})
-    c=Boxes("https://example.test","secret",transport=httpx.MockTransport(handler))
+    c=Paddock("https://example.test","secret",transport=httpx.MockTransport(handler))
     box=c.sandboxes.create(idempotency_key="key",type="small")
     assert box["id"] == "bx_1"
     assert requests[0].headers["authorization"] == "Bearer secret"
     assert requests[0].headers["idempotency-key"] == "key"
-    with pytest.raises(BoxesError) as error: c.sandboxes.get("bad")
+    with pytest.raises(PaddockError) as error: c.sandboxes.get("bad")
     assert (error.value.status,error.value.code,error.value.message)==(400,"invalid_type","bad type")
     c.close()
 
@@ -30,7 +30,7 @@ def test_snake_case_wire_names_and_response_unwrapping():
         if request.url.path.endswith("/named-snapshots"):
             return httpx.Response(200,json={"namedSnapshots":[]})
         return httpx.Response(204)
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         c.sandboxes.create(ttl_seconds=3600)
         assert c.environments.create(name="dev", setup_script="echo ok")=={"id":"env_1"}
         assert c.named_snapshots.list()==[]
@@ -45,7 +45,7 @@ def test_machine_returns_local_vm_record():
         assert request.headers["authorization"] == "Bearer secret"
         assert request.url.path == "/api/v1/machine"
         return httpx.Response(200, json={"machine": machine})
-    with Boxes("https://example.test", "secret", transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test", "secret", transport=httpx.MockTransport(handler)) as c:
         assert c.machine() == machine
 
 def test_sandbox_tags_are_sent_verbatim_and_filterable():
@@ -55,7 +55,7 @@ def test_sandbox_tags_are_sent_verbatim_and_filterable():
         if request.method == "GET":
             return httpx.Response(200,json={"sandboxes":[]})
         return httpx.Response(200,json={"sandbox":{"id":"bx_t","tags":{"env_name":"prod"}}})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         c.sandboxes.create(tags={"env_name":"prod"})
         c.sandboxes.update("bx_t",tags={})
         assert c.sandboxes.list(tags=["team=agents","owner"])==[]
@@ -68,7 +68,7 @@ def test_sandbox_source_is_sent_verbatim_on_create():
     def handler(request):
         requests.append(request)
         return httpx.Response(201,json={"id":"bx_s","state":"provisioning"})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         c.sandboxes.create(type="small",source={"type":"tarball","url":"https://example.test/src.tar.gz","path":"app"})
     assert json.loads(requests[0].read())["source"]=={"type":"tarball","url":"https://example.test/src.tar.gz","path":"app"}
 
@@ -77,7 +77,7 @@ def test_keep_snapshots_and_restore_use_wire_names():
     def handler(request):
         requests.append(request)
         return httpx.Response(200,json={"id":"bx_k","sandbox":{"id":"bx_k","state":"stopped"}})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         c.sandboxes.create(type="small",keep_snapshots=3)
         c.sandboxes.update("bx_k",keep_snapshots=2)
         assert c.sandboxes.restore("bx_k","sn_1")["state"]=="stopped"
@@ -91,7 +91,7 @@ def test_network_policy_nested_keys_are_camel_cased_on_the_wire():
     def handler(request):
         requests.append(request)
         return httpx.Response(200,json={"id":"bx_n","sandbox":{"id":"bx_n"}})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         c.sandboxes.create(network_policy={"mode":"allowlist","allow_domains":["api.github.com"],"allow_cidrs":["10.0.0.0/8"],"deny_cidrs":["10.1.0.0/16"]})
         c.sandboxes.update("bx_n",network_policy=None)
     assert json.loads(requests[0].read())=={"networkPolicy":{"mode":"allowlist","allowDomains":["api.github.com"],"allowCidrs":["10.0.0.0/8"],"denyCidrs":["10.1.0.0/16"]}}
@@ -117,7 +117,7 @@ def test_detached_command_streams_logs_and_controls_process():
         if path.endswith("/p1"):
             return httpx.Response(200, json={"running": False, "exitCode": 4})
         return httpx.Response(404, json={"error": {"code": "process_not_found", "message": "exec process not found"}})
-    c = Boxes("https://example.test", "secret", transport=httpx.MockTransport(handler), poll_interval=0)
+    c = Paddock("https://example.test", "secret", transport=httpx.MockTransport(handler), poll_interval=0)
     command = c.exec.detached("bx_3", "cat", stdin=True)
     assert command.process_id == "p1"
     assert list(command.logs(follow=True)) == [{"stream": "stdout", "data": "hi\n", "offset": 3}, {"exit": True, "exitCode": 4}]
@@ -130,7 +130,7 @@ def test_detached_command_streams_logs_and_controls_process():
     assert jsonlib.loads(kill[3]) == {"signal": "KILL"}
     assert ("POST", "/api/v1/sandboxes/bx_3/commands/p1/stdin", None, b"abc") in seen
     assert ("POST", "/api/v1/sandboxes/bx_3/commands/p1/stdin", "1", b"") in seen
-    with pytest.raises(BoxesError) as error:
+    with pytest.raises(PaddockError) as error:
         list(command.logs())
     assert (error.value.status, error.value.code) == (404, "process_not_found")
     c.close()
@@ -142,7 +142,7 @@ def test_image_on_create_and_usage_totals_are_returned():
         if request.url.path.endswith("/usage"):
             return httpx.Response(200,json={"runningSeconds":5,"totals":{"cpuSeconds":2.5,"rxBytes":10,"txBytes":20},"live":{"cpuSeconds":1,"rxBytes":4,"txBytes":6}})
         return httpx.Response(201,json={"id":"bx_i","image":"ghcr.io/example/custom-box:1","state":"ready"})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         box=c.sandboxes.create(type="small",image="ghcr.io/example/custom-box:1")
         usage=c.usage("bx_i")
     assert box["image"]=="ghcr.io/example/custom-box:1"
@@ -162,7 +162,7 @@ def test_drives_manage_volumes_and_mounts_use_wire_names():
         if request.method == "DELETE":
             return httpx.Response(204)
         return httpx.Response(201,json={"name":"data"})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         assert c.drives.create("data")["name"] == "data"
         assert c.drives.list() == [{"name":"data","mountedBy":[]}]
         assert c.drives.fork("data", "copy")["name"] == "copy"
@@ -189,7 +189,7 @@ def test_users_and_groups_use_wire_names_and_exec_runs_as_user():
         if request.url.path.endswith("/commands"):
             return httpx.Response(200,json={"exitCode":0,"stdout":"alice\n","stderr":""})
         return httpx.Response(200,json={"username":"alice","group":"team"})
-    with Boxes("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
+    with Paddock("https://example.test","secret",transport=httpx.MockTransport(handler)) as c:
         assert c.sandboxes.create_user("bx_u","alice")["homeDir"] == "/home/alice"
         assert c.sandboxes.list_users("bx_u") == [{"username":"alice","homeDir":"/home/alice","groups":["alice"]}]
         assert c.sandboxes.create_group("bx_u","team")["sharedDir"] == "/shared/team"

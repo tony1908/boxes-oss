@@ -26,7 +26,7 @@ func TestHelpListsSupportedBoxSizes(t *testing.T) {
 			t.Errorf("help does not list %q size: %s", size, output.String())
 		}
 	}
-	if !strings.Contains(output.String(), "boxes push <id> [dir] [--to path]") {
+	if !strings.Contains(output.String(), "paddock push <id> [dir] [--to path]") {
 		t.Fatalf("help omits push usage: %s", output.String())
 	}
 }
@@ -78,7 +78,7 @@ func TestLoginStoresCredentialsWithPrivatePermissions(t *testing.T) {
 }
 
 func TestLoginUsesPasswordEnvironmentWhenFlagIsMissing(t *testing.T) {
-	t.Setenv("BOXES_PASSWORD", "environment horse")
+	t.Setenv("PADDOCK_PASSWORD", "environment horse")
 	var got struct {
 		Password string `json:"password"`
 	}
@@ -97,7 +97,7 @@ func TestLoginUsesPasswordEnvironmentWhenFlagIsMissing(t *testing.T) {
 		t.Fatalf("Run login: %v (stderr: %s)", err, stderr.String())
 	}
 	if got.Password != "environment horse" {
-		t.Fatalf("login password = %q, want password from BOXES_PASSWORD", got.Password)
+		t.Fatalf("login password = %q, want password from PADDOCK_PASSWORD", got.Password)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestLoginWithAPIKeyValidatesAndStoresCredentials(t *testing.T) {
 }
 
 func TestLoginUsesAPIKeyEnvironment(t *testing.T) {
-	t.Setenv("BOXES_API_KEY", "bx_live_environment-key")
+	t.Setenv("PADDOCK_API_KEY", "bx_live_environment-key")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/me" || r.Header.Get("Authorization") != "Bearer bx_live_environment-key" {
 			t.Errorf("request = %s %s Authorization %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
@@ -174,8 +174,8 @@ func TestWhoamiUsesEnvironmentOverridesAndPrintsEmail(t *testing.T) {
 		_, _ = io.WriteString(w, `{"user":{"email":"agent@example.test"}}`)
 	}))
 	defer server.Close()
-	t.Setenv("BOXES_SERVER", server.URL)
-	t.Setenv("BOXES_TOKEN", "environment-token")
+	t.Setenv("PADDOCK_SERVER", server.URL)
+	t.Setenv("PADDOCK_TOKEN", "environment-token")
 
 	var out bytes.Buffer
 	app := CLI{Out: &out, Err: io.Discard, ConfigPath: configPath, HTTPClient: server.Client()}
@@ -187,8 +187,8 @@ func TestWhoamiUsesEnvironmentOverridesAndPrintsEmail(t *testing.T) {
 	}
 }
 
-func TestCommandsUseBOXESAPIKEYWithoutConfig(t *testing.T) {
-	t.Setenv("BOXES_SERVER", "")
+func TestCommandsUsePADDOCKAPIKEYWithoutConfig(t *testing.T) {
+	t.Setenv("PADDOCK_SERVER", "")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/sandboxes" || r.Header.Get("Authorization") != "Bearer bx_live_ci-key" {
 			t.Errorf("request = %s %s Authorization %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
@@ -196,8 +196,8 @@ func TestCommandsUseBOXESAPIKEYWithoutConfig(t *testing.T) {
 		_, _ = io.WriteString(w, `{"sandboxes":[]}`)
 	}))
 	defer server.Close()
-	t.Setenv("BOXES_SERVER", server.URL)
-	t.Setenv("BOXES_API_KEY", "bx_live_ci-key")
+	t.Setenv("PADDOCK_SERVER", server.URL)
+	t.Setenv("PADDOCK_API_KEY", "bx_live_ci-key")
 
 	app := CLI{Out: io.Discard, Err: io.Discard, ConfigPath: filepath.Join(t.TempDir(), "missing.json"), HTTPClient: server.Client()}
 	if err := app.Run(context.Background(), []string{"list"}); err != nil {
@@ -419,7 +419,7 @@ func TestSSHForwardsOptionalRemoteCommand(t *testing.T) {
 	}
 	knownHosts := filepath.Join(configDir, "known_hosts")
 	want := []string{
-		"-o", "ProxyCommand=boxes proxy bx_abcdefghijkl",
+		"-o", "ProxyCommand=paddock proxy bx_abcdefghijkl",
 		"-o", "UserKnownHostsFile=" + knownHosts,
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "HostKeyAlias=bx_abcdefghijkl",
@@ -482,7 +482,7 @@ func TestSSHWithoutRemoteCommandStaysInteractive(t *testing.T) {
 		t.Fatalf("Run ssh: %v", err)
 	}
 	want := []string{
-		"-o", "ProxyCommand=boxes proxy bx_abcdefghijkl",
+		"-o", "ProxyCommand=paddock proxy bx_abcdefghijkl",
 		"-o", "UserKnownHostsFile=" + filepath.Join(filepath.Dir(app.ConfigPath), "known_hosts"),
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "HostKeyAlias=bx_abcdefghijkl",
@@ -520,7 +520,7 @@ func TestSCPUsesDedicatedKnownHostsAndBoxAlias(t *testing.T) {
 	}
 	knownHosts := filepath.Join(configDir, "known_hosts")
 	want := []string{
-		"-o", "ProxyCommand=boxes proxy %h",
+		"-o", "ProxyCommand=paddock proxy %h",
 		"-o", "UserKnownHostsFile=" + knownHosts,
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "HostKeyAlias=bx_abcdefghijkl",
@@ -612,7 +612,7 @@ func TestPromptFetchesFinalEventsAfterRunBecomesTerminal(t *testing.T) {
 				_, _ = io.WriteString(w, `{"events":[],"cursor":0}`)
 				return
 			}
-			_, _ = io.WriteString(w, `{"events":[{"cursor":1,"id":"ev_message","conversationId":"cv_final","runId":"run_final","type":"message","data":{"text":"boxes-ok"}},{"cursor":2,"id":"ev_complete","conversationId":"cv_final","runId":"run_final","type":"turn.completed","data":{}}],"cursor":2}`)
+			_, _ = io.WriteString(w, `{"events":[{"cursor":1,"id":"ev_message","conversationId":"cv_final","runId":"run_final","type":"message","data":{"text":"paddock-ok"}},{"cursor":2,"id":"ev_complete","conversationId":"cv_final","runId":"run_final","type":"turn.completed","data":{}}],"cursor":2}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sandboxes/bx_abcdefghijkl/runs/run_final":
 			_, _ = io.WriteString(w, `{"id":"run_final","conversationId":"cv_final","status":"completed"}`)
 		default:
@@ -624,10 +624,10 @@ func TestPromptFetchesFinalEventsAfterRunBecomesTerminal(t *testing.T) {
 
 	var out bytes.Buffer
 	app := CLI{In: strings.NewReader(""), Out: &out, Err: io.Discard, ConfigPath: filepath.Join(t.TempDir(), "config.json"), HTTPClient: server.Client(), BaseURL: server.URL, Token: "api-token"}
-	if err := app.Run(context.Background(), []string{"--json", "prompt", "bx_abcdefghijkl", "say boxes-ok"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--json", "prompt", "bx_abcdefghijkl", "say paddock-ok"}); err != nil {
 		t.Fatalf("Run prompt: %v", err)
 	}
-	if eventRequests != 2 || !strings.Contains(out.String(), "boxes-ok") {
+	if eventRequests != 2 || !strings.Contains(out.String(), "paddock-ok") {
 		t.Fatalf("event requests = %d; output = %q, want final message", eventRequests, out.String())
 	}
 }
@@ -732,7 +732,7 @@ func TestDefaultConfigPathUsesDocumentedConfigDirectory(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 	app := CLI{}
 	app.defaults()
-	if want := filepath.Join(home, ".config", "boxes", "config.json"); app.ConfigPath != want {
+	if want := filepath.Join(home, ".config", "paddock", "config.json"); app.ConfigPath != want {
 		t.Fatalf("ConfigPath = %q, want %q", app.ConfigPath, want)
 	}
 }

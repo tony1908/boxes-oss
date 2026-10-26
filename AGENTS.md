@@ -4,16 +4,16 @@ Guidance for coding agents and human contributors working in this repository.
 
 ## What this is
 
-boxes-oss is a self-hosted sandbox platform for AI agents. Each box is a full
+Paddock is a self-hosted sandbox platform for AI agents. Each box is a full
 Linux sandbox (sudo, Docker inside, optional desktop) that runs on a single VPS
 you control. This edition has no extra nodes, node management, autoscaling, or
 cloud providers.
 
 ## Repository layout
 
-- `cmd/boxes-server`: control-plane HTTP server.
-- `cmd/boxes-agent`: host agent that creates and manages box containers.
-- `cmd/boxes`: the `boxes` CLI.
+- `cmd/paddock-server`: control-plane HTTP server.
+- `cmd/paddock-agent`: host agent that creates and manages box containers.
+- `cmd/paddock`: the `paddock` CLI.
 - `cmd/boxd`: in-box daemon.
 - `internal/server`: HTTP API handlers (`openapi_test.go` checks the spec).
 - `internal/agent`: host-side box runtime (Sysbox, iptables, DNS forwarder).

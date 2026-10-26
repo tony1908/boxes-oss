@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/diagnostics"
-	"github.com/tony1908/boxes-oss/internal/store"
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/diagnostics"
+	"github.com/tony1908/paddock/internal/store"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 type pricingSettings struct {

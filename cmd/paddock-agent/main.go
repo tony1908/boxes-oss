@@ -14,22 +14,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/agent"
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
-	"github.com/tony1908/boxes-oss/internal/tunnel"
+	"github.com/tony1908/paddock/internal/agent"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
+	"github.com/tony1908/paddock/internal/tunnel"
 )
 
 func main() {
-	serverURL := flag.String("server-url", envOr("BOXES_SERVER_URL", ""), "boxes server URL")
-	nodeToken := flag.String("node-token", envOr("BOXES_NODE_TOKEN", ""), "node authentication token")
-	nodeID := flag.String("node-id", envOr("BOXES_NODE_ID", ""), "node ID")
-	runtimeName := flag.String("runtime", envOr("BOXES_RUNTIME", "sysbox-runc"), "Docker runtime")
-	traefikDir := flag.String("traefik-dir", envOr("BOXES_TRAEFIK_DIR", "/etc/boxes/traefik/dynamic"), "Traefik dynamic configuration directory")
-	networkDir := flag.String("network-dir", envOr("BOXES_NETWORK_DIR", "/var/lib/boxes/network"), "directory for saved per-box network policies")
-	forwardAuthAddr := envOr("BOXES_FORWARD_AUTH_ADDR", "127.0.0.1:7001")
-	forwardAuthURL := envOr("BOXES_FORWARD_AUTH_URL", "http://127.0.0.1:7001/auth/forward")
-	storagePath := flag.String("storage-file", envOr("BOXES_STORAGE_FILE", "/etc/boxes/storage.json"), "private snapshot storage settings file")
+	serverURL := flag.String("server-url", envOr("PADDOCK_SERVER_URL", ""), "paddock server URL")
+	nodeToken := flag.String("node-token", envOr("PADDOCK_NODE_TOKEN", ""), "node authentication token")
+	nodeID := flag.String("node-id", envOr("PADDOCK_NODE_ID", ""), "node ID")
+	runtimeName := flag.String("runtime", envOr("PADDOCK_RUNTIME", "sysbox-runc"), "Docker runtime")
+	traefikDir := flag.String("traefik-dir", envOr("PADDOCK_TRAEFIK_DIR", "/etc/paddock/traefik/dynamic"), "Traefik dynamic configuration directory")
+	networkDir := flag.String("network-dir", envOr("PADDOCK_NETWORK_DIR", "/var/lib/paddock/network"), "directory for saved per-box network policies")
+	forwardAuthAddr := envOr("PADDOCK_FORWARD_AUTH_ADDR", "127.0.0.1:7001")
+	forwardAuthURL := envOr("PADDOCK_FORWARD_AUTH_URL", "http://127.0.0.1:7001/auth/forward")
+	storagePath := flag.String("storage-file", envOr("PADDOCK_STORAGE_FILE", "/etc/paddock/storage.json"), "private snapshot storage settings file")
 	repository := flag.String("restic-repository", envOr("RESTIC_REPOSITORY", ""), "Restic repository")
 	password := flag.String("restic-password", envOr("RESTIC_PASSWORD", ""), "Restic password")
 	flag.Parse()
@@ -64,8 +64,8 @@ func main() {
 
 	service := agent.New(agent.Config{NodeID: *nodeID, Runtime: *runtimeName, TraefikDir: *traefikDir, NetworkDir: *networkDir, ForwardAuthURL: forwardAuthURL, StoragePath: *storagePath}, docker, engine)
 	// Must run before RestoreNetworkPolicies so restored chains and new boxes use the forwarder.
-	if gateway, err := docker.NetworkGateway(ctx, "boxes-net"); err != nil {
-		log.Printf("ERROR DNS forwarder not started, boxes use Docker's default resolver: read boxes-net gateway: %v", err)
+	if gateway, err := docker.NetworkGateway(ctx, "paddock-net"); err != nil {
+		log.Printf("ERROR DNS forwarder not started, boxes use Docker's default resolver: read paddock-net gateway: %v", err)
 	} else if err := service.StartDNS(ctx, gateway); err != nil {
 		log.Printf("ERROR DNS forwarder not started, boxes use Docker's default resolver: %v", err)
 	}
@@ -101,7 +101,7 @@ func main() {
 
 func validateConfig(serverURL, nodeToken, repository string) error {
 	if serverURL == "" || nodeToken == "" || repository == "" {
-		return errors.New("BOXES_SERVER_URL, BOXES_NODE_TOKEN, and RESTIC_REPOSITORY are required")
+		return errors.New("PADDOCK_SERVER_URL, PADDOCK_NODE_TOKEN, and RESTIC_REPOSITORY are required")
 	}
 	return nil
 }

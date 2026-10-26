@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tony1908/boxes-oss/internal/dockercli"
-	"github.com/tony1908/boxes-oss/internal/snapshot"
+	"github.com/tony1908/paddock/internal/dockercli"
+	"github.com/tony1908/paddock/internal/snapshot"
 )
 
 func TestDriveRoutesBuildVolumeArgv(t *testing.T) {
@@ -22,7 +22,7 @@ func TestDriveRoutesBuildVolumeArgv(t *testing.T) {
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodPut, "/v1/drives/data", nil),
 		httptest.NewRequest(http.MethodDelete, "/v1/drives/data", nil),
-		httptest.NewRequest(http.MethodPost, "/v1/drives/data/fork", strings.NewReader(`{"target":"copy","image":"boxes/box:dev"}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/drives/data/fork", strings.NewReader(`{"target":"copy","image":"paddock/box:dev"}`)),
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -31,11 +31,11 @@ func TestDriveRoutesBuildVolumeArgv(t *testing.T) {
 		}
 	}
 	want := [][]string{
-		{"docker", "volume", "create", "--label", "boxes.drive=data", "boxes-drive-data"},
-		{"docker", "volume", "rm", "boxes-drive-data"},
-		{"docker", "volume", "create", "--label", "boxes.drive=copy", "boxes-drive-copy"},
+		{"docker", "volume", "create", "--label", "paddock.drive=data", "paddock-drive-data"},
+		{"docker", "volume", "rm", "paddock-drive-data"},
+		{"docker", "volume", "create", "--label", "paddock.drive=copy", "paddock-drive-copy"},
 		{"docker", "run", "--rm", "--network", "none", "--runtime", "runc", "--entrypoint", "cp",
-			"-v", "boxes-drive-data:/from:ro", "-v", "boxes-drive-copy:/to", "boxes/box:dev", "-a", "/from/.", "/to/"},
+			"-v", "paddock-drive-data:/from:ro", "-v", "paddock-drive-copy:/to", "paddock/box:dev", "-a", "/from/.", "/to/"},
 	}
 	var got [][]string
 	for _, call := range calls {
@@ -67,7 +67,7 @@ func TestDriveForkFailureReturnsError(t *testing.T) {
 	}})
 	service := New(Config{}, docker, snapshot.New(testExecutor{}, testExecutor{}, "/repo", "pw"))
 	response := httptest.NewRecorder()
-	service.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/drives/data/fork", strings.NewReader(`{"target":"copy","image":"boxes/box:dev"}`)))
+	service.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/drives/data/fork", strings.NewReader(`{"target":"copy","image":"paddock/box:dev"}`)))
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("fork failure = %d, want 502", response.Code)
 	}

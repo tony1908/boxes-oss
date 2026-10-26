@@ -2,9 +2,9 @@
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 [project]
-name = "boxes-sdk"
+name = "paddock-sdk"
 version = "0.1.0"
-description = "Small synchronous Python client for boxes-oss"
+description = "Small synchronous Python client for Paddock"
 requires-python = ">=3.9"
 dependencies = ["httpx>=0.27"]
 [tool.pytest.ini_options]

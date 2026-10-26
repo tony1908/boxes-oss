@@ -43,10 +43,10 @@ func (s *testSession) Send(prompt string) error {
 
 func TestServiceConsolidatesRepeatedFullMessagePartUpdates(t *testing.T) {
 	harness := &testHarness{script: []HarnessEvent{
-		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "boxes-"}},
-		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "boxes-oops"}},
-		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "boxes-ok"}},
-		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "boxes-ok"}},
+		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "paddock-"}},
+		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "paddock-oops"}},
+		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "paddock-ok"}},
+		{Type: "message.part", Data: map[string]any{"id": "part-1", "text": "paddock-ok"}},
 	}}
 	service, err := New(Config{DBPath: t.TempDir() + "/boxd.db", Token: "box-secret", Harness: harness})
 	if err != nil {
@@ -54,7 +54,7 @@ func TestServiceConsolidatesRepeatedFullMessagePartUpdates(t *testing.T) {
 	}
 	defer func() { _ = service.Close() }()
 
-	request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"Reply with exactly: boxes-ok","provider":"opencode"}`))
+	request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"Reply with exactly: paddock-ok","provider":"opencode"}`))
 	request.Header.Set("Authorization", "Bearer box-secret")
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)
@@ -92,8 +92,8 @@ func TestServiceConsolidatesRepeatedFullMessagePartUpdates(t *testing.T) {
 			messages = append(messages, text)
 		}
 	}
-	if len(messages) != 1 || messages[0] != "boxes-ok" || strings.Contains(messages[0], "Reply with exactly") {
-		t.Fatalf("consolidated messages = %#v, want one assistant message boxes-ok", messages)
+	if len(messages) != 1 || messages[0] != "paddock-ok" || strings.Contains(messages[0], "Reply with exactly") {
+		t.Fatalf("consolidated messages = %#v, want one assistant message paddock-ok", messages)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestOpencodeRealSSEReplayConsolidatesAssistantMessageOnce(t *testing.T) {
 	}
 	defer func() { _ = service.Close() }()
 
-	request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"reply with exactly: boxes-ok","provider":"opencode","model":"google/gemini-3.8-flash"}`))
+	request := httptest.NewRequest(http.MethodPost, "/prompt", strings.NewReader(`{"prompt":"reply with exactly: paddock-ok","provider":"opencode","model":"google/gemini-3.8-flash"}`))
 	request.Header.Set("Authorization", "Bearer box-secret")
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)
@@ -174,8 +174,8 @@ func TestOpencodeRealSSEReplayConsolidatesAssistantMessageOnce(t *testing.T) {
 			messages = append(messages, text)
 		}
 	}
-	if len(messages) != 1 || messages[0] != "boxes-ok" || strings.Contains(messages[0], "reply with exactly") {
-		t.Fatalf("consolidated messages = %#v, want one assistant message boxes-ok and no user text", messages)
+	if len(messages) != 1 || messages[0] != "paddock-ok" || strings.Contains(messages[0], "reply with exactly") {
+		t.Fatalf("consolidated messages = %#v, want one assistant message paddock-ok and no user text", messages)
 	}
 }
 

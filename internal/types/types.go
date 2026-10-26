@@ -125,7 +125,7 @@ func ValidateTags(tags map[string]string) error {
 	return nil
 }
 
-// Node describes a machine running a boxes agent.
+// Node describes a machine running a paddock agent.
 type Node struct {
 	ID                      string    `json:"id"`
 	Name                    string    `json:"name"`

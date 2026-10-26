@@ -1,8 +1,8 @@
 # Desktop sessions
 
-Opening the Desktop tab (or `boxes desktop <id>`) creates or reuses a desktop
+Opening the Desktop tab (or `paddock desktop <id>`) creates or reuses a desktop
 session for the box. Sessions last eight hours by default; set the default with
-`boxes-server --desktop-session-ttl` or `BOXES_DESKTOP_SESSION_TTL`. Public
+`paddock-server --desktop-session-ttl` or `PADDOCK_DESKTOP_SESSION_TTL`. Public
 sessions (`--public` on the CLI, or `public` on the API) last seven days.
 
 A session is reused while it has more than 30 minutes left. Creating a session
@@ -36,5 +36,5 @@ the same box. It renews the session when less than 30 minutes remain.
 ## Forward authentication
 
 Desktop routes sit behind Traefik and use forward-auth against the local agent
-(`BOXES_FORWARD_AUTH_ADDR`, default `127.0.0.1:7001`). See
+(`PADDOCK_FORWARD_AUTH_ADDR`, default `127.0.0.1:7001`). See
 [self-hosting.md](self-hosting.md#traefik-and-desktop-authentication).

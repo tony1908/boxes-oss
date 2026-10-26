@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 const (
-	defaultNetworkDir      = "/var/lib/boxes/network"
+	defaultNetworkDir      = "/var/lib/paddock/network"
 	networkRefreshInterval = 60 * time.Second
 	networkResolveTimeout  = 10 * time.Second
 	// dnsHistoryWindow keeps an IP allowed this long after a domain last resolved to it.
@@ -29,7 +29,7 @@ const (
 )
 
 // networkChain returns the per-box iptables chain. Box IDs are 15 characters, so the name is 21 characters (limit 28).
-func networkChain(boxID string) string { return "BOXES-" + boxID }
+func networkChain(boxID string) string { return "PADDOCK-" + boxID }
 
 // iptablesArgv builds an iptables command. -w waits for the xtables lock shared with Docker.
 func iptablesArgv(args ...string) []string {
@@ -449,7 +449,7 @@ func (a *Agent) putNetwork(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// EnsureDNSInput accepts DNS from boxes-net to the forwarder in INPUT, so boxes can reach it on hosts whose INPUT
+// EnsureDNSInput accepts DNS from paddock-net to the forwarder in INPUT, so boxes can reach it on hosts whose INPUT
 // policy drops by default. Per-box chains still drop DNS to any other address. No-op without a forwarder. Idempotent.
 func (a *Agent) EnsureDNSInput(ctx context.Context) error {
 	a.networkMu.Lock()
@@ -458,9 +458,9 @@ func (a *Agent) EnsureDNSInput(ctx context.Context) error {
 	if gateway == "" {
 		return nil
 	}
-	subnet, err := a.docker.NetworkSubnet(ctx, "boxes-net")
+	subnet, err := a.docker.NetworkSubnet(ctx, "paddock-net")
 	if err != nil {
-		return fmt.Errorf("read boxes-net subnet: %w", err)
+		return fmt.Errorf("read paddock-net subnet: %w", err)
 	}
 	a.networkMu.Lock()
 	defer a.networkMu.Unlock()
@@ -480,12 +480,12 @@ func (a *Agent) EnsureDNSInput(ctx context.Context) error {
 	return nil
 }
 
-// EnsureMetadataBlock installs one DOCKER-USER rule that drops traffic from the boxes-net subnet to the
+// EnsureMetadataBlock installs one DOCKER-USER rule that drops traffic from the paddock-net subnet to the
 // cloud metadata address, so every box is blocked, not only boxes with a network policy. Idempotent.
 func (a *Agent) EnsureMetadataBlock(ctx context.Context) error {
-	subnet, err := a.docker.NetworkSubnet(ctx, "boxes-net")
+	subnet, err := a.docker.NetworkSubnet(ctx, "paddock-net")
 	if err != nil {
-		return fmt.Errorf("read boxes-net subnet: %w", err)
+		return fmt.Errorf("read paddock-net subnet: %w", err)
 	}
 	a.networkMu.Lock()
 	defer a.networkMu.Unlock()

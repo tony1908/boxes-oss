@@ -45,7 +45,7 @@ async function main() {
   await request(1, 'initialize', {
     protocolVersion: '2025-03-26',
     capabilities: {},
-    clientInfo: { name: 'boxes-e2e', version: '1.0' },
+    clientInfo: { name: 'paddock-e2e', version: '1.0' },
   });
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
   await request(2, 'tools/list', {});

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// Client sends requests to the boxes server REST API.
+// Client sends requests to the paddock server REST API.
 type Client struct {
 	BaseURL    string
 	Token      string
@@ -30,7 +30,7 @@ func NewClient(baseURL, token string, httpClient *http.Client) *Client {
 // decoded from the server's documented {"error":{"code","message"}} shape.
 func (c *Client) Do(ctx context.Context, method, endpoint string, body any, headers http.Header) ([]byte, error) {
 	if c == nil || c.BaseURL == "" {
-		return nil, errors.New("server URL is required; run boxes login or set --server")
+		return nil, errors.New("server URL is required; run paddock login or set --server")
 	}
 	var reader io.Reader
 	if body != nil {
@@ -93,7 +93,7 @@ func (c *Client) Do(ctx context.Context, method, endpoint string, body any, head
 
 func (c *Client) DoReader(ctx context.Context, method, endpoint string, body io.Reader, contentType string) ([]byte, error) {
 	if c == nil || c.BaseURL == "" {
-		return nil, errors.New("server URL is required; run boxes login or set --server")
+		return nil, errors.New("server URL is required; run paddock login or set --server")
 	}
 	endpoint = "/" + strings.TrimLeft(endpoint, "/")
 	request, err := http.NewRequestWithContext(ctx, method, c.BaseURL+"/api/v1"+endpoint, body)
@@ -137,7 +137,7 @@ func (c *Client) DoReader(ctx context.Context, method, endpoint string, body io.
 // Download streams an API response to dst and reports bytes copied.
 func (c *Client) Download(ctx context.Context, endpoint string, dst io.Writer, progress func(int64)) error {
 	if c == nil || c.BaseURL == "" {
-		return errors.New("server URL is required; run boxes login or set --server")
+		return errors.New("server URL is required; run paddock login or set --server")
 	}
 	endpoint = "/" + strings.TrimLeft(endpoint, "/")
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/v1"+endpoint, nil)
@@ -190,7 +190,7 @@ func (c *Client) Download(ctx context.Context, endpoint string, dst io.Writer, p
 			}
 		}
 		if errors.Is(readErr, io.EOF) {
-			if message := response.Trailer.Get("X-Boxes-Snapshot-Error"); message != "" {
+			if message := response.Trailer.Get("X-Paddock-Snapshot-Error"); message != "" {
 				return fmt.Errorf("snapshot download failed: %s", message)
 			}
 			return nil

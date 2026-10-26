@@ -11,20 +11,20 @@ source scripts/e2e-lib.sh
 e2e_init
 
 web_root="$(curl -fsS "$SERVER_URL/")"
-[[ "$web_root" == *'Boxes — machines for agents'* ]]
+[[ "$web_root" == *'Paddock — machines for agents'* ]]
 [[ "$web_root" == *'/_next/static/'* ]]
 [[ "$web_root" != *'Dashboard assets have not been built yet'* ]]
 web_route="$(curl -fsS "$SERVER_URL/sandboxes")"
-[[ "$web_route" == *'Boxes — machines for agents'* ]]
+[[ "$web_route" == *'Paddock — machines for agents'* ]]
 [[ "$web_route" == *'/_next/static/'* ]]
 [[ "$web_route" != *'Dashboard assets have not been built yet'* ]]
 printf 'web app and SPA route served\n'
 
 HOST_BIN_DIR="$E2E_DIR/bin"
-HOST_CLI="$HOST_BIN_DIR/boxes"
+HOST_CLI="$HOST_BIN_DIR/paddock"
 if [[ ! -d "$HOST_BIN_DIR" ]]; then mkdir "$HOST_BIN_DIR"; HOST_BIN_DIR_CREATED=1; fi
 if [[ -e "$HOST_CLI" ]]; then printf 'refusing to overwrite pre-existing CLI binary %s\n' "$HOST_CLI" >&2; exit 1; fi
-go build -o "$HOST_CLI" ./cmd/boxes
+go build -o "$HOST_CLI" ./cmd/paddock
 HOST_CLI_CREATED=1
 
 TEMP_HOME="$E2E_DIR/home-$RUN_ID"
@@ -33,7 +33,7 @@ mkdir -m 0700 "$TEMP_HOME"
 TEMP_HOME_CREATED=1
 export HOME="$TEMP_HOME"
 export XDG_CONFIG_HOME="$TEMP_HOME/xdg-config"
-export BOXES_PASSWORD=e2e-password-long
+export PADDOCK_PASSWORD=e2e-password-long
 
 "$HOST_CLI" login --server "$SERVER_URL" --email e2e@example.test >/dev/null
 new_output="$("$HOST_CLI" new --type small --ttl 0)"
@@ -70,7 +70,7 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 	mcp_config_response="$(curl -fsS -X POST "$API/sandboxes/$box_id/commands" -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
 		-d '{"user":"abc","cmd":["jq","-e",".mcp.computer.type == \"local\" and .mcp.computer.command == [\"boxd\",\"mcp\"] and .mcp.computer.enabled == true","/config/.config/opencode/opencode.json"]}')"
 	[[ "$(jq -er '.exitCode' <<<"$mcp_config_response")" == 0 ]] || { printf 'OpenCode computer MCP config is missing: %s\n' "$(jq -r '.stderr' <<<"$mcp_config_response")" >&2; exit 1; }
-	prompt_text='Reply with exactly: boxes-ok'
+	prompt_text='Reply with exactly: paddock-ok'
 	prompt_body="$(jq -cn --arg prompt "$prompt_text" '{provider:"opencode",model:"opencode-go/gpt-6-luna",prompt:$prompt}')"
 	prompt_response="$(curl -fsS -X POST "$API/sandboxes/$box_id/prompt" -H "$AUTH_HEADER" -H 'Content-Type: application/json' --data-binary "$prompt_body")"
 	run_id="$(jq -er '.runId' <<<"$prompt_response")"
@@ -81,7 +81,7 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 	while (( SECONDS < run_deadline )); do
 		event_response="$(curl -fsS "$API/sandboxes/$box_id/events?after=$cursor&wait=3&conversation=$conversation_id" -H "$AUTH_HEADER")"
 		cursor="$(jq -er '.cursor // 0' <<<"$event_response")"
-		if jq -e 'any(.events[]; .type == "message" and ((.data.text // "") | tostring | contains("boxes-ok")))' <<<"$event_response" >/dev/null; then message_found=1; fi
+		if jq -e 'any(.events[]; .type == "message" and ((.data.text // "") | tostring | contains("paddock-ok")))' <<<"$event_response" >/dev/null; then message_found=1; fi
 		run_response="$(curl -fsS "$API/sandboxes/$box_id/runs/$run_id" -H "$AUTH_HEADER")"
 		run_status="$(jq -er '.status' <<<"$run_response")"
 		if [[ "$run_status" == failed || "$run_status" == interrupted ]]; then
@@ -92,12 +92,12 @@ if [[ -n "${E2E_OPENCODE_AUTH_FILE:-}" ]]; then
 	done
 	[[ "$run_status" == completed ]] || { printf 'OpenCode run %s did not complete within 5 minutes\n' "$run_id" >&2; exit 1; }
 	if [[ "$message_found" != 1 ]]; then
-		final_events="$(curl -fsS "$API/sandboxes/$box_id/events?after=0&conversation=$conversation_id" -H "$AUTH_HEADER" | jq -c '[.events[] | {type,textChars:((.data.text // "") | tostring | length),containsExpected:((.data.text // "") | tostring | contains("boxes-ok")),dataFields:(.data | keys)}]')"
+		final_events="$(curl -fsS "$API/sandboxes/$box_id/events?after=0&conversation=$conversation_id" -H "$AUTH_HEADER" | jq -c '[.events[] | {type,textChars:((.data.text // "") | tostring | length),containsExpected:((.data.text // "") | tostring | contains("paddock-ok")),dataFields:(.data | keys)}]')"
 		printf 'OpenCode completed but expected message was not observed (event summary: %s)\n' "$final_events" >&2
 		exit 1
 	fi
 	final_event_response="$(curl -fsS "$API/sandboxes/$box_id/events?after=0&conversation=$conversation_id" -H "$AUTH_HEADER")"
-	jq -e --arg prompt "$prompt_text" '[.events[] | select(.type == "message")] as $messages | ($messages | length > 0) and ((($messages[-1].data.text // "") | tostring | contains("boxes-ok")) and ((($messages[-1].data.text // "") | tostring | contains($prompt)) | not))' <<<"$final_event_response" >/dev/null || {
+	jq -e --arg prompt "$prompt_text" '[.events[] | select(.type == "message")] as $messages | ($messages | length > 0) and ((($messages[-1].data.text // "") | tostring | contains("paddock-ok")) and ((($messages[-1].data.text // "") | tostring | contains($prompt)) | not))' <<<"$final_event_response" >/dev/null || {
 		final_message="$(jq -c '[.events[] | select(.type == "message") | .data.text] | last' <<<"$final_event_response")"
 		printf 'OpenCode final message contains the prompt or is missing the expected response: %s\n' "$final_message" >&2
 		exit 1

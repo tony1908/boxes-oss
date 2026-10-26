@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -31,7 +31,7 @@ type dnsSource struct {
 	policy types.NetworkPolicy
 }
 
-// StartDNS serves DNS on the boxes-net gateway. Boxes are created with --dns pointing here, so every lookup
+// StartDNS serves DNS on the paddock-net gateway. Boxes are created with --dns pointing here, so every lookup
 // passes through the agent, which opens exactly the IPv4 addresses a box is allowed to reach before the box
 // receives them. On error the agent keeps running and new boxes get Docker's default resolver.
 func (a *Agent) StartDNS(ctx context.Context, gateway string) error {

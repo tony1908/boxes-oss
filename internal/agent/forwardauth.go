@@ -36,7 +36,7 @@ func (a *Agent) forwardAuthRequest(w http.ResponseWriter, r *http.Request) {
 	token := parsed.Query().Get("token")
 	fromQuery := token != ""
 	if !fromQuery {
-		if cookie, err := r.Cookie("boxes_auth"); err == nil {
+		if cookie, err := r.Cookie("paddock_auth"); err == nil {
 			token = cookie.Value
 		}
 	}
@@ -48,7 +48,7 @@ func (a *Agent) forwardAuthRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fromQuery {
-		cookie := &http.Cookie{Name: "boxes_auth", Value: token, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: 3600}
+		cookie := &http.Cookie{Name: "paddock_auth", Value: token, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: 3600}
 		if !credential.expiresAt.IsZero() {
 			cookie.Expires = credential.expiresAt
 			remaining := int(time.Until(credential.expiresAt).Seconds())

@@ -45,7 +45,7 @@ e2e_wait_box_ready "$fork_id"
 fork_file="$(curl -fsS "$API/sandboxes/$fork_id/files?path=%2Fconfig%2Fe2e.txt" -H "$AUTH_HEADER")"
 [[ "$fork_file" == 'snapshot survives stop and resume' ]]
 
-docker run -d --name "$TRAEFIK_CONTAINER" --network boxes-net --network-alias boxes-e2e-traefik \
+docker run -d --name "$TRAEFIK_CONTAINER" --network paddock-net --network-alias paddock-e2e-traefik \
 	-e GOMEMLIMIT=64MiB -e GOGC=20 -p 18443:443 -p 18000:80 \
 	-v "$TRAEFIK_VOLUME:/etc/traefik/dynamic" traefik:v3.3 \
 	--entrypoints.web.address=:80 --entrypoints.websecure.address=:443 \

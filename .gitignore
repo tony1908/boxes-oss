@@ -1,6 +1,6 @@
-/boxes
-/boxes-agent
-/boxes-server
+/paddock
+/paddock-agent
+/paddock-server
 /boxd
 /dist/
 /web/.next/

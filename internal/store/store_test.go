@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tony1908/boxes-oss/internal/types"
+	"github.com/tony1908/paddock/internal/types"
 )
 
 func TestBoxLifecycleAccountingFieldsRoundTrip(t *testing.T) {
@@ -156,7 +156,7 @@ func TestAPIKeyDailyUsageFlushAndSandboxAttribution(t *testing.T) {
 
 func TestOpenMigratesAndPersistsUsers(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "boxes.db")
+	path := filepath.Join(t.TempDir(), "paddock.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -257,11 +257,11 @@ func TestBackfillSnapshotStorageLeavesPreviouslyAssignedRepositoriesAlone(t *tes
 			t.Fatal(err)
 		}
 	}
-	if err := s.BackfillSnapshotStorage(ctx, "/var/lib/boxes/restic", []byte("legacy-encrypted-env")); err != nil {
+	if err := s.BackfillSnapshotStorage(ctx, "/var/lib/paddock/restic", []byte("legacy-encrypted-env")); err != nil {
 		t.Fatal(err)
 	}
 	legacy, err := s.GetSnapshot(ctx, "sn_legacy")
-	if err != nil || legacy.Repository != "/var/lib/boxes/restic" || string(legacy.StorageEnvEnc) != "legacy-encrypted-env" {
+	if err != nil || legacy.Repository != "/var/lib/paddock/restic" || string(legacy.StorageEnvEnc) != "legacy-encrypted-env" {
 		t.Fatalf("backfilled snapshot = %#v, %v", legacy, err)
 	}
 	moved, err := s.GetSnapshot(ctx, "sn_moved")
@@ -319,7 +319,7 @@ func TestStorePersistsTypedRecords(t *testing.T) {
 	if err := s.CreateNode(ctx, node); err != nil {
 		t.Fatalf("CreateNode(): %v", err)
 	}
-	box := BoxRecord{Box: types.Box{ID: "bx_abcdefghijkl", NodeID: node.Node.ID, Type: "small", State: types.StateReady, Image: "boxes/box:dev", EnvironmentID: env.ID, EnvironmentVersion: 1, TTLSeconds: 3600, CreatedAt: now}, DesktopPasswordEnc: []byte("pw-cipher"), BoxdTokenEnc: []byte("token-cipher"), IdempotencyKey: "request-1"}
+	box := BoxRecord{Box: types.Box{ID: "bx_abcdefghijkl", NodeID: node.Node.ID, Type: "small", State: types.StateReady, Image: "paddock/box:dev", EnvironmentID: env.ID, EnvironmentVersion: 1, TTLSeconds: 3600, CreatedAt: now}, DesktopPasswordEnc: []byte("pw-cipher"), BoxdTokenEnc: []byte("token-cipher"), IdempotencyKey: "request-1"}
 	box.SetupStatus = "none"
 	if err := s.CreateBox(ctx, box); err != nil {
 		t.Fatalf("CreateBox(): %v", err)
@@ -427,7 +427,7 @@ func TestRunStopWhenDonePolicyPersistsAtomically(t *testing.T) {
 }
 
 func TestCreateBoxEnforcesNodeForeignKey(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "boxes.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "paddock.db"))
 	if err != nil {
 		t.Fatalf("Open(): %v", err)
 	}
@@ -439,7 +439,7 @@ func TestCreateBoxEnforcesNodeForeignKey(t *testing.T) {
 			NodeID:    "nd_missing",
 			Type:      "small",
 			State:     types.StateProvisioning,
-			Image:     "boxes/box:dev",
+			Image:     "paddock/box:dev",
 			CreatedAt: time.Now().UTC(),
 		},
 	})

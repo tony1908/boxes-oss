@@ -30,7 +30,7 @@ func (h *PiHarness) Start(ctx context.Context, spec ConvSpec) (Session, error) {
 	if dir == "" {
 		dir = "/config"
 	}
-	env, err := loadHarnessEnv("/run/boxes/env")
+	env, err := loadHarnessEnv("/run/paddock/env")
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (h *KimiHarness) Start(ctx context.Context, spec ConvSpec) (Session, error)
 	if dir == "" {
 		dir = "/config"
 	}
-	env, err := loadHarnessEnv("/run/boxes/env")
+	env, err := loadHarnessEnv("/run/paddock/env")
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (h *KimiHarness) Start(ctx context.Context, spec ConvSpec) (Session, error)
 	}
 	s := &kimiSession{process: p, stdin: p.Stdin(), events: make(chan HarnessEvent, 128), pending: make(map[int]chan kimiRPCMessage), promptIDs: make(map[int]bool), id: spec.SessionID}
 	go s.readMessages()
-	if _, err := s.request("initialize", map[string]any{"protocolVersion": 1, "clientInfo": map[string]string{"name": "boxes", "version": "1"}, "clientCapabilities": map[string]any{}}); err != nil {
+	if _, err := s.request("initialize", map[string]any{"protocolVersion": 1, "clientInfo": map[string]string{"name": "paddock", "version": "1"}, "clientCapabilities": map[string]any{}}); err != nil {
 		_ = s.Close()
 		return nil, fmt.Errorf("initialize kimi ACP: %w", err)
 	}

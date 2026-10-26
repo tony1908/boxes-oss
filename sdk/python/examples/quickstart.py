@@ -1,9 +1,9 @@
 import os
 
-from boxes_sdk import Boxes
+from paddock_sdk import Paddock
 
-with Boxes(os.environ["BOXES_URL"], os.environ["BOXES_API_KEY"]) as boxes:
-    box = boxes.sandboxes.create(type="small", ttl_seconds=3600)
-    result = boxes.exec.run(box["id"], "echo hello")
+with Paddock(os.environ["PADDOCK_URL"], os.environ["PADDOCK_API_KEY"]) as paddock:
+    box = paddock.sandboxes.create(type="small", ttl_seconds=3600)
+    result = paddock.exec.run(box["id"], "echo hello")
     print(result)
-    boxes.sandboxes.stop(box["id"])
+    paddock.sandboxes.stop(box["id"])

@@ -6,7 +6,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN mkdir -p /out && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/boxes-agent ./cmd/boxes-agent
+RUN mkdir -p /out && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/paddock-agent ./cmd/paddock-agent
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -18,5 +18,5 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/boxes-agent /usr/local/bin/boxes-agent
-ENTRYPOINT ["/usr/local/bin/boxes-agent"]
+COPY --from=build /out/paddock-agent /usr/local/bin/paddock-agent
+ENTRYPOINT ["/usr/local/bin/paddock-agent"]

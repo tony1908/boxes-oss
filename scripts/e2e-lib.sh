@@ -11,14 +11,14 @@ e2e_init() {
 	E2E_DIR="$ROOT_DIR/.e2e"
 	BIN_DIR="$E2E_DIR/bin-$RUN_ID"
 	BIN_DIR_CONTEXT=".e2e/bin-$RUN_ID"
-	SERVER_IMAGE="boxes/server:e2e-$RUN_ID"
-	AGENT_IMAGE="boxes/agent:e2e-$RUN_ID"
-	SERVER_CONTAINER="boxes-e2e-server-$RUN_ID"
-	AGENT_CONTAINER="boxes-e2e-agent-$RUN_ID"
-	TRAEFIK_CONTAINER="boxes-e2e-traefik-$RUN_ID"
-	SERVER_VOLUME="boxes-e2e-server-$RUN_ID"
-	RESTIC_VOLUME="boxes-e2e-restic-$RUN_ID"
-	TRAEFIK_VOLUME="boxes-e2e-traefik-$RUN_ID"
+	SERVER_IMAGE="paddock/server:e2e-$RUN_ID"
+	AGENT_IMAGE="paddock/agent:e2e-$RUN_ID"
+	SERVER_CONTAINER="paddock-e2e-server-$RUN_ID"
+	AGENT_CONTAINER="paddock-e2e-agent-$RUN_ID"
+	TRAEFIK_CONTAINER="paddock-e2e-traefik-$RUN_ID"
+	SERVER_VOLUME="paddock-e2e-server-$RUN_ID"
+	RESTIC_VOLUME="paddock-e2e-restic-$RUN_ID"
+	TRAEFIK_VOLUME="paddock-e2e-traefik-$RUN_ID"
 	SERVER_URL="http://127.0.0.1:18080"
 	API="$SERVER_URL/api/v1"
 	RESPONSE_FILE="$E2E_DIR/response-$RUN_ID.json"
@@ -45,8 +45,8 @@ e2e_init() {
 	mkdir "$BIN_DIR"
 	BIN_DIR_CREATED=1
 	BINARIES_CREATED=1
-	INITIAL_MANAGED_CONTAINERS=$'\n'"$(docker ps -aq --filter label=boxes.managed=true)"$'\n'
-	[[ -z "$(docker image inspect boxes/box:dev 2>/dev/null || true)" ]] && { printf 'required image boxes/box:dev not found; build it first\n' >&2; exit 1; }
+	INITIAL_MANAGED_CONTAINERS=$'\n'"$(docker ps -aq --filter label=paddock.managed=true)"$'\n'
+	[[ -z "$(docker image inspect paddock/box:dev 2>/dev/null || true)" ]] && { printf 'required image paddock/box:dev not found; build it first\n' >&2; exit 1; }
 
 	DOCKER_ARCH="$(docker info --format '{{.Architecture}}')"
 	case "$DOCKER_ARCH" in
@@ -54,41 +54,41 @@ e2e_init() {
 		amd64|x86_64) GOARCH=amd64 ;;
 		*) printf 'unsupported Docker server architecture: %s\n' "$DOCKER_ARCH" >&2; exit 1 ;;
 	esac
-	CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "$BIN_DIR/boxes-server" ./cmd/boxes-server
-	CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "$BIN_DIR/boxes-agent" ./cmd/boxes-agent
-	DOCKER_BUILDKIT=0 docker build --build-arg BOXES_BIN_DIR="$BIN_DIR_CONTEXT" -f deploy/dev/Dockerfile.server.prebuilt -t "$SERVER_IMAGE" .
-	DOCKER_BUILDKIT=0 docker build --build-arg BOXES_BIN_DIR="$BIN_DIR_CONTEXT" -f deploy/dev/Dockerfile.agent.prebuilt -t "$AGENT_IMAGE" .
+	CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "$BIN_DIR/paddock-server" ./cmd/paddock-server
+	CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "$BIN_DIR/paddock-agent" ./cmd/paddock-agent
+	DOCKER_BUILDKIT=0 docker build --build-arg PADDOCK_BIN_DIR="$BIN_DIR_CONTEXT" -f deploy/dev/Dockerfile.server.prebuilt -t "$SERVER_IMAGE" .
+	DOCKER_BUILDKIT=0 docker build --build-arg PADDOCK_BIN_DIR="$BIN_DIR_CONTEXT" -f deploy/dev/Dockerfile.agent.prebuilt -t "$AGENT_IMAGE" .
 
-	if ! docker network inspect boxes-net >/dev/null 2>&1; then docker network create --driver bridge boxes-net >/dev/null; NETWORK_CREATED=1; fi
+	if ! docker network inspect paddock-net >/dev/null 2>&1; then docker network create --driver bridge paddock-net >/dev/null; NETWORK_CREATED=1; fi
 	docker volume create "$SERVER_VOLUME" >/dev/null; SERVER_VOLUME_CREATED=1
 	docker volume create "$RESTIC_VOLUME" >/dev/null; RESTIC_VOLUME_CREATED=1
 	docker volume create "$TRAEFIK_VOLUME" >/dev/null; TRAEFIK_VOLUME_CREATED=1
-	docker run -d --name "$SERVER_CONTAINER" --network boxes-net --network-alias boxes-e2e-server \
+	docker run -d --name "$SERVER_CONTAINER" --network paddock-net --network-alias paddock-e2e-server \
 		-e GOMEMLIMIT=2MiB -e GOGC=1 -e GOMAXPROCS=1 -e GODEBUG=madvdontneed=1 \
-		-e BOXES_STORAGE_RESTIC_PASSWORD=e2e -e BOXES_NODE_TOKEN=e2e -e BOXES_NODE_ID=local \
-		-p 18080:8080 -v "$SERVER_VOLUME:/var/lib/boxes" \
-		"$SERVER_IMAGE" --addr :8080 --data-dir /var/lib/boxes \
-			--public-url http://boxes-e2e-server:8080 --image boxes/box:dev --snapshot-interval 1h >/dev/null
-	e2e_wait_http "$SERVER_URL/" 60 'boxes-server'
+		-e PADDOCK_STORAGE_RESTIC_PASSWORD=e2e -e PADDOCK_NODE_TOKEN=e2e -e PADDOCK_NODE_ID=local \
+		-p 18080:8080 -v "$SERVER_VOLUME:/var/lib/paddock" \
+		"$SERVER_IMAGE" --addr :8080 --data-dir /var/lib/paddock \
+			--public-url http://paddock-e2e-server:8080 --image paddock/box:dev --snapshot-interval 1h >/dev/null
+	e2e_wait_http "$SERVER_URL/" 60 'paddock-server'
 	local signup_response node_response
-	local setup_token="${BOXES_SETUP_TOKEN:-$(docker exec "$SERVER_CONTAINER" cat /var/lib/boxes/admin.token)}"
+	local setup_token="${PADDOCK_SETUP_TOKEN:-$(docker exec "$SERVER_CONTAINER" cat /var/lib/paddock/admin.token)}"
 	signup_response="$(jq -cn --arg setupToken "$setup_token" '{email:"e2e@example.test",password:"e2e-password-long",setupToken:$setupToken}' | curl -fsS -X POST "$API/auth/signup" -H 'Content-Type: application/json' --data-binary @-)"
 	SESSION_TOKEN="$(jq -er '.token // .sessionToken' <<<"$signup_response")"
 	AUTH_HEADER="Authorization: Bearer $SESSION_TOKEN"
 	NODE_ID=local
 	NODE_TOKEN=e2e
-	docker run -d --name "$AGENT_CONTAINER" --pid host --network boxes-net --network-alias boxes-e2e-agent \
+	docker run -d --name "$AGENT_CONTAINER" --pid host --network paddock-net --network-alias paddock-e2e-agent \
 		-e GOMEMLIMIT=2MiB -e GOGC=1 -e GOMAXPROCS=1 -e GODEBUG=madvdontneed=1 \
-		-e BOXES_SERVER_URL=ws://boxes-e2e-server:8080/api/v1/agent/connect \
-		-e BOXES_NODE_TOKEN="$NODE_TOKEN" -e BOXES_NODE_ID="$NODE_ID" \
-		-e BOXES_RUNTIME=runc -e BOXES_FORWARD_AUTH_ADDR=0.0.0.0:7001 \
-		-e BOXES_HOST_PROC=/proc \
-		-e BOXES_FORWARD_AUTH_URL=http://boxes-e2e-agent:7001/auth/forward \
-		-e BOXES_TRAEFIK_DIR=/etc/boxes/traefik/dynamic \
-		-e RESTIC_REPOSITORY=/var/lib/boxes/restic -e RESTIC_PASSWORD=e2e \
+		-e PADDOCK_SERVER_URL=ws://paddock-e2e-server:8080/api/v1/agent/connect \
+		-e PADDOCK_NODE_TOKEN="$NODE_TOKEN" -e PADDOCK_NODE_ID="$NODE_ID" \
+		-e PADDOCK_RUNTIME=runc -e PADDOCK_FORWARD_AUTH_ADDR=0.0.0.0:7001 \
+		-e PADDOCK_HOST_PROC=/proc \
+		-e PADDOCK_FORWARD_AUTH_URL=http://paddock-e2e-agent:7001/auth/forward \
+		-e PADDOCK_TRAEFIK_DIR=/etc/paddock/traefik/dynamic \
+		-e RESTIC_REPOSITORY=/var/lib/paddock/restic -e RESTIC_PASSWORD=e2e \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v /var/lib/containerd:/var/lib/containerd:ro -v /var/lib/docker:/var/lib/docker:ro \
-		-v "$RESTIC_VOLUME:/var/lib/boxes/restic" -v "$TRAEFIK_VOLUME:/etc/boxes/traefik/dynamic" \
+		-v "$RESTIC_VOLUME:/var/lib/paddock/restic" -v "$TRAEFIK_VOLUME:/etc/paddock/traefik/dynamic" \
 		"$AGENT_IMAGE" >/dev/null
 	e2e_wait_machine
 }
@@ -177,14 +177,14 @@ e2e_cleanup() {
 		[[ -n "$container_id" ]] || continue
 		[[ "${INITIAL_MANAGED_CONTAINERS:-}" == *$'\n'"$container_id"$'\n'* ]] && continue
 		docker rm -f "$container_id" >/dev/null 2>&1 || true
-	done < <(docker ps -aq --filter label=boxes.managed=true 2>/dev/null || true)
+	done < <(docker ps -aq --filter label=paddock.managed=true 2>/dev/null || true)
 	(( ${SERVER_VOLUME_CREATED:-0} )) && docker volume rm "$SERVER_VOLUME" >/dev/null 2>&1 || true
 	(( ${RESTIC_VOLUME_CREATED:-0} )) && docker volume rm "$RESTIC_VOLUME" >/dev/null 2>&1 || true
 	(( ${TRAEFIK_VOLUME_CREATED:-0} )) && docker volume rm "$TRAEFIK_VOLUME" >/dev/null 2>&1 || true
-	(( ${NETWORK_CREATED:-0} )) && docker network rm boxes-net >/dev/null 2>&1 || true
+	(( ${NETWORK_CREATED:-0} )) && docker network rm paddock-net >/dev/null 2>&1 || true
 	[[ -n "${SERVER_IMAGE:-}" ]] && docker image rm "$SERVER_IMAGE" "${AGENT_IMAGE:-}" >/dev/null 2>&1 || true
 	[[ -n "${RESPONSE_FILE:-}" ]] && rm -f "$RESPONSE_FILE" "$COOKIE_FILE"
-	if (( ${BINARIES_CREATED:-0} )); then rm -f "$BIN_DIR/boxes-server" "$BIN_DIR/boxes-agent"; fi
+	if (( ${BINARIES_CREATED:-0} )); then rm -f "$BIN_DIR/paddock-server" "$BIN_DIR/paddock-agent"; fi
 	if (( ${BIN_DIR_CREATED:-0} )); then rmdir "$BIN_DIR" 2>/dev/null || true; fi
 	if (( ${HOST_CLI_CREATED:-0} )); then rm -f "$HOST_CLI"; fi
 	if (( ${HOST_BIN_DIR_CREATED:-0} )); then rmdir "$HOST_BIN_DIR" 2>/dev/null || true; fi
