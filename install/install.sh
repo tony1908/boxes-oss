@@ -173,7 +173,6 @@ install_cli_binaries() {
     done
     return
   fi
-  ((strict)) || return 0
   tag="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${REPO}/releases/latest" | jq -er '.tag_name')"
   version="${tag#v}"
   tmp="$(mktemp -d)"
