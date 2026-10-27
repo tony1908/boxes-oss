@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Site and README now link the CLI release downloads and explain how to install the agent skill.
+
 ### Fixed
 
 - Fresh installs now download the CLI binaries, so `install/cli.sh` works on new servers.

@@ -227,12 +227,14 @@ paddock delete current --yes</code></pre>
   | sudo bash -s -- \
   --domain paddock.example.com --email you@example.com</code></pre>
         </div>
-        <p class="install-note">Then install the CLI on your laptop.</p>
+        <p class="install-note">Then install the CLI and the agent skill on your laptop.</p>
         <div class="codeblock">
           <button class="copy" type="button" aria-label="Copy command">Copy</button>
           <pre><code>curl -fsSL https://paddock.example.com/install/cli.sh | sh
-paddock login --server https://paddock.example.com --email you@example.com</code></pre>
+paddock login --server https://paddock.example.com --email you@example.com
+paddock skill install</code></pre>
         </div>
+        <p class="install-note">Or download the CLI from <a href="https://github.com/tony1908/paddock/releases/latest">GitHub Releases</a>.</p>
         <a class="install-more section-link" href="docs.html#install">Full install guide</a>
       </div>
     </section>

@@ -54,12 +54,38 @@
           <p>Open the one-time owner setup link the installer prints, and create the owner account. The setup token is also in <code>/var/lib/paddock/admin.token</code>.</p>
         </li>
         <li>
-          <p>Install the CLI on your laptop, then log in with the owner account.</p>
+          <p>Install the CLI on your laptop. On macOS or Linux, run the server's installer. On Windows, use PowerShell and run the Windows installer. The CLI goes to <code>~/.local/bin/paddock</code>.</p>
           <div class="codeblock">
             <button class="copy" type="button" aria-label="Copy command">Copy</button>
-            <pre><code>curl -fsSL https://paddock.example.com/install/cli.sh | sh
-paddock login --server https://paddock.example.com --email you@example.com</code></pre>
+            <pre><code>curl -fsSL https://paddock.example.com/install/cli.sh | sh</code></pre>
           </div>
+          <div class="codeblock">
+            <button class="copy" type="button" aria-label="Copy command">Copy</button>
+            <pre><code>irm https://paddock.example.com/install/cli.ps1 | iex</code></pre>
+          </div>
+          <p>You can also download the CLI binary from <a href="https://github.com/tony1908/paddock/releases/latest">GitHub Releases</a>. On Apple silicon, for example:</p>
+          <div class="codeblock">
+            <button class="copy" type="button" aria-label="Copy command">Copy</button>
+            <pre><code>curl -fsSL https://github.com/tony1908/paddock/releases/download/v0.2.0/paddock_0.2.0_darwin_arm64.tar.gz | tar xz paddock
+sudo mv paddock /usr/local/bin/</code></pre>
+          </div>
+          <p>Then log in with the owner account, or with an API key from the dashboard's API keys page.</p>
+          <div class="codeblock">
+            <button class="copy" type="button" aria-label="Copy command">Copy</button>
+            <pre><code>paddock login --server https://paddock.example.com --email you@example.com</code></pre>
+          </div>
+          <div class="codeblock">
+            <button class="copy" type="button" aria-label="Copy command">Copy</button>
+            <pre><code>paddock login --server https://paddock.example.com --api-key &lt;key&gt;</code></pre>
+          </div>
+        </li>
+        <li>
+          <p>Install the agent skill so Claude Code, Codex, or OpenCode can drive boxes.</p>
+          <div class="codeblock">
+            <button class="copy" type="button" aria-label="Copy command">Copy</button>
+            <pre><code>paddock skill install</code></pre>
+          </div>
+          <p>Details, including where the skill is written and how to update it, are in <a href="#skill">Let your coding agent use boxes</a>.</p>
         </li>
       </ol>
 
@@ -195,10 +221,34 @@ paddock screenshot current -o shot.png</code></pre>
 
           <section class="recipe" id="skill" aria-labelledby="skill-title">
             <h3 id="skill-title">Let your coding agent use boxes</h3>
-            <p>Install the paddock skill for Claude Code, so the agent knows the CLI. Codex has its own <code>--codex</code> flag. OpenCode reads ~/.claude/skills too, so the same install works for it.</p>
+            <p>The Paddock agent skill teaches your coding agent how to use boxes through the <code>paddock</code> CLI.</p>
+            <p>Install it for every supported agent with one command:</p>
             <div class="codeblock">
               <button class="copy" type="button" aria-label="Copy command">Copy</button>
-              <pre><code>paddock skill install --claude</code></pre>
+              <pre><code>paddock skill install</code></pre>
+            </div>
+            <p>It writes the skill to two places:</p>
+            <ul>
+              <li><code>~/.claude/skills/paddock/SKILL.md</code> for Claude Code. OpenCode reads this folder too, so it picks up the same skill.</li>
+              <li><code>~/.codex/skills/paddock/SKILL.md</code> for Codex.</li>
+            </ul>
+            <p>To install for one agent only, pass <code>--claude</code> or <code>--codex</code>. Pass <code>--force</code> to overwrite a copy you have changed.</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command">Copy</button>
+              <pre><code>paddock skill install --claude
+paddock skill install --codex --force</code></pre>
+            </div>
+            <p>Run <code>paddock skill install</code> again after you upgrade the CLI, so the skill matches the new version.</p>
+            <p><strong>Without the CLI</strong></p>
+            <p>For other agents, or a machine without the CLI, download the skill file directly. The source is <a href="https://github.com/tony1908/paddock/blob/main/internal/cli/skill.md">internal/cli/skill.md</a> on GitHub.</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command">Copy</button>
+              <pre><code>mkdir -p ~/.claude/skills/paddock && curl -fsSL https://raw.githubusercontent.com/tony1908/paddock/main/internal/cli/skill.md -o ~/.claude/skills/paddock/SKILL.md</code></pre>
+            </div>
+            <p>Then ask your agent for something that needs a box:</p>
+            <div class="codeblock">
+              <button class="copy" type="button" aria-label="Copy command">Copy</button>
+              <pre><code>Run the tests for this repo in a Paddock box and report the result.</code></pre>
             </div>
           </section>
         </div>

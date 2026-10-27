@@ -76,12 +76,35 @@ Windows (PowerShell):
 irm https://paddock.example.com/install/cli.ps1 | iex
 ```
 
-Then log in with the owner account or an API key:
+Or download a release binary from [GitHub Releases](https://github.com/tony1908/paddock/releases/latest). On Apple silicon, for example:
+
+```sh
+curl -fsSL https://github.com/tony1908/paddock/releases/download/v0.2.0/paddock_0.2.0_darwin_arm64.tar.gz | tar xz paddock
+sudo mv paddock /usr/local/bin/
+```
+
+Then log in with the owner account, or with an API key from the dashboard's API keys page:
 
 ```sh
 paddock login --server https://paddock.example.com --email you@example.com
-paddock login --server https://paddock.example.com --key-stdin   # reads an API key from stdin
+paddock login --server https://paddock.example.com --api-key <key>
 ```
+
+## Install the agent skill
+
+`paddock skill install` writes the Paddock skill to `~/.claude/skills/paddock/SKILL.md` (Claude Code, and OpenCode) and `~/.codex/skills/paddock/SKILL.md` (Codex). Use `--claude`, `--codex`, or `--force` to limit the install or overwrite a changed copy. Run it again after upgrading the CLI.
+
+```sh
+paddock skill install
+```
+
+To install manually from the source file:
+
+```sh
+mkdir -p ~/.claude/skills/paddock && curl -fsSL https://raw.githubusercontent.com/tony1908/paddock/main/internal/cli/skill.md -o ~/.claude/skills/paddock/SKILL.md
+```
+
+Then ask your agent, for example: "Run the tests in a Paddock box".
 
 ## CLI quickstart
 
