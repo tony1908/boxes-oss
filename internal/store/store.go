@@ -36,10 +36,14 @@ type BoxRecord struct {
 	types.Box
 	DesktopPasswordEnc []byte
 	BoxdTokenEnc       []byte
-	IdempotencyKey     string
-	RunningSeconds     int64
-	RunningSince       *time.Time
-	SetupStatus        string
+	// RuntimeEnvEnc holds the encrypted create-time environment variables (-e). Snapshots exclude /run, so resume re-delivers them.
+	RuntimeEnvEnc []byte
+	// NoSecrets records the create-time noSecrets flag so resume keeps environment secrets out of /run.
+	NoSecrets      bool
+	IdempotencyKey string
+	RunningSeconds int64
+	RunningSince   *time.Time
+	SetupStatus    string
 	// RestoreSnapshotID is the snapshot the next resume restores from; resume clears it.
 	RestoreSnapshotID string
 	// Usage totals accumulate at each stop (see server stopSandbox); they are not part of the public box JSON.
@@ -453,12 +457,12 @@ func (s *Store) CreateBox(ctx context.Context, record BoxRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO boxes(id, node_id, type, state, image, env_id, env_version,
 		ttl_seconds, idle_stop_seconds, expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, mounts)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, mounts, runtime_env_enc, no_secrets)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, box.ID, box.NodeID, box.Type,
 		string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds, box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt),
 		nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc), idempotencyKey,
 		box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, mountsJSON(box.Mounts))
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, mountsJSON(box.Mounts), nonNilBytes(record.RuntimeEnvEnc), record.NoSecrets)
 	if err != nil {
 		return fmt.Errorf("create box: %w", err)
 	}
@@ -512,11 +516,11 @@ func (s *Store) UpdateBox(ctx context.Context, record BoxRecord) error {
 	}
 	result, err := s.db.ExecContext(ctx, `UPDATE boxes SET node_id=?, type=?, state=?, image=?, env_id=?, env_version=?,
 		ttl_seconds=?, idle_stop_seconds=?, expires_at=?, desktop_password_enc=?, boxd_token_enc=?, idempotency_key=?, from_snapshot=?, created_at=?, stopped_at=?,
-		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=?, total_cpu_seconds=?, total_rx_bytes=?, total_tx_bytes=?, mounts=? WHERE id=?`,
+		running_seconds=?, running_since=?, setup_status=?, error_code=?, error=?, tags=?, network_policy=?, source=?, keep_snapshots=?, restore_snapshot_id=?, total_cpu_seconds=?, total_rx_bytes=?, total_tx_bytes=?, mounts=?, runtime_env_enc=?, no_secrets=? WHERE id=?`,
 		box.NodeID, box.Type, string(box.State), box.Image, envID, box.EnvironmentVersion, box.TTLSeconds,
 		box.IdleStopSeconds, nullableTimePtr(box.ExpiresAt), nonNilBytes(record.DesktopPasswordEnc), nonNilBytes(record.BoxdTokenEnc),
 		idempotencyKey, box.FromSnapshot, encodeTime(box.CreatedAt), nullableTimePtr(box.StoppedAt), record.RunningSeconds,
-		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, record.TotalCPUSeconds, record.TotalRxBytes, record.TotalTxBytes, mountsJSON(box.Mounts), box.ID)
+		nullableTimePtr(record.RunningSince), setupStatus(record.SetupStatus), box.ErrorCode, box.Error, tagsJSON(box.Tags), networkPolicyJSON(box.NetworkPolicy), sourceJSON(box.Source), box.KeepSnapshots, record.RestoreSnapshotID, record.TotalCPUSeconds, record.TotalRxBytes, record.TotalTxBytes, mountsJSON(box.Mounts), nonNilBytes(record.RuntimeEnvEnc), record.NoSecrets, box.ID)
 	return checkUpdated(result, err, "update box")
 }
 
@@ -589,7 +593,7 @@ func (s *Store) DeleteBox(ctx context.Context, id string) error {
 
 const boxSelect = `SELECT id, node_id, type, state, image, env_id, env_version, ttl_seconds, idle_stop_seconds,
 	expires_at, desktop_password_enc, boxd_token_enc, idempotency_key, from_snapshot, created_at, stopped_at,
-		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, total_cpu_seconds, total_rx_bytes, total_tx_bytes, mounts FROM boxes`
+		running_seconds, running_since, setup_status, error_code, error, tags, network_policy, source, keep_snapshots, restore_snapshot_id, total_cpu_seconds, total_rx_bytes, total_tx_bytes, mounts, runtime_env_enc, no_secrets FROM boxes`
 
 func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 	var record BoxRecord
@@ -603,7 +607,7 @@ func scanBox(row interface{ Scan(...any) error }) (BoxRecord, error) {
 		&record.DesktopPasswordEnc, &record.BoxdTokenEnc, &idempotencyKey, &record.FromSnapshot,
 		&created, &stopped, &record.RunningSeconds, &runningSince, &record.SetupStatus,
 		&record.ErrorCode, &record.Error, &tags, &networkPolicy, &source, &record.KeepSnapshots, &record.RestoreSnapshotID,
-		&record.TotalCPUSeconds, &record.TotalRxBytes, &record.TotalTxBytes, &mounts)
+		&record.TotalCPUSeconds, &record.TotalRxBytes, &record.TotalTxBytes, &mounts, &record.RuntimeEnvEnc, &record.NoSecrets)
 	if err != nil {
 		return BoxRecord{}, err
 	}

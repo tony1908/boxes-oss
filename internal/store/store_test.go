@@ -561,3 +561,38 @@ func TestBoxKeepSnapshotsAndRestoreSnapshotRoundTrip(t *testing.T) {
 		t.Fatalf("updated keepSnapshots = %d, restoreSnapshotId = %q", updated.KeepSnapshots, updated.RestoreSnapshotID)
 	}
 }
+
+func TestBoxRuntimeEnvRoundTrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "runtime-env.db"))
+	if err != nil {
+		t.Fatalf("Open(): %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	if err := s.CreateNode(ctx, NodeRecord{Node: types.Node{ID: "nd_runtime", Name: "node", Status: "healthy"}}); err != nil {
+		t.Fatalf("CreateNode(): %v", err)
+	}
+	cipher := []byte("opaque-runtime-env-cipher")
+	if err := s.CreateBox(ctx, BoxRecord{Box: types.Box{ID: "bx_runtime12345", NodeID: "nd_runtime", Type: "small", State: types.StateStopped, CreatedAt: time.Now().UTC()}, RuntimeEnvEnc: cipher, NoSecrets: true}); err != nil {
+		t.Fatalf("CreateBox(): %v", err)
+	}
+	got, err := s.GetBox(ctx, "bx_runtime12345")
+	if err != nil {
+		t.Fatalf("GetBox(): %v", err)
+	}
+	if string(got.RuntimeEnvEnc) != string(cipher) || !got.NoSecrets {
+		t.Fatalf("runtime env = %q noSecrets = %v, want %q and true", got.RuntimeEnvEnc, got.NoSecrets, cipher)
+	}
+	got.RuntimeEnvEnc = nil
+	got.NoSecrets = false
+	if err := s.UpdateBox(ctx, got); err != nil {
+		t.Fatalf("UpdateBox(): %v", err)
+	}
+	updated, err := s.GetBox(ctx, "bx_runtime12345")
+	if err != nil {
+		t.Fatalf("GetBox() after update: %v", err)
+	}
+	if len(updated.RuntimeEnvEnc) != 0 || updated.NoSecrets {
+		t.Fatalf("updated runtime env = %q noSecrets = %v, want empty and false", updated.RuntimeEnvEnc, updated.NoSecrets)
+	}
+}

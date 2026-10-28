@@ -6,12 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-28
+
 ### Changed
 
 - Site and README now link the CLI release downloads and explain how to install the agent skill.
 
 ### Fixed
 
+- Resume and rollback now restore a box's environment variables and secrets. They were missing after a resume because snapshots exclude them on purpose.
 - Fresh installs now download the CLI binaries, so `install/cli.sh` works on new servers.
 
 ## [0.2.0] - 2026-10-25

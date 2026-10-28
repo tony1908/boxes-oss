@@ -378,7 +378,16 @@ func (s *Server) provisionSandbox(ctx context.Context, input createSandboxReques
 	}
 	ctx, cancel := agentTimeoutContext(ctx)
 	defer cancel()
-	record := store.BoxRecord{Box: box, DesktopPasswordEnc: passwordEnc, BoxdTokenEnc: boxdEnc, IdempotencyKey: idempotencyKey, SetupStatus: setupStatus}
+	record := store.BoxRecord{Box: box, DesktopPasswordEnc: passwordEnc, BoxdTokenEnc: boxdEnc, IdempotencyKey: idempotencyKey, SetupStatus: setupStatus, NoSecrets: input.NoSecrets}
+	if len(input.Env) != 0 {
+		encodedEnv, err := json.Marshal(input.Env)
+		if err != nil {
+			return types.Box{}, err
+		}
+		if record.RuntimeEnvEnc, err = s.secrets.encrypt(encodedEnv); err != nil {
+			return types.Box{}, err
+		}
+	}
 	if err := s.store.CreateBox(ctx, record); err != nil {
 		return types.Box{}, fmt.Errorf("persist provisioning box: %w", err)
 	}
@@ -986,6 +995,42 @@ func (s *Server) writeResumeError(w http.ResponseWriter, boxID string, err error
 	}
 }
 
+// runtimeFiles rebuilds the /run/paddock files a box needs when it starts again. Snapshots exclude /run,
+// so resume and rollback must deliver them again. setup.json is dropped: setup never re-runs on resume.
+func (s *Server) runtimeFiles(ctx context.Context, record store.BoxRecord) ([]map[string]any, error) {
+	var files []map[string]any
+	if record.EnvironmentID != "" {
+		envFiles, _, err := s.environmentFiles(ctx, record.EnvironmentID, record.EnvironmentVersion, record.NoSecrets)
+		if err != nil {
+			return nil, err
+		}
+		files = envFiles
+	}
+	if len(record.RuntimeEnvEnc) != 0 {
+		plain, err := s.secrets.decrypt(record.RuntimeEnvEnc)
+		if err != nil {
+			return nil, err
+		}
+		var env map[string]string
+		if err := json.Unmarshal(plain, &env); err != nil {
+			return nil, err
+		}
+		if files, err = mergeProvisionFiles(files, env, nil, nil); err != nil {
+			return nil, err
+		}
+	}
+	kept := make([]map[string]any, 0, len(files))
+	for _, file := range files {
+		if name, _ := file["path"].(string); name != "/run/paddock/setup.json" {
+			kept = append(kept, file)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, nil
+	}
+	return kept, nil
+}
+
 func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input struct {
 	Type string `json:"type"`
 }) error {
@@ -1042,6 +1087,13 @@ func (s *Server) migrateBox(ctx context.Context, record *store.BoxRecord, input 
 	}
 	if len(record.Mounts) != 0 {
 		payload["mounts"] = record.Mounts
+	}
+	files, err := s.runtimeFiles(ctx, *record)
+	if err != nil {
+		return err
+	}
+	if len(files) != 0 {
+		payload["files"] = files
 	}
 	if node.Node.ID == record.NodeID {
 		if err := oldAgent.json(ctx, http.MethodDelete, agentPath("v1", "boxes", record.ID), nil, nil); err != nil {

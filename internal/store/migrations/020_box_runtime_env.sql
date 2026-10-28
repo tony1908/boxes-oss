@@ -1,0 +1,2 @@
+ALTER TABLE boxes ADD COLUMN runtime_env_enc BLOB;
+ALTER TABLE boxes ADD COLUMN no_secrets INTEGER NOT NULL DEFAULT 0;

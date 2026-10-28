@@ -18,6 +18,8 @@ The server keeps the latest five automatic snapshots per box by default. Set `ke
 
 Resume creates a fresh container from the pinned image, streams `restic dump` output through `docker cp -a` into that container, and starts it. The image's `/custom-cont-init.d/00-paddock-restore` init script applies recorded deletions. Resume always creates a fresh container.
 
+Secrets and environment variables are never stored in snapshots. On every resume and rollback the server writes the box's environment (its attached Environment at the box's current version, plus variables passed at creation) back into `/run/paddock` before the box starts. Setup scripts do not run again.
+
 Fork creates another box from a fresh capture of the source. `paddock new --from NAME` restores a new box from a named snapshot.
 
 ## Rollback
